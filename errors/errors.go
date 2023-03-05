@@ -14,6 +14,14 @@ const (
 	UnknownErrCode = -1
 )
 
+var errCodeMap = map[int32]string{}
+
+func RegisterError(m map[int32]string) {
+	for k, v := range m {
+		errCodeMap[k] = v
+	}
+}
+
 type Status struct {
 	StatusCode int32
 	Message    string
@@ -74,8 +82,19 @@ func (e *Error) GRPCStatus() *status.Status {
 	return s
 }
 
-// New returns an error object for the code, message.
-func New(code int, errCode int32, message string) *Error {
+func New(code int, errCode int32) *Error {
+	msg := errCodeMap[errCode]
+	return &Error{
+		Status: Status{
+			StatusCode: int32(code),
+			Message:    msg,
+		},
+		ErrCode: errCode,
+	}
+}
+
+// NewWithMsg returns an error object for the code, message.
+func NewWithMsg(code int, errCode int32, message string) *Error {
 	return &Error{
 		Status: Status{
 			StatusCode: int32(code),
@@ -85,14 +104,14 @@ func New(code int, errCode int32, message string) *Error {
 	}
 }
 
-// Newf New(code fmt.Sprintf(format, a...))
-func Newf(code int, errCode int32, format string, a ...interface{}) *Error {
-	return New(code, errCode, fmt.Sprintf(format, a...))
+// NewWithMsgf NewWithMsg(code fmt.Sprintf(format, a...))
+func NewWithMsgf(code int, errCode int32, format string, a ...interface{}) *Error {
+	return NewWithMsg(code, errCode, fmt.Sprintf(format, a...))
 }
 
 // Errorf returns an error object for the code, message and error info.
 func Errorf(code int, errCode int32, format string, a ...interface{}) error {
-	return New(code, errCode, fmt.Sprintf(format, a...))
+	return NewWithMsg(code, errCode, fmt.Sprintf(format, a...))
 }
 
 // Code returns the http code for an error.
@@ -144,9 +163,9 @@ func FromError(err error) *Error {
 	}
 	gs, ok := status.FromError(err)
 	if !ok {
-		return New(UnknownCode, UnknownErrCode, err.Error())
+		return NewWithMsg(UnknownCode, UnknownErrCode, err.Error())
 	}
-	ret := New(
+	ret := NewWithMsg(
 		FromGRPCCode(gs.Code()),
 		UnknownErrCode,
 		gs.Message(),
