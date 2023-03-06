@@ -8,35 +8,42 @@ import (
 )
 
 const (
-	// UnknownCode is unknown code for error info.
-	UnknownCode = 500
-	// UnknownErrCode is unknown errCode for error info.
-	UnknownErrCode = -1
+	DefaultErrorCodeLimit = 100000
+	DefaultStatusCode     = 400
+	UnknownStatusCode     = 500
+	UnknownErrorCode      = -1
 )
 
-var errCodeMap = map[int32]string{}
-
-func RegisterError(m map[int32]string) {
-	for k, v := range m {
-		errCodeMap[k] = v
-	}
-}
-
-type Status struct {
+type ErrCodeDetail struct {
 	StatusCode int32
 	Message    string
-	Metadata   map[string]string
+}
+
+var errCodeMap = map[int32]*ErrCodeDetail{}
+
+func RegisterError(msgMap map[int32]string, codeMap map[int32]int32) {
+	for k, v := range msgMap {
+		detail := ErrCodeDetail{}
+		detail.Message = v
+		if statusCode, ok := codeMap[k]; ok {
+			detail.StatusCode = statusCode
+		} else {
+			if k > DefaultErrorCodeLimit {
+				detail.StatusCode = DefaultStatusCode
+			}
+		}
+		errCodeMap[k] = &detail
+	}
 }
 
 // Error is a status error.
 type Error struct {
-	Status
-	ErrCode int32
-	cause   error
+	ErrorInfo
+	cause error
 }
 
 func (e *Error) Error() string {
-	return fmt.Sprintf("error: code = %d errcode = %d message = '%s' metadata = %v cause = %s", e.StatusCode, e.ErrCode, e.Message, e.Metadata, e.cause)
+	return fmt.Sprintf("error: code = %d errcode = %d message = '%s' metadata = %v cause = %s", e.StatusCode, e.ErrorCode, e.Message, e.Metadata, e.cause)
 }
 
 // Unwrap provides compatibility for Go 1.13 error chains.
@@ -45,17 +52,17 @@ func (e *Error) Unwrap() error { return e.cause }
 // Is matches each error in the chain with the target value.
 func (e *Error) Is(err error) bool {
 	if se := new(Error); errors.As(err, &se) {
-		return se.StatusCode == e.StatusCode && se.ErrCode == e.ErrCode
+		return se.StatusCode == e.StatusCode && se.ErrorCode == e.ErrorCode
 	}
 	return false
 }
 
 func (e *Error) GetStatusCode() int32 {
-	return e.Status.StatusCode
+	return e.ErrorInfo.StatusCode
 }
 
-func (e *Error) GetErrCode() int32 {
-	return e.ErrCode
+func (e *Error) GetErrorCode() int32 {
+	return e.ErrorInfo.ErrorCode
 }
 
 // WithCause with the underlying cause of the error.
@@ -82,36 +89,40 @@ func (e *Error) GRPCStatus() *status.Status {
 	return s
 }
 
-func New(code int, errCode int32) *Error {
-	msg := errCodeMap[errCode]
+func New(errCode int32) *Error {
+	detail, ok := errCodeMap[errCode]
+	if !ok {
+		detail.StatusCode = UnknownStatusCode
+		detail.Message = ""
+	}
 	return &Error{
-		Status: Status{
-			StatusCode: int32(code),
-			Message:    msg,
+		ErrorInfo: ErrorInfo{
+			ErrorCode:  errCode,
+			StatusCode: detail.StatusCode,
+			Message:    detail.Message,
 		},
-		ErrCode: errCode,
 	}
 }
 
-// NewWithMsg returns an error object for the code, message.
-func NewWithMsg(code int, errCode int32, message string) *Error {
+// CreateError returns an error object for the status code, error code, message.
+func CreateError(statusCode int32, errCode int32, message string) *Error {
 	return &Error{
-		Status: Status{
-			StatusCode: int32(code),
+		ErrorInfo: ErrorInfo{
+			StatusCode: statusCode,
+			ErrorCode:  errCode,
 			Message:    message,
 		},
-		ErrCode: errCode,
 	}
 }
 
-// NewWithMsgf NewWithMsg(code fmt.Sprintf(format, a...))
-func NewWithMsgf(code int, errCode int32, format string, a ...interface{}) *Error {
-	return NewWithMsg(code, errCode, fmt.Sprintf(format, a...))
+// CreateErrorf CreateError(code fmt.Sprintf(format, a...))
+func CreateErrorf(statusCode int32, errCode int32, format string, a ...interface{}) *Error {
+	return CreateError(statusCode, errCode, fmt.Sprintf(format, a...))
 }
 
-// Errorf returns an error object for the code, message and error info.
-func Errorf(code int, errCode int32, format string, a ...interface{}) error {
-	return NewWithMsg(code, errCode, fmt.Sprintf(format, a...))
+// Errorf CreateError(code fmt.Sprintf(format, a...))
+func Errorf(statusCode int32, errCode int32, format string, a ...interface{}) error {
+	return CreateError(statusCode, errCode, fmt.Sprintf(format, a...))
 }
 
 // Code returns the http code for an error.
@@ -127,9 +138,9 @@ func Code(err error) int {
 // It supports wrapped errors.
 func ErrCode(err error) int32 {
 	if err == nil {
-		return UnknownErrCode
+		return UnknownErrorCode
 	}
-	return FromError(err).ErrCode
+	return FromError(err).ErrorCode
 }
 
 // Clone deep clone error to a new error.
@@ -143,12 +154,12 @@ func Clone(err *Error) *Error {
 	}
 	return &Error{
 		cause: err.cause,
-		Status: Status{
+		ErrorInfo: ErrorInfo{
 			StatusCode: err.StatusCode,
+			ErrorCode:  err.ErrorCode,
 			Message:    err.Message,
 			Metadata:   metadata,
 		},
-		ErrCode: err.ErrCode,
 	}
 }
 
@@ -163,11 +174,11 @@ func FromError(err error) *Error {
 	}
 	gs, ok := status.FromError(err)
 	if !ok {
-		return NewWithMsg(UnknownCode, UnknownErrCode, err.Error())
+		return CreateError(UnknownStatusCode, UnknownErrorCode, err.Error())
 	}
-	ret := NewWithMsg(
-		FromGRPCCode(gs.Code()),
-		UnknownErrCode,
+	ret := CreateError(
+		int32(FromGRPCCode(gs.Code())),
+		UnknownErrorCode,
 		gs.Message(),
 	)
 	for _, detail := range gs.Details() {

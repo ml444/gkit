@@ -1,0 +1,18 @@
+//TODO: protoc --proto_path=. --go_out=. ./errors.proto
+syntax = "proto3";
+
+package errors;
+
+option go_package = "github.com/ml444/gkit/errors;errors";
+option java_multiple_files = true;
+option java_package = "com.github.gkit.errors";
+option objc_class_prefix = "GkitErrors";
+
+
+message ErrorInfo {
+  int32 status_code = 1;
+  int32 error_code = 2;
+  string message = 3;
+  map<string, string> metadata = 4;
+};
+
