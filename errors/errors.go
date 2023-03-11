@@ -8,11 +8,16 @@ import (
 )
 
 const (
-	DefaultErrorCodeLimit = 100000
-	DefaultStatusCode     = 400
-	UnknownStatusCode     = 500
-	UnknownErrorCode      = -1
+	DefaultStatusCode = 400
+	UnknownStatusCode = 500
 )
+const (
+	ErrorCodeUnknown         int32 = -1
+	ErrCodeInvalidParamSys   int32 = 40001
+	ErrCodeInvalidReqSys     int32 = 40002
+	ErrCodeRecordNotFoundSys int32 = 40003
+)
+const DefaultErrorCodeLowerLimit = 100000
 
 type ErrCodeDetail struct {
 	StatusCode int32
@@ -28,7 +33,7 @@ func RegisterError(msgMap map[int32]string, codeMap map[int32]int32) {
 		if statusCode, ok := codeMap[k]; ok {
 			detail.StatusCode = statusCode
 		} else {
-			if k > DefaultErrorCodeLimit {
+			if k > DefaultErrorCodeLowerLimit {
 				detail.StatusCode = DefaultStatusCode
 			}
 		}
@@ -138,7 +143,7 @@ func Code(err error) int {
 // It supports wrapped errors.
 func ErrCode(err error) int32 {
 	if err == nil {
-		return UnknownErrorCode
+		return ErrorCodeUnknown
 	}
 	return FromError(err).ErrorCode
 }
@@ -174,11 +179,11 @@ func FromError(err error) *Error {
 	}
 	gs, ok := status.FromError(err)
 	if !ok {
-		return CreateError(UnknownStatusCode, UnknownErrorCode, err.Error())
+		return CreateError(UnknownStatusCode, ErrorCodeUnknown, err.Error())
 	}
 	ret := CreateError(
 		int32(FromGRPCCode(gs.Code())),
-		UnknownErrorCode,
+		ErrorCodeUnknown,
 		gs.Message(),
 	)
 	for _, detail := range gs.Details() {
