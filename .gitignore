@@ -19,4 +19,4 @@
 .idea/
 go.sum
 
-unfinished_*.go
+__*.go
