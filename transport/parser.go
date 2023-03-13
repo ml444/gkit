@@ -68,6 +68,9 @@ func ParseService2HTTP(svc interface{}, router *mux.Router, timeoutMap map[strin
 }
 
 type callWithReflect func(in []reflect.Value) []reflect.Value
+type validator interface {
+	Validate() error
+}
 
 func handleWithReflect(svcV, req reflect.Value, callFunc callWithReflect, timeout time.Duration, log logger.Logger) func(writer http.ResponseWriter, request *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
@@ -97,28 +100,40 @@ func handleWithReflect(svcV, req reflect.Value, callFunc callWithReflect, timeou
 		}
 		defer cancel()
 
-		var r = req.Interface()
-		err := json.NewDecoder(request.Body).Decode(r)
-		if err != nil {
-			log.Errorf("err: %v", err)
-			return
-		}
-		values := callFunc([]reflect.Value{svcV, reflect.ValueOf(ctx), req})
-		rspV := values[0]
-		rspErr := values[1]
-		var result interface{}
-		if IErr := rspErr.Interface(); IErr != nil {
-			if Err, ok := IErr.(*errors.Error); ok {
-				writer.WriteHeader(int(Err.StatusCode))
-			} else {
-				writer.WriteHeader(http.StatusInternalServerError)
-			}
-			result = IErr
-		} else {
-			result = rspV.Interface()
-		}
 		writer.Header().Set("Content-Type", contentType)
+		var err error
+		var result interface{}
+		var r = req.Interface()
+		if v, ok := r.(validator); ok {
+			if err = v.Validate(); err != nil {
+				writer.WriteHeader(errors.DefaultStatusCode)
+				result = errors.CreateError(errors.DefaultStatusCode, errors.ErrCodeInvalidParamSys, err.Error())
+				goto RETURN
+			}
+		}
+		{
+			err = json.NewDecoder(request.Body).Decode(r)
+			if err != nil {
+				log.Errorf("err: %v", err)
+				return
+			}
+			values := callFunc([]reflect.Value{svcV, reflect.ValueOf(ctx), req})
+			rspV := values[0]
+			rspErr := values[1]
+			if IErr := rspErr.Interface(); IErr != nil {
+				if Err, ok := IErr.(*errors.Error); ok {
+					writer.WriteHeader(int(Err.StatusCode))
+					result = IErr
+				} else {
+					writer.WriteHeader(http.StatusInternalServerError)
+					result = errors.CreateError(errors.UnknownStatusCode, errors.ErrCodeInvalidReqSys, err.Error())
+				}
+			} else {
+				result = rspV.Interface()
+			}
+		}
 
+	RETURN:
 		var bodyBuf []byte
 		bodyBuf, err = json.Marshal(result)
 		if err != nil {
