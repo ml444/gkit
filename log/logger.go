@@ -1,4 +1,4 @@
-package logger
+package log
 
 type Logger interface {
 	Debug(...interface{})
@@ -10,4 +10,8 @@ type Logger interface {
 	Infof(template string, args ...interface{})
 	Warnf(template string, args ...interface{})
 	Errorf(template string, args ...interface{})
+}
+
+func NewNopLogger() Logger {
+	return nil
 }

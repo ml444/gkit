@@ -3,8 +3,7 @@ package listoption
 import (
 	"fmt"
 	"github.com/ml444/gkit/errors"
-	"github.com/ml444/gkit/logger"
-	"log"
+	"github.com/ml444/gkit/log"
 	"reflect"
 	"strconv"
 	"strings"
@@ -52,7 +51,7 @@ type Handler struct {
 type Processor struct {
 	listOption *ListOption
 	handlers   map[int32]*Handler
-	logger     logger.Logger
+	logger     log.Logger
 }
 
 func toInt32(i interface{}) int32 {
@@ -81,7 +80,7 @@ func NewProcessor(listOption *ListOption) *Processor {
 		handlers:   make(map[int32]*Handler),
 	}
 }
-func (p *Processor) SetLogger(l logger.Logger) {
+func (p *Processor) SetLogger(l log.Logger) {
 	p.logger = l
 }
 
@@ -591,7 +590,7 @@ func toStr(i interface{}) string {
 
 func NewListOption(opts ...interface{}) *ListOption {
 	if len(opts)%2 != 0 {
-		log.Panicf("invalid number of opts argument %d", len(opts))
+		panic(fmt.Sprintf("invalid number of opts argument %d", len(opts)))
 	}
 	l := &ListOption{}
 	for i := 0; i < len(opts); i += 2 {
@@ -618,7 +617,7 @@ func (opt *ListOption) IsOptExist(typ interface{}) bool {
 		typInt = int32(reflect.ValueOf(typ).Int())
 	}
 	if typInt <= 0 {
-		log.Panicf("invalid type %d", typ)
+		panic(fmt.Sprintf("invalid type %d", typ))
 	}
 
 	for _, opt := range opt.Options {
@@ -638,7 +637,7 @@ func (opt *ListOption) GetOptValue(typ interface{}) (string, bool) {
 		typInt = int32(reflect.ValueOf(typ).Int())
 	}
 	if typInt <= 0 {
-		log.Panicf("invalid type %d", typ)
+		panic(fmt.Sprintf("invalid type %d", typ))
 	}
 
 	for _, opt := range opt.Options {
@@ -666,7 +665,7 @@ func (opt *ListOption) AddOpt(typ, val interface{}) *ListOption {
 		typInt = int32(reflect.ValueOf(typ).Int())
 	}
 	if typInt <= 0 {
-		log.Panicf("invalid type %d", typ)
+		panic(fmt.Sprintf("invalid type %d", typ))
 	}
 	typeOfVal := reflect.TypeOf(val)
 	var strVal string
@@ -714,7 +713,7 @@ func getOptTypeFromInterface(typ interface{}) uint32 {
 	} else if t.Kind() == reflect.Uint32 {
 		return uint32(v.Uint())
 	} else {
-		log.Panicf("unsupported type %s of opt with value %v", t.String(), typ)
+		panic(fmt.Sprintf("unsupported type %s of opt with value %v", t.String(), typ))
 	}
 	return 0
 }
@@ -722,7 +721,7 @@ func getOptTypeFromInterface(typ interface{}) uint32 {
 func (opt *ListOption) CloneChangeOptTypes(optPairs ...interface{}) *ListOption {
 	l := opt.CloneSkipOpts()
 	if len(optPairs)%2 != 0 {
-		log.Panicf("invalid number of opts argument %d", len(optPairs))
+		panic(fmt.Sprintf("invalid number of opts argument %d", len(optPairs)))
 	}
 	kv := map[uint32]uint32{}
 	for i := 0; i < len(optPairs); i += 2 {

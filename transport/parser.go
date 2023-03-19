@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"github.com/gorilla/mux"
 	"github.com/ml444/gkit/errors"
-	"github.com/ml444/gkit/logger"
+	"github.com/ml444/gkit/log"
 	"github.com/ml444/gutil/str"
 	"net/http"
 	"reflect"
@@ -24,7 +24,7 @@ const (
 const contentType = "application/json; charset=utf-8"
 const globalTimeout = 5 * time.Second
 
-func ParseService2HTTP(svc interface{}, router *mux.Router, timeoutMap map[string]time.Duration, log logger.Logger) error {
+func ParseService2HTTP(svc interface{}, router *mux.Router, timeoutMap map[string]time.Duration, log log.Logger) error {
 	var err error
 	svcT := reflect.TypeOf(svc)
 	svcV := reflect.ValueOf(svc)
@@ -72,7 +72,7 @@ type validator interface {
 	Validate() error
 }
 
-func handleWithReflect(svcV, req reflect.Value, callFunc callWithReflect, timeout time.Duration, log logger.Logger) func(writer http.ResponseWriter, request *http.Request) {
+func handleWithReflect(svcV, req reflect.Value, callFunc callWithReflect, timeout time.Duration, log log.Logger) func(writer http.ResponseWriter, request *http.Request) {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		defer func() {
 			if Err := recover(); Err != nil {
