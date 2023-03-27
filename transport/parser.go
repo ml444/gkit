@@ -4,14 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/mux"
-	"github.com/ml444/gkit/errors"
-	"github.com/ml444/gkit/log"
-	"github.com/ml444/gutil/str"
+	"io"
 	"net/http"
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/gorilla/mux"
+	"github.com/ml444/gkit/errors"
+	"github.com/ml444/gkit/log"
+	"github.com/ml444/gutil/str"
 )
 
 const (
@@ -42,7 +44,7 @@ func ParseService2HTTP(svc interface{}, router *mux.Router, timeoutMap map[strin
 		if d := funcName[0]; d <= 'A' || d >= 'Z' {
 			continue
 		}
-		if strings.HasPrefix(funcName, "Get") {
+		if strings.HasPrefix(funcName, "Get") || strings.HasPrefix(funcName, "List") {
 			httpMethod = GET
 		} else if strings.HasPrefix(funcName, "Create") {
 			httpMethod = POST
@@ -113,9 +115,10 @@ func handleWithReflect(svcV, req reflect.Value, callFunc callWithReflect, timeou
 		}
 		{
 			err = json.NewDecoder(request.Body).Decode(r)
-			if err != nil {
+			if err != nil && err != io.EOF {
 				log.Errorf("err: %v", err)
-				return
+				result = errors.CreateError(errors.UnknownStatusCode, errors.ErrCodeInvalidReqSys, err.Error())
+				goto RETURN
 			}
 			values := callFunc([]reflect.Value{svcV, reflect.ValueOf(ctx), req})
 			rspV := values[0]
