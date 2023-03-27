@@ -106,19 +106,19 @@ func handleWithReflect(svcV, req reflect.Value, callFunc callWithReflect, timeou
 		var err error
 		var result interface{}
 		var r = req.Interface()
-		if v, ok := r.(validator); ok {
-			if err = v.Validate(); err != nil {
-				writer.WriteHeader(errors.DefaultStatusCode)
-				result = errors.CreateError(errors.DefaultStatusCode, errors.ErrCodeInvalidParamSys, err.Error())
-				goto RETURN
-			}
-		}
 		{
 			err = json.NewDecoder(request.Body).Decode(r)
 			if err != nil && err != io.EOF {
 				log.Errorf("err: %v", err)
 				result = errors.CreateError(errors.UnknownStatusCode, errors.ErrCodeInvalidReqSys, err.Error())
 				goto RETURN
+			}
+			if v, ok := r.(validator); ok {
+				if err = v.Validate(); err != nil {
+					writer.WriteHeader(errors.DefaultStatusCode)
+					result = errors.CreateError(errors.DefaultStatusCode, errors.ErrCodeInvalidParamSys, err.Error())
+					goto RETURN
+				}
 			}
 			values := callFunc([]reflect.Value{svcV, reflect.ValueOf(ctx), req})
 			rspV := values[0]
