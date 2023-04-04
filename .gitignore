@@ -20,3 +20,4 @@
 go.sum
 
 __*.go
+*_test.go
