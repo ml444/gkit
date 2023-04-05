@@ -1,4 +1,4 @@
-package db
+package dbx
 
 import (
 	"github.com/ml444/gkit/listoption"
@@ -48,9 +48,16 @@ func (s *Scope) Delete(v interface{}, conds ...interface{}) error {
 		return s.tx.Delete(v, conds).Error
 	}
 }
+
+func (s *Scope) Where(query interface{}, args ...interface{}) *Scope {
+	s.tx.Where(query, args)
+	return s
+}
+
 func (s *Scope) First(dest interface{}, conds ...interface{}) error {
 	return s.tx.First(dest, conds).Error
 }
+
 func (s *Scope) Find(dest interface{}, conds ...interface{}) error {
 	return s.tx.Find(dest, conds).Error
 }
