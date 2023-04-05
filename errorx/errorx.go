@@ -1,4 +1,4 @@
-package errors
+package errorx
 
 import (
 	"errors"
@@ -60,6 +60,9 @@ func (e *Error) Is(err error) bool {
 		return se.StatusCode == e.StatusCode && se.ErrorCode == e.ErrorCode
 	}
 	return false
+}
+func (e *Error) IsErrCode(errCode int32) bool {
+	return e.ErrorCode == errCode
 }
 
 func (e *Error) GetStatusCode() int32 {
@@ -131,7 +134,7 @@ func Errorf(statusCode int32, errCode int32, format string, a ...interface{}) er
 }
 
 // Code returns the http code for an error.
-// It supports wrapped errors.
+// It supports wrapped errorx.
 func Code(err error) int {
 	if err == nil {
 		return 200 //nolint:gomnd
@@ -140,7 +143,7 @@ func Code(err error) int {
 }
 
 // ErrCode returns the reason for a particular error.
-// It supports wrapped errors.
+// It supports wrapped errorx.
 func ErrCode(err error) int32 {
 	if err == nil {
 		return ErrorCodeUnknown
@@ -169,7 +172,7 @@ func Clone(err *Error) *Error {
 }
 
 // FromError try to convert an error to *Error.
-// It supports wrapped errors.
+// It supports wrapped errorx.
 func FromError(err error) *Error {
 	if err == nil {
 		return nil

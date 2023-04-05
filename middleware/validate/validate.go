@@ -2,7 +2,7 @@ package validate
 
 import (
 	"context"
-	"github.com/ml444/gkit/errors"
+	"github.com/ml444/gkit/errorx"
 	"github.com/ml444/gkit/middleware"
 )
 
@@ -16,7 +16,7 @@ func Validator() middleware.Middleware {
 		return func(ctx context.Context, req interface{}) (reply interface{}, err error) {
 			if v, ok := req.(validator); ok {
 				if err := v.Validate(); err != nil {
-					return nil, errors.CreateError(errors.DefaultStatusCode, errors.ErrCodeInvalidParamSys, err.Error()).WithCause(err)
+					return nil, errorx.CreateError(errorx.DefaultStatusCode, errorx.ErrCodeInvalidParamSys, err.Error()).WithCause(err)
 				}
 			}
 			return handler(ctx, req)

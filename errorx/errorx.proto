@@ -1,11 +1,11 @@
-//TODO: protoc --proto_path=. --go_out=. ./errors.proto
+//TODO: protoc --proto_path=. --go_out=. ./errorx.proto
 syntax = "proto3";
 
 package errors;
 
-option go_package = "github.com/ml444/gkit/errors;errors";
+option go_package = "github.com/ml444/gkit/errorx;errorx";
 option java_multiple_files = true;
-option java_package = "com.github.gkit.errors";
+option java_package = "com.github.gkit.errorx";
 option objc_class_prefix = "GkitErrors";
 
 

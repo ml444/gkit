@@ -5,7 +5,9 @@ go 1.19
 require (
 	github.com/gorilla/mux v1.8.0
 	github.com/hashicorp/consul/api v1.10.1
+	github.com/ml444/glog v0.2.1
 	github.com/ml444/gutil v0.0.0-20230306091328-693b85b9dcf0
+	golang.org/x/net v0.7.0
 	google.golang.org/genproto v0.0.0-20230303212802-e74f57abe488
 	google.golang.org/grpc v1.53.0
 	google.golang.org/protobuf v1.28.1
@@ -29,6 +31,7 @@ require (
 	github.com/miekg/dns v1.1.43 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/mapstructure v1.4.2 // indirect
+	github.com/petermattis/goid v0.0.0-20220302125637-5f11c28912df // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/stretchr/testify v1.7.0 // indirect
 	golang.org/x/sys v0.5.0 // indirect

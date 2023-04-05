@@ -2,7 +2,7 @@ package listoption
 
 import (
 	"fmt"
-	"github.com/ml444/gkit/errors"
+	"github.com/ml444/gkit/errorx"
 	"github.com/ml444/gkit/log"
 	"reflect"
 	"strconv"
@@ -241,7 +241,7 @@ func (p *Processor) Process() error {
 		return nil
 	}
 	newError := func(typ int32, expectType string) error {
-		return errors.CreateErrorf(errors.DefaultStatusCode, errors.ErrCodeInvalidParamSys,
+		return errorx.CreateErrorf(errorx.DefaultStatusCode, errorx.ErrCodeInvalidParamSys,
 			fmt.Sprintf("invalid option value with type %d, expected %s", typ, expectType))
 	}
 	var err error

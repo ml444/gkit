@@ -3,7 +3,7 @@ package sd
 // Event represents a push notification generated from the underlying service discovery
 // implementation. It contains either a full set of available resource instances, or
 // an error indicating some issue with obtaining information from discovery backend.
-// Examples of errors may include loosing connection to the discovery backend, or
+// Examples of errorx may include loosing connection to the discovery backend, or
 // trying to look up resource instances using an incorrectly formatted key.
 // After receiving an Event with an error the listenter should treat previously discovered
 // resource instances as stale (although it may choose to continue using them).

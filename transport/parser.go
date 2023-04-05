@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/ml444/gkit/errors"
+	"github.com/ml444/gkit/errorx"
 	"github.com/ml444/gkit/log"
 	"github.com/ml444/gutil/str"
 )
@@ -81,7 +81,7 @@ func handleWithReflect(svcV, req reflect.Value, callFunc callWithReflect, timeou
 				//var brokenPipe bool
 				//if ne, ok := err.(*net.OpError); ok {
 				//	var se *os.SyscallError
-				//	if errors.As(ne, &se) {
+				//	if errorx.As(ne, &se) {
 				//		if strings.Contains(strings.ToLower(se.Error()), "broken pipe") || strings.Contains(strings.ToLower(se.Error()), "connection reset by peer") {
 				//			brokenPipe = true
 				//		}
@@ -110,13 +110,13 @@ func handleWithReflect(svcV, req reflect.Value, callFunc callWithReflect, timeou
 			err = json.NewDecoder(request.Body).Decode(r)
 			if err != nil && err != io.EOF {
 				log.Errorf("err: %v", err)
-				result = errors.CreateError(errors.UnknownStatusCode, errors.ErrCodeInvalidReqSys, err.Error())
+				result = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeInvalidReqSys, err.Error())
 				goto RETURN
 			}
 			if v, ok := r.(validator); ok {
 				if err = v.Validate(); err != nil {
-					writer.WriteHeader(errors.DefaultStatusCode)
-					result = errors.CreateError(errors.DefaultStatusCode, errors.ErrCodeInvalidParamSys, err.Error())
+					writer.WriteHeader(errorx.DefaultStatusCode)
+					result = errorx.CreateError(errorx.DefaultStatusCode, errorx.ErrCodeInvalidParamSys, err.Error())
 					goto RETURN
 				}
 			}
@@ -124,12 +124,12 @@ func handleWithReflect(svcV, req reflect.Value, callFunc callWithReflect, timeou
 			rspV := values[0]
 			rspErr := values[1]
 			if IErr := rspErr.Interface(); IErr != nil {
-				if Err, ok := IErr.(*errors.Error); ok {
+				if Err, ok := IErr.(*errorx.Error); ok {
 					writer.WriteHeader(int(Err.StatusCode))
 					result = IErr
 				} else {
 					writer.WriteHeader(http.StatusInternalServerError)
-					result = errors.CreateError(errors.UnknownStatusCode, errors.ErrCodeInvalidReqSys, err.Error())
+					result = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeInvalidReqSys, err.Error())
 				}
 			} else {
 				result = rspV.Interface()
