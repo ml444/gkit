@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/ml444/gkit/auth"
 	"github.com/ml444/gkit/errorx"
 	"github.com/ml444/gkit/log"
 	"github.com/ml444/gutil/str"
@@ -26,7 +27,13 @@ const (
 const contentType = "application/json; charset=utf-8"
 const globalTimeout = 5 * time.Second
 
-func ParseService2HTTP(svc interface{}, router *mux.Router, timeoutMap map[string]time.Duration, log log.Logger) error {
+func ParseService2HTTP(
+	svc interface{},
+	router *mux.Router,
+	timeoutMap map[string]time.Duration,
+	log log.Logger,
+	secret []byte,
+) error {
 	var err error
 	svcT := reflect.TypeOf(svc)
 	svcV := reflect.ValueOf(svc)
@@ -63,7 +70,7 @@ func ParseService2HTTP(svc interface{}, router *mux.Router, timeoutMap map[strin
 		var req = reflect.New(mn.Type.In(2).Elem())
 
 		router.Methods(httpMethod).PathPrefix("/" + svcNamePrefix).Path("/" + funcName).HandlerFunc(
-			handleWithReflect(svcV, req, mn.Func.Call, timeout, log),
+			handleWithReflect(svcV, req, mn.Func.Call, timeout, log, secret),
 		)
 	}
 	return err
@@ -74,7 +81,14 @@ type validator interface {
 	Validate() error
 }
 
-func handleWithReflect(svcV, req reflect.Value, callFunc callWithReflect, timeout time.Duration, log log.Logger) func(writer http.ResponseWriter, request *http.Request) {
+func handleWithReflect(
+	svcV, req reflect.Value,
+	callFunc callWithReflect,
+	timeout time.Duration,
+	log log.Logger,
+	secret []byte,
+) func(writer http.ResponseWriter, request *http.Request) {
+
 	return func(writer http.ResponseWriter, request *http.Request) {
 		defer func() {
 			if Err := recover(); Err != nil {
@@ -120,6 +134,8 @@ func handleWithReflect(svcV, req reflect.Value, callFunc callWithReflect, timeou
 					goto RETURN
 				}
 			}
+			err = auth.ParseJWT2Context(ctx, request, secret)
+
 			values := callFunc([]reflect.Value{svcV, reflect.ValueOf(ctx), req})
 			rspV := values[0]
 			rspErr := values[1]

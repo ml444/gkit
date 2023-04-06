@@ -7,16 +7,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const (
-	DefaultStatusCode = 400
-	UnknownStatusCode = 500
-)
-const (
-	ErrorCodeUnknown         int32 = -1
-	ErrCodeInvalidParamSys   int32 = 40001
-	ErrCodeInvalidReqSys     int32 = 40002
-	ErrCodeRecordNotFoundSys int32 = 40003
-)
 const DefaultErrorCodeLowerLimit = 100000
 
 type ErrCodeDetail struct {
@@ -146,7 +136,7 @@ func Code(err error) int {
 // It supports wrapped errorx.
 func ErrCode(err error) int32 {
 	if err == nil {
-		return ErrorCodeUnknown
+		return ErrCodeUnknown
 	}
 	return FromError(err).ErrorCode
 }
@@ -182,11 +172,11 @@ func FromError(err error) *Error {
 	}
 	gs, ok := status.FromError(err)
 	if !ok {
-		return CreateError(UnknownStatusCode, ErrorCodeUnknown, err.Error())
+		return CreateError(UnknownStatusCode, ErrCodeUnknown, err.Error())
 	}
 	ret := CreateError(
 		int32(FromGRPCCode(gs.Code())),
-		ErrorCodeUnknown,
+		ErrCodeUnknown,
 		gs.Message(),
 	)
 	for _, detail := range gs.Details() {
