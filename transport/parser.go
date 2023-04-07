@@ -27,15 +27,25 @@ const (
 const contentType = "application/json; charset=utf-8"
 const globalTimeout = 5 * time.Second
 
-func ParseService2HTTP(
-	svc interface{},
-	router *mux.Router,
-	timeoutMap map[string]time.Duration,
-	secret []byte,
-) error {
+type HttpHandleFunc func(writer http.ResponseWriter, request *http.Request)
+type callWithReflect func(in []reflect.Value) []reflect.Value
+type validator interface {
+	Validate() error
+}
+
+type EndpointParser struct {
+	svc            interface{}
+	router         *mux.Router
+	timeoutMap     map[string]time.Duration
+	jwtSecret      []byte
+	jwtHook        auth.HookFunc
+	enableCheckJWT bool
+}
+
+func (p *EndpointParser) Parse() error {
 	var err error
-	svcT := reflect.TypeOf(svc)
-	svcV := reflect.ValueOf(svc)
+	svcT := reflect.TypeOf(p.svc)
+	svcV := reflect.ValueOf(p.svc)
 	if !strings.HasSuffix(svcT.Name(), "Service") {
 		err = fmt.Errorf("not found the suffix of 'Service' by %s", svcT.Name())
 		log.Error(err.Error())
@@ -63,30 +73,19 @@ func ParseService2HTTP(
 		}
 
 		var timeout = globalTimeout
-		if v, ok := timeoutMap[funcName]; ok {
+		if v, ok := p.timeoutMap[funcName]; ok {
 			timeout = v
 		}
 		var req = reflect.New(mn.Type.In(2).Elem())
 
-		router.Methods(httpMethod).PathPrefix("/" + svcNamePrefix).Path("/" + funcName).HandlerFunc(
-			handleWithReflect(svcV, req, mn.Func.Call, timeout, secret),
+		p.router.Methods(httpMethod).PathPrefix("/" + svcNamePrefix).Path("/" + funcName).HandlerFunc(
+			p.handleWithReflect(svcV, req, mn.Func.Call, timeout),
 		)
 	}
-	return err
+	return nil
 }
 
-type callWithReflect func(in []reflect.Value) []reflect.Value
-type validator interface {
-	Validate() error
-}
-
-func handleWithReflect(
-	svcV, req reflect.Value,
-	callFunc callWithReflect,
-	timeout time.Duration,
-	secret []byte,
-) func(writer http.ResponseWriter, request *http.Request) {
-
+func (p *EndpointParser) handleWithReflect(svcV, req reflect.Value, callFunc callWithReflect, timeout time.Duration) HttpHandleFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		defer func() {
 			if Err := recover(); Err != nil {
@@ -115,10 +114,26 @@ func handleWithReflect(
 		defer cancel()
 
 		writer.Header().Set("Content-Type", contentType)
+
 		var err error
 		var result interface{}
-		var r = req.Interface()
+		if p.enableCheckJWT {
+			err = auth.ParseJWT2ContextByHTTP(ctx, request, p.jwtSecret, p.jwtHook)
+			if err != nil {
+				log.Error(err)
+				if Err, ok := err.(*errorx.Error); ok {
+					writer.WriteHeader(int(Err.StatusCode))
+					result = err
+				} else {
+					writer.WriteHeader(http.StatusInternalServerError)
+					result = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeInvalidHeaderSys, err.Error())
+				}
+				goto RETURN
+			}
+		}
+
 		{
+			var r = req.Interface()
 			err = json.NewDecoder(request.Body).Decode(r)
 			if err != nil && err != io.EOF {
 				log.Errorf("err: %v", err)
@@ -132,7 +147,6 @@ func handleWithReflect(
 					goto RETURN
 				}
 			}
-			err = auth.ParseJWT2ContextByHTTP(ctx, request, secret, nil) // TODO: hook func
 
 			values := callFunc([]reflect.Value{svcV, reflect.ValueOf(ctx), req})
 			rspV := values[0]
@@ -162,5 +176,42 @@ func handleWithReflect(
 			log.Errorf("err: %v", err)
 			return
 		}
+	}
+}
+
+func NewEndpointParser(svc interface{}, router *mux.Router, opts ...OptionFunc) *EndpointParser {
+	parser := &EndpointParser{
+		svc:    svc,
+		router: router,
+	}
+	for _, optFunc := range opts {
+		optFunc(parser)
+	}
+	return parser
+}
+
+func ParseService2HTTP(svc interface{}, router *mux.Router, opts ...OptionFunc) error {
+	parser := NewEndpointParser(svc, router, opts...)
+	return parser.Parse()
+}
+
+type OptionFunc func(parser *EndpointParser)
+
+func SetTimeoutMap(timeoutMap map[string]time.Duration) OptionFunc {
+	return func(parser *EndpointParser) {
+		parser.timeoutMap = timeoutMap
+	}
+}
+
+func SetJwtSecret(secret []byte) OptionFunc {
+	return func(parser *EndpointParser) {
+		parser.jwtSecret = secret
+		parser.enableCheckJWT = true
+	}
+}
+
+func SetJwtHook(hook auth.HookFunc) OptionFunc {
+	return func(parser *EndpointParser) {
+		parser.jwtHook = hook
 	}
 }
