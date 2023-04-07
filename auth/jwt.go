@@ -41,7 +41,29 @@ func GenerateJWT(claims CustomClaims, secretKey []byte) (string, error) {
 	return fmt.Sprintf(bearerFormat, tokenString), nil
 }
 
-func ParseJWT2Context(ctx context.Context, r *http.Request, secret []byte) error {
+func ParseJWT(tokenString string, secret []byte) (*CustomClaims, error) {
+	// Parse token
+	token, err := jwt.ParseWithClaims(tokenString, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return secret, nil
+	}, jwt.WithLeeway(time.Second*5))
+	if err != nil {
+		return nil, errorx.CreateError(http.StatusUnauthorized, errorx.ErrCodeInvalidHeaderSys, err.Error())
+	}
+
+	// Get custom claims
+	claims, ok := token.Claims.(*CustomClaims)
+	if !ok {
+		err = errorx.CreateError(
+			http.StatusUnauthorized,
+			errorx.ErrCodeInvalidHeaderSys,
+			"Claims assertion failure",
+		)
+		return nil, err
+	}
+	return claims, nil
+}
+
+func ParseJWT2ContextByHTTP(ctx context.Context, r *http.Request, secret []byte) error {
 	// Get token from Authorization header
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
