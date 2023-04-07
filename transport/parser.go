@@ -31,7 +31,6 @@ func ParseService2HTTP(
 	svc interface{},
 	router *mux.Router,
 	timeoutMap map[string]time.Duration,
-	log log.Logger,
 	secret []byte,
 ) error {
 	var err error
@@ -70,7 +69,7 @@ func ParseService2HTTP(
 		var req = reflect.New(mn.Type.In(2).Elem())
 
 		router.Methods(httpMethod).PathPrefix("/" + svcNamePrefix).Path("/" + funcName).HandlerFunc(
-			handleWithReflect(svcV, req, mn.Func.Call, timeout, log, secret),
+			handleWithReflect(svcV, req, mn.Func.Call, timeout, secret),
 		)
 	}
 	return err
@@ -85,7 +84,6 @@ func handleWithReflect(
 	svcV, req reflect.Value,
 	callFunc callWithReflect,
 	timeout time.Duration,
-	log log.Logger,
 	secret []byte,
 ) func(writer http.ResponseWriter, request *http.Request) {
 

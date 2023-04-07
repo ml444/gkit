@@ -2,11 +2,12 @@ package listoption
 
 import (
 	"fmt"
-	"github.com/ml444/gkit/errorx"
-	"github.com/ml444/gkit/log"
 	"reflect"
 	"strconv"
 	"strings"
+
+	"github.com/ml444/gkit/errorx"
+	"github.com/ml444/gkit/log"
 )
 
 const (
@@ -51,7 +52,6 @@ type Handler struct {
 type Processor struct {
 	listOption *ListOption
 	handlers   map[int32]*Handler
-	logger     log.Logger
 }
 
 func toInt32(i interface{}) int32 {
@@ -79,9 +79,6 @@ func NewProcessor(listOption *ListOption) *Processor {
 		listOption: listOption,
 		handlers:   make(map[int32]*Handler),
 	}
-}
-func (p *Processor) SetLogger(l log.Logger) {
-	p.logger = l
 }
 
 func (p *Processor) AddNone(typ interface{}, cb func() error) *Processor {
@@ -347,9 +344,7 @@ func (p *Processor) Process() error {
 		case ValueTypeInt32Range:
 			tStr, isContinue := toSplitStr(v.Value, h.ignoreZeroValue)
 			if isContinue {
-				if p.logger != nil {
-					p.logger.Warnf("the value:[] does not meet the requirements. skip it.", v.Value)
-				}
+				log.Warnf("the value:[] does not meet the requirements. skip it.", v.Value)
 				continue
 			}
 			t1, err := strconv.ParseInt(tStr[0], 10, 64)
@@ -403,9 +398,7 @@ func (p *Processor) Process() error {
 		case ValueTypeUint32Range:
 			tStr, isContinue := toSplitStr(v.Value, h.ignoreZeroValue)
 			if isContinue {
-				if p.logger != nil {
-					p.logger.Warnf("the value:[] does not meet the requirements. skip it.", v.Value)
-				}
+				log.Warnf("the value:[] does not meet the requirements. skip it.", v.Value)
 				continue
 			}
 			t1, err := strconv.ParseUint(tStr[0], 10, 64)
@@ -459,9 +452,7 @@ func (p *Processor) Process() error {
 		case ValueTypeUint64Range:
 			tStr, isContinue := toSplitStr(v.Value, h.ignoreZeroValue)
 			if isContinue {
-				if p.logger != nil {
-					p.logger.Warnf("the value:[] does not meet the requirements. skip it.", v.Value)
-				}
+				log.Warnf("the value:[] does not meet the requirements. skip it.", v.Value)
 				continue
 			}
 			t1, err := strconv.ParseUint(tStr[0], 10, 64)
@@ -515,9 +506,7 @@ func (p *Processor) Process() error {
 		case ValueTypeInt64Range:
 			tStr, isContinue := toSplitStr(v.Value, h.ignoreZeroValue)
 			if isContinue {
-				if p.logger != nil {
-					p.logger.Warnf("the value:[] does not meet the requirements. skip it.", v.Value)
-				}
+				log.Warnf("the value:[] does not meet the requirements. skip it.", v.Value)
 				continue
 			}
 			t1, err := strconv.ParseInt(tStr[0], 10, 64)
@@ -715,7 +704,7 @@ func getOptTypeFromInterface(typ interface{}) uint32 {
 	} else {
 		panic(fmt.Sprintf("unsupported type %s of opt with value %v", t.String(), typ))
 	}
-	return 0
+	//return 0
 }
 
 func (opt *ListOption) CloneChangeOptTypes(optPairs ...interface{}) *ListOption {

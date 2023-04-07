@@ -5,6 +5,14 @@ import (
 	"os"
 )
 
+func init() {
+	if logger == nil {
+		logger = NewStdLogger()
+	}
+}
+
+var logger Logger
+
 type Logger interface {
 	Debug(...interface{})
 	Info(...interface{})
@@ -19,6 +27,10 @@ type Logger interface {
 
 func NewNopLogger() Logger {
 	return nil
+}
+
+func SetLogger(l Logger) {
+	logger = l
 }
 
 func NewStdLogger() Logger {
@@ -44,3 +56,13 @@ func (_ StdLogger) Warnf(template string, values ...interface{}) {
 func (_ StdLogger) Errorf(template string, values ...interface{}) {
 	os.Stdout.Write([]byte(fmt.Sprintf(template, values...)))
 }
+
+func Debug(values ...interface{}) { logger.Debug(values...) }
+func Info(values ...interface{})  { logger.Info(values...) }
+func Warn(values ...interface{})  { logger.Warn(values...) }
+func Error(values ...interface{}) { logger.Error(values...) }
+
+func Debugf(template string, values ...interface{}) { logger.Debugf(template, values...) }
+func Infof(template string, values ...interface{})  { logger.Infof(template, values...) }
+func Warnf(template string, values ...interface{})  { logger.Warnf(template, values...) }
+func Errorf(template string, values ...interface{}) { logger.Errorf(template, values...) }
