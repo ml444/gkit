@@ -9,6 +9,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/ml444/gkit/errorx"
+	"github.com/ml444/gkit/log"
 )
 
 const (
@@ -21,6 +22,8 @@ const (
 	BearerPrefix string = "Bearer "
 	bearerFormat string = "Bearer %s"
 )
+
+type HookFunc func(ctx context.Context, claims *CustomClaims) error
 
 type RegisteredClaims = jwt.RegisteredClaims
 type NumericDate = jwt.NumericDate
@@ -36,6 +39,7 @@ func GenerateJWT(claims CustomClaims, secretKey []byte) (string, error) {
 	// Sign token with secret key
 	tokenString, err := token.SignedString(secretKey)
 	if err != nil {
+		log.Error(err)
 		return "", err
 	}
 
@@ -48,6 +52,7 @@ func ParseJWT(tokenString string, secret []byte) (*CustomClaims, error) {
 		return secret, nil
 	}, jwt.WithLeeway(time.Second*5))
 	if err != nil {
+		log.Error(err)
 		return nil, errorx.CreateError(http.StatusUnauthorized, errorx.ErrCodeInvalidHeaderSys, err.Error())
 	}
 
@@ -64,7 +69,7 @@ func ParseJWT(tokenString string, secret []byte) (*CustomClaims, error) {
 	return claims, nil
 }
 
-func ParseJWT2ContextByHTTP(ctx context.Context, r *http.Request, secret []byte) error {
+func ParseJWT2ContextByHTTP(ctx context.Context, r *http.Request, secret []byte, hook HookFunc) error {
 	// Get token from Authorization header
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
@@ -80,22 +85,14 @@ func ParseJWT2ContextByHTTP(ctx context.Context, r *http.Request, secret []byte)
 	}
 	tokenString := authHeaderParts[1]
 
-	// Parse token
-	token, err := jwt.ParseWithClaims(tokenString, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
-		return secret, nil
-	}, jwt.WithLeeway(time.Second*5))
+	claims, err := ParseJWT(tokenString, secret)
 	if err != nil {
-		return errorx.CreateError(http.StatusUnauthorized, errorx.ErrCodeInvalidHeaderSys, err.Error())
+		log.Error(err)
+		return err
 	}
-
-	// Get custom claims
-	claims, ok := token.Claims.(*CustomClaims)
-	if !ok {
-		err = errorx.CreateError(
-			http.StatusUnauthorized,
-			errorx.ErrCodeInvalidHeaderSys,
-			"Claims assertion failure",
-		)
+	err = hook(ctx, claims)
+	if err != nil {
+		log.Error(err)
 		return err
 	}
 	ctx = context.WithValue(ctx, JWTTokenKey, tokenString)

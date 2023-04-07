@@ -132,7 +132,7 @@ func handleWithReflect(
 					goto RETURN
 				}
 			}
-			err = auth.ParseJWT2ContextByHTTP(ctx, request, secret)
+			err = auth.ParseJWT2ContextByHTTP(ctx, request, secret, nil) // TODO: hook func
 
 			values := callFunc([]reflect.Value{svcV, reflect.ValueOf(ctx), req})
 			rspV := values[0]
