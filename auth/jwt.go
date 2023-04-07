@@ -13,6 +13,7 @@ import (
 
 const (
 	JWTClaimsKey = "JWTClaims"
+	JWTTokenKey  = "JWTToken"
 )
 
 const (
@@ -97,6 +98,7 @@ func ParseJWT2ContextByHTTP(ctx context.Context, r *http.Request, secret []byte)
 		)
 		return err
 	}
+	ctx = context.WithValue(ctx, JWTTokenKey, tokenString)
 	ctx = context.WithValue(ctx, JWTClaimsKey, claims)
 	return nil
 }
