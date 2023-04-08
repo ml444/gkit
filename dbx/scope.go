@@ -2,10 +2,8 @@ package dbx
 
 import (
 	"github.com/ml444/gkit/listoption"
-	"github.com/ml444/gutil/str"
+	//"github.com/ml444/gutil/str"
 	"gorm.io/gorm"
-	"reflect"
-	"time"
 )
 
 const SoftDeleteField = "DeletedAt"
@@ -36,17 +34,16 @@ func (s *Scope) CreateInBatches(values interface{}, batchSize int) error {
 }
 
 // Update updates attributes using callbacks. values must be a struct or map.
-func (s *Scope) Update(v interface{}, conds ...interface{}) error {
-	return s.tx.Where(conds[0], conds[1:]...).Updates(v).Error
+func (s *Scope) Update(v interface{}, condMap map[string]interface{}) error {
+	return s.tx.Where(condMap).Updates(v).Error
 }
 
 func (s *Scope) Delete(v interface{}, conds ...interface{}) error {
-	vT := reflect.TypeOf(v)
-	if _, ok := vT.FieldByName(SoftDeleteField); ok {
-		return s.tx.Where(conds[0], conds[1:]).UpdateColumn(str.CamelToSnake(SoftDeleteField), time.Now().Unix()).Error
-	} else {
-		return s.tx.Delete(v, conds).Error
-	}
+	//vT := reflect.TypeOf(v)
+	//if _, ok := vT.FieldByName(SoftDeleteField); ok {
+	//return s.tx.Where(conds[0], conds[1:]).UpdateColumn(str.CamelToSnake(SoftDeleteField), time.Now().Unix()).Error
+	//}
+	return s.tx.Delete(v, conds).Error
 }
 
 func (s *Scope) Where(query interface{}, args ...interface{}) *Scope {
