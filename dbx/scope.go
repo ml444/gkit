@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ml444/gkit/listoption"
+	log "github.com/ml444/glog"
 	"gorm.io/gorm"
 )
 
@@ -15,9 +16,11 @@ const DefaultOffset int = 0
 const MaxLimit int = 100000
 
 type Scope struct {
-	tx         *gorm.DB
-	model      interface{}
-	listOption *listoption.ListOption
+	tx           *gorm.DB
+	model        interface{}
+	listOption   *listoption.ListOption
+	SQL          string
+	RowsAffected int64
 }
 
 func NewScope(db *gorm.DB, model interface{}) *Scope {
@@ -27,12 +30,18 @@ func NewScope(db *gorm.DB, model interface{}) *Scope {
 	}
 }
 
+func (s *Scope) fillResult() {
+	s.SQL = s.tx.Statement.SQL.String()
+	s.RowsAffected = s.tx.RowsAffected
+}
+
 func (s *Scope) Create(v interface{}) error {
 	return s.tx.Create(v).Error
 }
 
 // CreateInBatches Insert data in batches after splitting data according to batchSize
 func (s *Scope) CreateInBatches(values interface{}, batchSize int) error {
+	defer s.fillResult()
 	return s.tx.CreateInBatches(values, batchSize).Error
 }
 
@@ -43,12 +52,20 @@ func (s *Scope) Update(v interface{}, conds ...interface{}) error {
 	} else if condsLen > 1 {
 		s.tx.Where(conds[0], conds[1:])
 	}
-	return s.tx.Updates(v).Error
+	s.tx.Updates(v)
+	if s.tx.Error != nil {
+		return s.tx.Error
+	}
+	if s.tx.RowsAffected == 0 {
+		log.Warnf("SQL: %s; RowsAffected: 0", s.tx.Statement.SQL.String())
+	}
+	s.fillResult()
+	return nil
 }
 
 func (s *Scope) Delete(v interface{}, conds ...interface{}) error {
-	vT := reflect.TypeOf(v)
-	if _, ok := vT.FieldByName(SoftDeleteObjField); ok {
+	defer s.fillResult()
+	if _, ok := reflect.TypeOf(v).Elem().FieldByName(SoftDeleteObjField); ok {
 		if condsLen := len(conds); condsLen == 1 {
 			s.tx.Where(conds[0])
 		} else if condsLen > 1 {
