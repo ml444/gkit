@@ -1,12 +1,15 @@
 package dbx
 
 import (
+	"reflect"
+	"time"
+
 	"github.com/ml444/gkit/listoption"
-	//"github.com/ml444/gutil/str"
 	"gorm.io/gorm"
 )
 
-const SoftDeleteField = "DeletedAt"
+const SoftDeleteObjField = "DeletedAt"
+const SoftDeleteDbField = "deleted_at"
 const DefaultLimit int = 2000
 const DefaultOffset int = 0
 const MaxLimit int = 100000
@@ -34,15 +37,25 @@ func (s *Scope) CreateInBatches(values interface{}, batchSize int) error {
 }
 
 // Update updates attributes using callbacks. values must be a struct or map.
-func (s *Scope) Update(v interface{}, condMap map[string]interface{}) error {
-	return s.tx.Where(condMap).Updates(v).Error
+func (s *Scope) Update(v interface{}, conds ...interface{}) error {
+	if condsLen := len(conds); condsLen == 1 {
+		s.tx.Where(conds[0])
+	} else if condsLen > 1 {
+		s.tx.Where(conds[0], conds[1:])
+	}
+	return s.tx.Updates(v).Error
 }
 
 func (s *Scope) Delete(v interface{}, conds ...interface{}) error {
-	//vT := reflect.TypeOf(v)
-	//if _, ok := vT.FieldByName(SoftDeleteField); ok {
-	//return s.tx.Where(conds[0], conds[1:]).UpdateColumn(str.CamelToSnake(SoftDeleteField), time.Now().Unix()).Error
-	//}
+	vT := reflect.TypeOf(v)
+	if _, ok := vT.FieldByName(SoftDeleteObjField); ok {
+		if condsLen := len(conds); condsLen == 1 {
+			s.tx.Where(conds[0])
+		} else if condsLen > 1 {
+			s.tx.Where(conds[0], conds[1:])
+		}
+		return s.tx.UpdateColumn(SoftDeleteDbField, time.Now().Unix()).Error
+	}
 	return s.tx.Delete(v, conds).Error
 }
 
