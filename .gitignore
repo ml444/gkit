@@ -21,3 +21,5 @@ go.sum
 
 __*.go
 *_test.go
+
+issue.md

@@ -98,7 +98,7 @@ func (p *EndpointParser) handleWithReflect(svcV, req reflect.Value, callFunc cal
 				//		}
 				//	}
 				//}
-				log.Errorf("%v", Err)
+				log.Fatalf("%v", Err)
 				writer.WriteHeader(http.StatusInternalServerError)
 			}
 		}()
