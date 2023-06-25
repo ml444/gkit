@@ -179,6 +179,12 @@ func (p *EndpointParser) handleWithReflect(svcV, req reflect.Value, callFunc cal
 	}
 }
 
+func (p *EndpointParser) WithOptions(opts ...OptionFunc) {
+	for _, optFunc := range opts {
+		optFunc(p)
+	}
+}
+
 func NewEndpointParser(svc interface{}, router *mux.Router, opts ...OptionFunc) *EndpointParser {
 	parser := &EndpointParser{
 		svc:    svc,
