@@ -3,6 +3,7 @@ package errorx
 import (
 	"errors"
 	"fmt"
+
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/status"
 )
@@ -90,8 +91,26 @@ func (e *Error) GRPCStatus() *status.Status {
 func New(errCode int32) *Error {
 	detail, ok := errCodeMap[errCode]
 	if !ok {
+		detail = &ErrCodeDetail{}
 		detail.StatusCode = UnknownStatusCode
 		detail.Message = ""
+	}
+	return &Error{
+		ErrorInfo: ErrorInfo{
+			ErrorCode:  errCode,
+			StatusCode: detail.StatusCode,
+			Message:    detail.Message,
+		},
+	}
+}
+
+// NewWithMsg new error from errcode and message
+func NewWithMsg(errCode int32, msg string) *Error {
+	detail, ok := errCodeMap[errCode]
+	if !ok {
+		detail = &ErrCodeDetail{}
+		detail.StatusCode = UnknownStatusCode
+		detail.Message = msg
 	}
 	return &Error{
 		ErrorInfo: ErrorInfo{
@@ -187,4 +206,28 @@ func FromError(err error) *Error {
 		}
 	}
 	return ret
+}
+
+// ErrorAs returns true if err is an *Error and its ErrorCode matches errCode.
+func ErrorAs(err error, errCode int32) bool {
+	e, ok := err.(*Error)
+	if ok {
+		eCode := e.GetErrorCode()
+		if eCode == errCode {
+			return true
+		}
+	}
+	return false
+}
+
+// IsNotFoundErr returns true if err is an *Error and its ErrorCode matches ErrCodeRecordNotFoundSys or errCode.
+func IsNotFoundErr(err error, errCode int32) bool {
+	e, ok := err.(*Error)
+	if ok {
+		eCode := e.GetErrorCode()
+		if eCode == ErrCodeRecordNotFoundSys || eCode == errCode {
+			return true
+		}
+	}
+	return false
 }
