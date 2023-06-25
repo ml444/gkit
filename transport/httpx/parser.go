@@ -1,4 +1,4 @@
-package transport
+package httpx
 
 import (
 	"context"
@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"git.csautodriver.com/base/gkit/auth/jwt"
+	"git.csautodriver.com/base/gkit/errorx"
+	"git.csautodriver.com/base/gkit/log"
 	"github.com/gorilla/mux"
-	"github.com/ml444/gkit/auth"
-	"github.com/ml444/gkit/errorx"
-	"github.com/ml444/gkit/log"
 	"github.com/ml444/gutil/str"
 )
 
@@ -37,8 +37,7 @@ type EndpointParser struct {
 	svc            interface{}
 	router         *mux.Router
 	timeoutMap     map[string]time.Duration
-	jwtSecret      []byte
-	jwtHook        auth.HookFunc
+	jwtHook        jwt.HookFunc
 	enableCheckJWT bool
 }
 
@@ -54,23 +53,26 @@ func (p *EndpointParser) Parse() error {
 	svcNamePrefix := str.ToLowerFirst(strings.TrimSuffix(svcT.Name(), "Service"))
 	n := svcT.NumMethod()
 	for i := 0; i < n; i++ {
-		var httpMethod string
+		var httpMethod = POST
 		mn := svcT.Method(i)
 		funcName := mn.Name
 		if d := funcName[0]; d <= 'A' || d >= 'Z' {
 			continue
 		}
-		if strings.HasPrefix(funcName, "Get") || strings.HasPrefix(funcName, "List") {
-			httpMethod = GET
-		} else if strings.HasPrefix(funcName, "Create") {
-			httpMethod = POST
-		} else if strings.HasPrefix(funcName, "Update") {
-			httpMethod = PUT
-		} else if strings.HasPrefix(funcName, "Delete") {
-			httpMethod = DELETE
-		} else {
-			httpMethod = POST
+		if strings.HasSuffix(funcName, "Sys") {
+			continue
 		}
+		//if strings.HasPrefix(funcName, "Get") || strings.HasPrefix(funcName, "List") {
+		//	httpMethod = GET
+		//} else if strings.HasPrefix(funcName, "Create") {
+		//	httpMethod = POST
+		//} else if strings.HasPrefix(funcName, "Update") {
+		//	httpMethod = PUT
+		//} else if strings.HasPrefix(funcName, "Delete") {
+		//	httpMethod = DELETE
+		//} else {
+		//	httpMethod = POST
+		//}
 
 		var timeout = globalTimeout
 		if v, ok := p.timeoutMap[funcName]; ok {
@@ -114,11 +116,12 @@ func (p *EndpointParser) handleWithReflect(svcV, req reflect.Value, callFunc cal
 		defer cancel()
 
 		writer.Header().Set("Content-Type", contentType)
-
+		//ctx = context.WithValue(ctx, core.KeyHeaders, request.Header)
 		var err error
 		var result interface{}
-		if p.enableCheckJWT {
-			err = auth.ParseJWT2ContextByHTTP(ctx, request, p.jwtSecret, p.jwtHook)
+		//if p.enableCheckJWT
+		{
+			ctx, err = HandleContextByHTTP(ctx, request, p.jwtHook)
 			if err != nil {
 				log.Error(err)
 				if Err, ok := err.(*errorx.Error); ok {
@@ -140,6 +143,7 @@ func (p *EndpointParser) handleWithReflect(svcV, req reflect.Value, callFunc cal
 				result = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeInvalidReqSys, err.Error())
 				goto RETURN
 			}
+			log.Debugf("req: %v", r)
 			if v, ok := r.(validator); ok {
 				if err = v.Validate(); err != nil {
 					writer.WriteHeader(errorx.DefaultStatusCode)
@@ -152,12 +156,15 @@ func (p *EndpointParser) handleWithReflect(svcV, req reflect.Value, callFunc cal
 			rspV := values[0]
 			rspErr := values[1]
 			if IErr := rspErr.Interface(); IErr != nil {
+				log.Errorf("rsp err: %v", IErr)
 				if Err, ok := IErr.(*errorx.Error); ok {
-					writer.WriteHeader(int(Err.StatusCode))
+					if Err.StatusCode > 0 {
+						writer.WriteHeader(int(Err.StatusCode))
+					}
 					result = IErr
 				} else {
 					writer.WriteHeader(http.StatusInternalServerError)
-					result = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeInvalidReqSys, err.Error())
+					result = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeInvalidReqSys, IErr.(error).Error())
 				}
 			} else {
 				result = rspV.Interface()
@@ -209,14 +216,7 @@ func SetTimeoutMap(timeoutMap map[string]time.Duration) OptionFunc {
 	}
 }
 
-func SetJwtSecret(secret []byte) OptionFunc {
-	return func(parser *EndpointParser) {
-		parser.jwtSecret = secret
-		parser.enableCheckJWT = true
-	}
-}
-
-func SetJwtHook(hook auth.HookFunc) OptionFunc {
+func SetJwtHook(hook jwt.HookFunc) OptionFunc {
 	return func(parser *EndpointParser) {
 		parser.jwtHook = hook
 	}
