@@ -3,9 +3,8 @@ package auth
 import (
 	"context"
 	"encoding/json"
-	"git.csautodriver.com/base/cache"
-	"git.csautodriver.com/base/gkit/auth/jwt"
-	log "github.com/ml444/glog"
+	"github.com/ml444/gkit/auth/jwt"
+	"github.com/ml444/gkit/log"
 	"github.com/redis/go-redis/v9"
 	"time"
 )
@@ -20,10 +19,10 @@ const (
 var redisCli *redis.Client
 var disableRedis bool
 
-func init() {
+func InitRedis(cfg *redis.Options) {
 	log.Info("======>>> init redis <<<======")
 	var err error
-	redisCli, err = cache.GetRedisCli(nil)
+	redisCli = redis.NewClient(cfg)
 	if err != nil {
 		log.Errorf("redis err: %v", err)
 		disableRedis = true

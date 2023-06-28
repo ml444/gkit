@@ -3,12 +3,12 @@ package jwt
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/golang-jwt/jwt/v5"
 	"net/http"
 	"time"
 
-	"git.csautodriver.com/base/gkit/errorx"
-	"git.csautodriver.com/base/gkit/log"
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/ml444/gkit/errorx"
+	"github.com/ml444/gkit/log"
 )
 
 const (

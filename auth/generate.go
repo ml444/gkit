@@ -2,8 +2,8 @@ package auth
 
 import (
 	"fmt"
-	"git.csautodriver.com/base/gkit/auth/jwt"
-	"git.csautodriver.com/base/gkit/log"
+	"github.com/ml444/gkit/auth/jwt"
+	"github.com/ml444/gkit/log"
 	"os"
 	"time"
 )

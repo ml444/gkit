@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"strings"
 
-	"git.csautodriver.com/base/gkit/auth"
-	"git.csautodriver.com/base/gkit/auth/jwt"
-	"git.csautodriver.com/base/gkit/core"
-	"git.csautodriver.com/base/gkit/errorx"
-	"git.csautodriver.com/base/gkit/log"
+	"github.com/ml444/gkit/auth"
+	"github.com/ml444/gkit/auth/jwt"
+	"github.com/ml444/gkit/core"
+	"github.com/ml444/gkit/errorx"
+	"github.com/ml444/gkit/log"
 	"github.com/ml444/gutil/netx"
 )
 

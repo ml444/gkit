@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"git.csautodriver.com/base/gkit/auth/jwt"
-	"git.csautodriver.com/base/gkit/errorx"
-	"git.csautodriver.com/base/gkit/log"
 	"github.com/gorilla/mux"
+	"github.com/ml444/gkit/auth/jwt"
+	"github.com/ml444/gkit/errorx"
+	"github.com/ml444/gkit/log"
 	"github.com/ml444/gutil/str"
 )
 

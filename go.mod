@@ -3,14 +3,12 @@ module github.com/ml444/gkit
 go 1.19
 
 require (
-	git.csautodriver.com/base/cache v0.0.0-20230606071031-caa62f107b20
-	git.csautodriver.com/base/gkit v0.0.0-20230619041138-d4ca72c711fc
 	github.com/go-kit/kit v0.9.0
 	github.com/golang-jwt/jwt/v5 v5.0.0
 	github.com/gorilla/mux v1.8.0
 	github.com/hashicorp/consul/api v1.10.1
 	github.com/ml444/glog v0.2.7
-	github.com/ml444/gutil v0.0.0-20230609071114-ff80d29a20b6
+	github.com/ml444/gutil v0.0.0-20230626092149-ac531df0e53f
 	github.com/prometheus/client_golang v1.4.0
 	github.com/redis/go-redis/v9 v9.0.5
 	google.golang.org/genproto v0.0.0-20230303212802-e74f57abe488

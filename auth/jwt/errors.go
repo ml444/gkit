@@ -1,7 +1,7 @@
 package jwt
 
 import (
-	"git.csautodriver.com/base/gkit/errorx"
+	"github.com/ml444/gkit/errorx"
 	"net/http"
 )
 
