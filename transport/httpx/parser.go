@@ -46,15 +46,12 @@ type EndpointParser struct {
 	afterHandlerList  []middleware.AfterHandler
 }
 
-func NewEndpointParser(svc interface{}, router *mux.Router, opts ...OptionFunc) *EndpointParser {
+func NewEndpointParser(svc interface{}, router *mux.Router) *EndpointParser {
 	parser := &EndpointParser{
 		svc:               svc,
 		router:            router,
 		beforeHandlerList: []middleware.BeforeHandler{httpmw.Validator()},
 		//afterHandlerList:  []middleware.AfterHandler{httpmw.CheckResponseError()},
-	}
-	for _, optFunc := range opts {
-		optFunc(parser)
 	}
 	return parser
 }
@@ -220,32 +217,7 @@ func (p *EndpointParser) WithOptions(opts ...OptionFunc) {
 }
 
 func ParseService2HTTP(svc interface{}, router *mux.Router, opts ...OptionFunc) error {
-	parser := NewEndpointParser(svc, router, opts...)
+	parser := NewEndpointParser(svc, router)
+	parser.WithOptions(opts...)
 	return parser.Parse()
-}
-
-type OptionFunc func(parser *EndpointParser)
-
-func SetTimeoutMap(timeoutMap map[string]time.Duration) OptionFunc {
-	return func(parser *EndpointParser) {
-		parser.timeoutMap = timeoutMap
-	}
-}
-
-func SetJwtHook(hook jwt.HookFunc) OptionFunc {
-	return func(parser *EndpointParser) {
-		parser.jwtHook = hook
-	}
-}
-
-func AddBeforeHandler(handler middleware.BeforeHandler) OptionFunc {
-	return func(parser *EndpointParser) {
-		parser.beforeHandlerList = append(parser.beforeHandlerList, handler)
-	}
-}
-
-func AddAfterHandler(handler middleware.AfterHandler) OptionFunc {
-	return func(parser *EndpointParser) {
-		parser.afterHandlerList = append(parser.afterHandlerList, handler)
-	}
 }
