@@ -14,6 +14,9 @@ func init() {
 var logger Logger
 
 type Logger interface {
+	GetLoggerName() string
+	SetLoggerName(string)
+
 	Debug(...interface{})
 	Info(...interface{})
 	Warn(...interface{})
@@ -36,11 +39,19 @@ func SetLogger(l Logger) {
 }
 
 func NewStdLogger() Logger {
-	return StdLogger{}
+	return StdLogger{name: "gkit"}
 }
 
-type StdLogger struct{}
+type StdLogger struct {
+	name string
+}
 
+func (l StdLogger) GetLoggerName() string {
+	return l.name
+}
+func (l StdLogger) SetLoggerName(name string) {
+	l.name = name
+}
 func (_ StdLogger) Debug(values ...interface{}) { os.Stdout.Write([]byte(fmt.Sprint(values...))) }
 func (_ StdLogger) Info(values ...interface{})  { os.Stdout.Write([]byte(fmt.Sprint(values...))) }
 func (_ StdLogger) Warn(values ...interface{})  { os.Stdout.Write([]byte(fmt.Sprint(values...))) }
@@ -62,7 +73,12 @@ func (_ StdLogger) Errorf(template string, values ...interface{}) {
 func (_ StdLogger) Fatalf(template string, values ...interface{}) {
 	os.Stdout.Write([]byte(fmt.Sprintf(template, values...)))
 }
-
+func GetLoggerName() string {
+	return logger.GetLoggerName()
+}
+func SetLoggerName(name string) {
+	logger.SetLoggerName(name)
+}
 func Debug(values ...interface{}) { logger.Debug(values...) }
 func Info(values ...interface{})  { logger.Info(values...) }
 func Warn(values ...interface{})  { logger.Warn(values...) }
