@@ -1,6 +1,7 @@
 package dbx
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -94,7 +95,7 @@ func (s *Scope) ResetSysDateTimeField(v interface{}) {
 	}
 }
 
-func (s *Scope) Create(v interface{}) error {
+func (s *Scope) Create(ctx context.Context, v interface{}) error {
 	if EnableResetDateTime {
 		s.ResetSysDateTimeField(v)
 	}
