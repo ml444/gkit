@@ -10,7 +10,7 @@ func CheckResponseError() middleware.AfterHandler {
 	return func(rsp interface{}, err error) (interface{}, error) {
 		if err != nil {
 			if Err, ok := err.(*errorx.Error); !ok {
-				err = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeInvalidReqSys, Err.Error())
+				err = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeUnknown, Err.Error())
 			}
 		}
 		return rsp, err
