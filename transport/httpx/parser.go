@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ml444/gkit/middleware"
 	"io"
 	"net/http"
 	"reflect"
@@ -24,11 +25,11 @@ const (
 	DELETE = "DELETE"
 )
 
-const contentType = "application/json; charset=utf-8"
-const globalTimeout = 5 * time.Second
+const contentTypeJson = "application/json; charset=utf-8"
+const globalTimeout = 60 * time.Second
 
 type HttpHandleFunc func(writer http.ResponseWriter, request *http.Request)
-type callWithReflect func(in []reflect.Value) []reflect.Value
+type ReflectCallFunc func(in []reflect.Value) []reflect.Value
 type validator interface {
 	Validate() error
 }
@@ -39,14 +40,26 @@ type EndpointParser struct {
 	timeoutMap     map[string]time.Duration
 	jwtHook        jwt.HookFunc
 	enableCheckJWT bool
+
+	beforeHandlerList []middleware.BeforeHandler
+	afterHandlerList  []middleware.AfterHandler
+}
+
+func NewEndpointParser(svc interface{}, router *mux.Router) *EndpointParser {
+	parser := &EndpointParser{
+		svc:    svc,
+		router: router,
+		//beforeHandlerList: []middleware.BeforeHandler{httpmw.Validator()},
+		//afterHandlerList:  []middleware.AfterHandler{httpmw.CheckResponseError()},
+	}
+	return parser
 }
 
 func (p *EndpointParser) Parse() error {
 	var err error
 	svcT := reflect.TypeOf(p.svc)
-	svcV := reflect.ValueOf(p.svc)
 	if !strings.HasSuffix(svcT.Name(), "Service") {
-		err = fmt.Errorf("not found the suffix of 'Service' by %s", svcT.Name())
+		err = fmt.Errorf("not found the suffix of 'Service' by %s \n", svcT.Name())
 		log.Error(err.Error())
 		return err
 	}
@@ -80,28 +93,26 @@ func (p *EndpointParser) Parse() error {
 		}
 		var req = reflect.New(mn.Type.In(2).Elem())
 
-		p.router.Methods(httpMethod).PathPrefix("/" + svcNamePrefix).Path("/" + funcName).HandlerFunc(
-			p.handleWithReflect(svcV, req, mn.Func.Call, timeout),
+		p.router.Name(funcName).Methods(httpMethod).PathPrefix("/" + svcNamePrefix).Path("/" + funcName).HandlerFunc(
+			p.handleWithReflect(req, mn.Func.Call, timeout),
 		)
 	}
 	return nil
 }
 
-func (p *EndpointParser) handleWithReflect(svcV, req reflect.Value, callFunc callWithReflect, timeout time.Duration) HttpHandleFunc {
+func (p *EndpointParser) handleWithReflect(req reflect.Value, callFunc ReflectCallFunc, timeout time.Duration) HttpHandleFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		defer func() {
 			if Err := recover(); Err != nil {
-				//var brokenPipe bool
-				//if ne, ok := err.(*net.OpError); ok {
-				//	var se *os.SyscallError
-				//	if errorx.As(ne, &se) {
-				//		if strings.Contains(strings.ToLower(se.Error()), "broken pipe") || strings.Contains(strings.ToLower(se.Error()), "connection reset by peer") {
-				//			brokenPipe = true
-				//		}
-				//	}
-				//}
-				log.Fatalf("%v", Err)
+				log.Fatalf("panic: %v", Err)
 				writer.WriteHeader(http.StatusInternalServerError)
+				_, err := writer.Write(errorx.CreateError(
+					http.StatusInternalServerError,
+					errorx.ErrCodeUnknown,
+					fmt.Sprintf("PANIC: %v", Err)).JSONBytes())
+				if err != nil {
+					log.Errorf("err: %v", err)
+				}
 			}
 		}()
 		var (
@@ -115,10 +126,10 @@ func (p *EndpointParser) handleWithReflect(svcV, req reflect.Value, callFunc cal
 		}
 		defer cancel()
 
-		writer.Header().Set("Content-Type", contentType)
+		writer.Header().Set("Content-Type", contentTypeJson)
 		//ctx = context.WithValue(ctx, core.KeyHeaders, request.Header)
 		var err error
-		var result interface{}
+		var rspResult interface{}
 		//if p.enableCheckJWT
 		{
 			ctx, err = HandleContextByHTTP(ctx, request, p.jwtHook)
@@ -126,10 +137,10 @@ func (p *EndpointParser) handleWithReflect(svcV, req reflect.Value, callFunc cal
 				log.Error(err)
 				if Err, ok := err.(*errorx.Error); ok {
 					writer.WriteHeader(int(Err.StatusCode))
-					result = err
+					rspResult = err
 				} else {
 					writer.WriteHeader(http.StatusInternalServerError)
-					result = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeInvalidHeaderSys, err.Error())
+					rspResult = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeInvalidHeaderSys, err.Error())
 				}
 				goto RETURN
 			}
@@ -140,40 +151,54 @@ func (p *EndpointParser) handleWithReflect(svcV, req reflect.Value, callFunc cal
 			err = json.NewDecoder(request.Body).Decode(r)
 			if err != nil && err != io.EOF {
 				log.Errorf("err: %v", err)
-				result = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeInvalidReqSys, err.Error())
+				rspResult = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeInvalidReqSys, err.Error())
 				goto RETURN
 			}
-			log.Debugf("req: %v", r)
-			if v, ok := r.(validator); ok {
-				if err = v.Validate(); err != nil {
-					writer.WriteHeader(errorx.DefaultStatusCode)
-					result = errorx.CreateError(errorx.DefaultStatusCode, errorx.ErrCodeInvalidParamSys, err.Error())
+			log.Debugf("req[%s]: %+v", req.Type().Elem().Name(), r)
+			// processing before handler
+			for _, h := range p.beforeHandlerList {
+				ctx, r, err = h(ctx, r)
+				if err != nil {
+					log.Error("beforeHandler err", err.Error())
+					if Err, ok := err.(*errorx.Error); ok {
+						writer.WriteHeader(int(Err.StatusCode))
+						rspResult = err
+					} else {
+						writer.WriteHeader(http.StatusInternalServerError)
+						rspResult = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeInvalidBodySys, err.Error())
+					}
 					goto RETURN
 				}
+
 			}
 
+			svcV := reflect.ValueOf(p.svc)
 			values := callFunc([]reflect.Value{svcV, reflect.ValueOf(ctx), req})
-			rspV := values[0]
-			rspErr := values[1]
-			if IErr := rspErr.Interface(); IErr != nil {
-				log.Errorf("rsp err: %v", IErr)
-				if Err, ok := IErr.(*errorx.Error); ok {
-					if Err.StatusCode > 0 {
-						writer.WriteHeader(int(Err.StatusCode))
-					}
-					result = IErr
-				} else {
-					writer.WriteHeader(http.StatusInternalServerError)
-					result = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeInvalidReqSys, IErr.(error).Error())
+			rspResult = values[0].Interface()
+			rspErr := values[1].Interface()
+			for _, h := range p.afterHandlerList {
+				var E error
+				if rspErr != nil {
+					E = rspErr.(error)
 				}
-			} else {
-				result = rspV.Interface()
+				rspResult, err = h(rspResult, E)
+				if err != nil {
+					log.Errorf("rsp err: %v", err)
+					if Err, ok := err.(*errorx.Error); ok {
+						writer.WriteHeader(int(Err.StatusCode))
+						rspResult = err
+					} else {
+						writer.WriteHeader(http.StatusInternalServerError)
+						rspResult = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeUnknown, err.Error())
+					}
+					goto RETURN
+				}
 			}
 		}
 
 	RETURN:
 		var bodyBuf []byte
-		bodyBuf, err = json.Marshal(result)
+		bodyBuf, err = json.Marshal(rspResult)
 		if err != nil {
 			log.Errorf("err: %v", err)
 			return
@@ -192,32 +217,8 @@ func (p *EndpointParser) WithOptions(opts ...OptionFunc) {
 	}
 }
 
-func NewEndpointParser(svc interface{}, router *mux.Router, opts ...OptionFunc) *EndpointParser {
-	parser := &EndpointParser{
-		svc:    svc,
-		router: router,
-	}
-	for _, optFunc := range opts {
-		optFunc(parser)
-	}
-	return parser
-}
-
 func ParseService2HTTP(svc interface{}, router *mux.Router, opts ...OptionFunc) error {
-	parser := NewEndpointParser(svc, router, opts...)
+	parser := NewEndpointParser(svc, router)
+	parser.WithOptions(opts...)
 	return parser.Parse()
-}
-
-type OptionFunc func(parser *EndpointParser)
-
-func SetTimeoutMap(timeoutMap map[string]time.Duration) OptionFunc {
-	return func(parser *EndpointParser) {
-		parser.timeoutMap = timeoutMap
-	}
-}
-
-func SetJwtHook(hook jwt.HookFunc) OptionFunc {
-	return func(parser *EndpointParser) {
-		parser.jwtHook = hook
-	}
 }
