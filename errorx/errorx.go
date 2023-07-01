@@ -1,6 +1,7 @@
 package errorx
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -40,6 +41,12 @@ type Error struct {
 
 func (e *Error) Error() string {
 	return fmt.Sprintf("error: code = %d errcode = %d message = '%s' metadata = %v cause = %s", e.StatusCode, e.ErrorCode, e.Message, e.Metadata, e.cause)
+}
+
+// JSONBytes returns the JSON representation of the error.
+func (e *Error) JSONBytes() []byte {
+	buf, _ := json.Marshal(e)
+	return buf
 }
 
 // Unwrap provides compatibility for Go 1.13 error chains.
