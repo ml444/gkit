@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/ml444/gkit/middleware"
-	"github.com/ml444/gkit/middleware/httpmw"
 	"io"
 	"net/http"
 	"reflect"
@@ -26,8 +25,8 @@ const (
 	DELETE = "DELETE"
 )
 
-const contentType = "application/json; charset=utf-8"
-const globalTimeout = 5 * time.Second
+const contentTypeJson = "application/json; charset=utf-8"
+const globalTimeout = 60 * time.Second
 
 type HttpHandleFunc func(writer http.ResponseWriter, request *http.Request)
 type ReflectCallFunc func(in []reflect.Value) []reflect.Value
@@ -48,9 +47,9 @@ type EndpointParser struct {
 
 func NewEndpointParser(svc interface{}, router *mux.Router) *EndpointParser {
 	parser := &EndpointParser{
-		svc:               svc,
-		router:            router,
-		beforeHandlerList: []middleware.BeforeHandler{httpmw.Validator()},
+		svc:    svc,
+		router: router,
+		//beforeHandlerList: []middleware.BeforeHandler{httpmw.Validator()},
 		//afterHandlerList:  []middleware.AfterHandler{httpmw.CheckResponseError()},
 	}
 	return parser
@@ -60,7 +59,7 @@ func (p *EndpointParser) Parse() error {
 	var err error
 	svcT := reflect.TypeOf(p.svc)
 	if !strings.HasSuffix(svcT.Name(), "Service") {
-		err = fmt.Errorf("not found the suffix of 'Service' by %s", svcT.Name())
+		err = fmt.Errorf("not found the suffix of 'Service' by %s \n", svcT.Name())
 		log.Error(err.Error())
 		return err
 	}
@@ -94,7 +93,7 @@ func (p *EndpointParser) Parse() error {
 		}
 		var req = reflect.New(mn.Type.In(2).Elem())
 
-		p.router.Methods(httpMethod).PathPrefix("/" + svcNamePrefix).Path("/" + funcName).HandlerFunc(
+		p.router.Name(funcName).Methods(httpMethod).PathPrefix("/" + svcNamePrefix).Path("/" + funcName).HandlerFunc(
 			p.handleWithReflect(req, mn.Func.Call, timeout),
 		)
 	}
@@ -105,17 +104,15 @@ func (p *EndpointParser) handleWithReflect(req reflect.Value, callFunc ReflectCa
 	return func(writer http.ResponseWriter, request *http.Request) {
 		defer func() {
 			if Err := recover(); Err != nil {
-				//var brokenPipe bool
-				//if ne, ok := err.(*net.OpError); ok {
-				//	var se *os.SyscallError
-				//	if errorx.As(ne, &se) {
-				//		if strings.Contains(strings.ToLower(se.Error()), "broken pipe") || strings.Contains(strings.ToLower(se.Error()), "connection reset by peer") {
-				//			brokenPipe = true
-				//		}
-				//	}
-				//}
-				log.Fatalf("%v", Err)
+				log.Fatalf("panic: %v", Err)
 				writer.WriteHeader(http.StatusInternalServerError)
+				_, err := writer.Write(errorx.CreateError(
+					http.StatusInternalServerError,
+					errorx.ErrCodeUnknown,
+					fmt.Sprintf("PANIC: %v", Err)).JSONBytes())
+				if err != nil {
+					log.Errorf("err: %v", err)
+				}
 			}
 		}()
 		var (
@@ -129,7 +126,7 @@ func (p *EndpointParser) handleWithReflect(req reflect.Value, callFunc ReflectCa
 		}
 		defer cancel()
 
-		writer.Header().Set("Content-Type", contentType)
+		writer.Header().Set("Content-Type", contentTypeJson)
 		//ctx = context.WithValue(ctx, core.KeyHeaders, request.Header)
 		var err error
 		var rspResult interface{}
@@ -157,12 +154,12 @@ func (p *EndpointParser) handleWithReflect(req reflect.Value, callFunc ReflectCa
 				rspResult = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeInvalidReqSys, err.Error())
 				goto RETURN
 			}
-			log.Debugf("req[%s]: %v", req.Type().Elem().Name(), r)
+			log.Debugf("req[%s]: %+v", req.Type().Elem().Name(), r)
 			// processing before handler
 			for _, h := range p.beforeHandlerList {
 				ctx, r, err = h(ctx, r)
 				if err != nil {
-					log.Error(err)
+					log.Error("beforeHandler err", err.Error())
 					if Err, ok := err.(*errorx.Error); ok {
 						writer.WriteHeader(int(Err.StatusCode))
 						rspResult = err
@@ -180,7 +177,11 @@ func (p *EndpointParser) handleWithReflect(req reflect.Value, callFunc ReflectCa
 			rspResult = values[0].Interface()
 			rspErr := values[1].Interface()
 			for _, h := range p.afterHandlerList {
-				rspResult, err = h(rspResult, rspErr.(error))
+				var E error
+				if rspErr != nil {
+					E = rspErr.(error)
+				}
+				rspResult, err = h(rspResult, E)
 				if err != nil {
 					log.Errorf("rsp err: %v", err)
 					if Err, ok := err.(*errorx.Error); ok {
@@ -188,7 +189,7 @@ func (p *EndpointParser) handleWithReflect(req reflect.Value, callFunc ReflectCa
 						rspResult = err
 					} else {
 						writer.WriteHeader(http.StatusInternalServerError)
-						rspResult = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeInvalidBodySys, err.Error())
+						rspResult = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeUnknown, err.Error())
 					}
 					goto RETURN
 				}

@@ -20,14 +20,14 @@ func SetJwtHook(hook jwt.HookFunc) OptionFunc {
 	}
 }
 
-func AddBeforeHandler(handler middleware.BeforeHandler) OptionFunc {
+func AddBeforeHandler(handlers ...middleware.BeforeHandler) OptionFunc {
 	return func(parser *EndpointParser) {
-		parser.beforeHandlerList = append(parser.beforeHandlerList, handler)
+		parser.beforeHandlerList = append(parser.beforeHandlerList, handlers...)
 	}
 }
 
-func AddAfterHandler(handler middleware.AfterHandler) OptionFunc {
+func AddAfterHandler(handlers ...middleware.AfterHandler) OptionFunc {
 	return func(parser *EndpointParser) {
-		parser.afterHandlerList = append(parser.afterHandlerList, handler)
+		parser.afterHandlerList = append(parser.afterHandlerList, handlers...)
 	}
 }

@@ -11,7 +11,7 @@ require (
 	google.golang.org/genproto v0.0.0-20230303212802-e74f57abe488
 	google.golang.org/grpc v1.53.0
 	google.golang.org/protobuf v1.30.0
-	gorm.io/gorm v1.24.7-0.20230306060331-85eaf9eeda11
+	gorm.io/gorm v1.25.2-0.20230530020048-26663ab9bf55
 )
 
 require (
@@ -22,5 +22,7 @@ require (
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/petermattis/goid v0.0.0-20220302125637-5f11c28912df // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	golang.org/x/net v0.7.0 // indirect
 	golang.org/x/sys v0.6.0 // indirect
+	golang.org/x/text v0.7.0 // indirect
 )
