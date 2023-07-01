@@ -52,26 +52,32 @@ func (l StdLogger) GetLoggerName() string {
 func (l StdLogger) SetLoggerName(name string) {
 	l.name = name
 }
-func (_ StdLogger) Debug(values ...interface{}) { os.Stdout.Write([]byte(fmt.Sprint(values...))) }
-func (_ StdLogger) Info(values ...interface{})  { os.Stdout.Write([]byte(fmt.Sprint(values...))) }
-func (_ StdLogger) Warn(values ...interface{})  { os.Stdout.Write([]byte(fmt.Sprint(values...))) }
-func (_ StdLogger) Error(values ...interface{}) { os.Stdout.Write([]byte(fmt.Sprint(values...))) }
-func (_ StdLogger) Fatal(values ...interface{}) { os.Stdout.Write([]byte(fmt.Sprint(values...))) }
+func (_ StdLogger) Debug(values ...interface{}) {
+	os.Stdout.Write([]byte(fmt.Sprint(values...) + "\n"))
+}
+func (_ StdLogger) Info(values ...interface{}) { os.Stdout.Write([]byte(fmt.Sprint(values...) + "\n")) }
+func (_ StdLogger) Warn(values ...interface{}) { os.Stdout.Write([]byte(fmt.Sprint(values...) + "\n")) }
+func (_ StdLogger) Error(values ...interface{}) {
+	os.Stdout.Write([]byte(fmt.Sprint(values...) + "\n"))
+}
+func (_ StdLogger) Fatal(values ...interface{}) {
+	os.Stdout.Write([]byte(fmt.Sprint(values...) + "\n"))
+}
 
 func (_ StdLogger) Debugf(template string, values ...interface{}) {
-	os.Stdout.Write([]byte(fmt.Sprintf(template, values...)))
+	os.Stdout.Write([]byte(fmt.Sprintf(template, values...) + "\n"))
 }
 func (_ StdLogger) Infof(template string, values ...interface{}) {
-	os.Stdout.Write([]byte(fmt.Sprintf(template, values...)))
+	os.Stdout.Write([]byte(fmt.Sprintf(template, values...) + "\n"))
 }
 func (_ StdLogger) Warnf(template string, values ...interface{}) {
-	os.Stdout.Write([]byte(fmt.Sprintf(template, values...)))
+	os.Stdout.Write([]byte(fmt.Sprintf(template, values...) + "\n"))
 }
 func (_ StdLogger) Errorf(template string, values ...interface{}) {
-	os.Stdout.Write([]byte(fmt.Sprintf(template, values...)))
+	os.Stdout.Write([]byte(fmt.Sprintf(template, values...) + "\n"))
 }
 func (_ StdLogger) Fatalf(template string, values ...interface{}) {
-	os.Stdout.Write([]byte(fmt.Sprintf(template, values...)))
+	os.Stdout.Write([]byte(fmt.Sprintf(template, values...) + "\n"))
 }
 func GetLoggerName() string {
 	return logger.GetLoggerName()
