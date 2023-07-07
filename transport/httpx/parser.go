@@ -176,23 +176,26 @@ func (p *EndpointParser) handleWithReflect(req reflect.Value, callFunc ReflectCa
 			values := callFunc([]reflect.Value{svcV, reflect.ValueOf(ctx), req})
 			rspResult = values[0].Interface()
 			rspErr := values[1].Interface()
+
+			var E error
 			for _, h := range p.afterHandlerList {
-				var E error
 				if rspErr != nil {
 					E = rspErr.(error)
 				}
-				rspResult, err = h(rspResult, E)
-				if err != nil {
-					log.Errorf("rsp err: %v", err)
-					if Err, ok := err.(*errorx.Error); ok {
-						writer.WriteHeader(int(Err.StatusCode))
-						rspResult = err
-					} else {
-						writer.WriteHeader(http.StatusInternalServerError)
-						rspResult = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeUnknown, err.Error())
-					}
-					goto RETURN
+				rspResult, E = h(rspResult, E)
+
+			}
+
+			if E != nil {
+				log.Errorf("rsp err: %v", E)
+				if Err, ok := E.(*errorx.Error); ok {
+					writer.WriteHeader(int(Err.StatusCode))
+					rspResult = E
+				} else {
+					writer.WriteHeader(http.StatusInternalServerError)
+					rspResult = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeUnknown, E.Error())
 				}
+				goto RETURN
 			}
 		}
 
