@@ -38,8 +38,8 @@ type ProtoUpsertedAt interface {
 	GetCreatedAt() uint32
 	GetUpdatedAt() uint32
 	ProtoDeletedAt
-	//GetDeletedAt() uint32
-	//ProtoReflect() protoreflect.Message
+	// GetDeletedAt() uint32
+	// ProtoReflect() protoreflect.Message
 }
 type ProtoDeletedAt interface {
 	GetDeletedAt() uint32
@@ -308,4 +308,24 @@ func (s *Scope) SetOffsetAndLimitByListOption(opt *listoption.ListOption) *listo
 	}
 	s.Tx = s.Tx.Limit(int(opt.Limit)).Offset(int(opt.Offset))
 	return opt
+}
+
+func (s *Scope) Omit(value string) *Scope {
+	s.Tx.Omit(value)
+	return s
+}
+
+func (s *Scope) Unscoped() *Scope {
+	s.Tx.Unscoped()
+	return s
+}
+
+func (s *Scope) Preload(value string) *Scope {
+	s.Tx.Preload(value)
+	return s
+}
+
+func (s *Scope) Association(value string) *Scope {
+	s.Tx.Association(value)
+	return s
 }
