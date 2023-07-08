@@ -190,7 +190,7 @@ func (p *EndpointParser) handleWithReflect(req reflect.Value, callFunc ReflectCa
 				log.Errorf("rsp err: %v", E)
 				if Err, ok := E.(*errorx.Error); ok {
 					writer.WriteHeader(int(Err.StatusCode))
-					rspResult = E
+					rspResult = Err
 				} else {
 					writer.WriteHeader(http.StatusInternalServerError)
 					rspResult = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeUnknown, E.Error())
