@@ -310,8 +310,8 @@ func (s *Scope) SetOffsetAndLimitByListOption(opt *listoption.ListOption) *listo
 	return opt
 }
 
-func (s *Scope) Omit(value string) *Scope {
-	s.Tx.Omit(value)
+func (s *Scope) Omit(value ...string) *Scope {
+	s.Tx.Omit(value...)
 	return s
 }
 
@@ -320,8 +320,8 @@ func (s *Scope) Unscoped() *Scope {
 	return s
 }
 
-func (s *Scope) Preload(value string) *Scope {
-	s.Tx.Preload(value)
+func (s *Scope) Preload(query string, args ...interface{}) *Scope {
+	s.Tx.Preload(query, args)
 	return s
 }
 
