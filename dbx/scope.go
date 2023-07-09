@@ -321,7 +321,7 @@ func (s *Scope) Unscoped() *Scope {
 }
 
 func (s *Scope) Preload(query string, args ...interface{}) *Scope {
-	s.Tx.Preload(query, args)
+	s.Tx.Preload(query, args...)
 	return s
 }
 
