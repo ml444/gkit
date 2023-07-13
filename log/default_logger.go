@@ -2,12 +2,13 @@ package log
 
 import (
 	"fmt"
+	"io"
 	"os"
 )
 
 func init() {
 	if logger == nil {
-		logger = NewStdLogger()
+		logger = NewDefaultLogger(os.Stdout)
 	}
 }
 
@@ -38,46 +39,47 @@ func SetLogger(l Logger) {
 	logger = l
 }
 
-func NewStdLogger() Logger {
-	return StdLogger{name: "gkit"}
+func NewDefaultLogger(output io.Writer) Logger {
+	return &DefaultLogger{writer: output}
 }
 
-type StdLogger struct {
-	name string
+type DefaultLogger struct {
+	name   string
+	writer io.Writer
 }
 
-func (l StdLogger) GetLoggerName() string {
+func (l *DefaultLogger) Log(level string, msg string) {
+	l.writer.Write([]byte("["))
+	l.writer.Write([]byte(level))
+	l.writer.Write([]byte("] "))
+	l.writer.Write([]byte(msg))
+}
+func (l DefaultLogger) GetLoggerName() string {
 	return l.name
 }
-func (l StdLogger) SetLoggerName(name string) {
+func (l DefaultLogger) SetLoggerName(name string) {
 	l.name = name
 }
-func (_ StdLogger) Debug(values ...interface{}) {
-	os.Stdout.Write([]byte(fmt.Sprint(values...) + "\n"))
-}
-func (_ StdLogger) Info(values ...interface{}) { os.Stdout.Write([]byte(fmt.Sprint(values...) + "\n")) }
-func (_ StdLogger) Warn(values ...interface{}) { os.Stdout.Write([]byte(fmt.Sprint(values...) + "\n")) }
-func (_ StdLogger) Error(values ...interface{}) {
-	os.Stdout.Write([]byte(fmt.Sprint(values...) + "\n"))
-}
-func (_ StdLogger) Fatal(values ...interface{}) {
-	os.Stdout.Write([]byte(fmt.Sprint(values...) + "\n"))
-}
+func (l *DefaultLogger) Debug(values ...interface{}) { l.Log("DEG", fmt.Sprint(values...)) }
+func (l *DefaultLogger) Info(values ...interface{})  { l.Log("INF", fmt.Sprint(values...)) }
+func (l *DefaultLogger) Warn(values ...interface{})  { l.Log("WAN", fmt.Sprint(values...)) }
+func (l *DefaultLogger) Error(values ...interface{}) { l.Log("ERR", fmt.Sprint(values...)) }
+func (l *DefaultLogger) Fatal(values ...interface{}) { l.Log("FAT", fmt.Sprint(values...)) }
 
-func (_ StdLogger) Debugf(template string, values ...interface{}) {
-	os.Stdout.Write([]byte(fmt.Sprintf(template, values...) + "\n"))
+func (l *DefaultLogger) Debugf(template string, values ...interface{}) {
+	l.Log("DEG", fmt.Sprintf(template, values...))
 }
-func (_ StdLogger) Infof(template string, values ...interface{}) {
-	os.Stdout.Write([]byte(fmt.Sprintf(template, values...) + "\n"))
+func (l *DefaultLogger) Infof(template string, values ...interface{}) {
+	l.Log("INF", fmt.Sprintf(template, values...))
 }
-func (_ StdLogger) Warnf(template string, values ...interface{}) {
-	os.Stdout.Write([]byte(fmt.Sprintf(template, values...) + "\n"))
+func (l *DefaultLogger) Warnf(template string, values ...interface{}) {
+	l.Log("WAN", fmt.Sprintf(template, values...))
 }
-func (_ StdLogger) Errorf(template string, values ...interface{}) {
-	os.Stdout.Write([]byte(fmt.Sprintf(template, values...) + "\n"))
+func (l *DefaultLogger) Errorf(template string, values ...interface{}) {
+	l.Log("ERR", fmt.Sprintf(template, values...))
 }
-func (_ StdLogger) Fatalf(template string, values ...interface{}) {
-	os.Stdout.Write([]byte(fmt.Sprintf(template, values...) + "\n"))
+func (l *DefaultLogger) Fatalf(template string, values ...interface{}) {
+	l.Log("FAT", fmt.Sprintf(template, values...))
 }
 func GetLoggerName() string {
 	return logger.GetLoggerName()
