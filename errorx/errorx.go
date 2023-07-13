@@ -188,14 +188,17 @@ func Clone(err *Error) *Error {
 }
 
 // FromError try to convert an error to *Error.
-// It supports wrapped errorx.
 func FromError(err error) *Error {
 	if err == nil {
 		return nil
 	}
-	if se := new(Error); errors.As(err, &se) {
-		return se
+	if Err, ok := err.(*Error); ok {
+		return Err
 	}
+	// wrapped error
+	//if se := new(Error); errors.As(err, &se) {
+	//	return se
+	//}
 	gs, ok := status.FromError(err)
 	if !ok {
 		return CreateError(UnknownStatusCode, ErrCodeUnknown, err.Error())
@@ -206,10 +209,12 @@ func FromError(err error) *Error {
 		gs.Message(),
 	)
 	for _, detail := range gs.Details() {
-		switch d := detail.(type) {
-		case *errdetails.ErrorInfo:
-			ret.Message = d.Reason
-			return ret.WithMetadata(d.Metadata)
+		if ErrInfo, ok := detail.(*ErrorInfo); ok {
+			return CreateError(
+				ErrInfo.StatusCode,
+				ErrInfo.ErrorCode,
+				ErrInfo.Message,
+			).WithMetadata(ErrInfo.Metadata)
 		}
 	}
 	return ret
