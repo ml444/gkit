@@ -178,12 +178,12 @@ func (p *EndpointParser) handleWithReflect(req reflect.Value, callFunc ReflectCa
 			rspErr := values[1].Interface()
 
 			var E error
-			for _, h := range p.afterHandlerList {
-				if rspErr != nil {
-					E = rspErr.(error)
-				}
-				rspResult, E = h(rspResult, E)
+			if rspErr != nil {
+				E = rspErr.(error)
+			}
 
+			for _, h := range p.afterHandlerList {
+				rspResult, E = h(rspResult, E)
 			}
 
 			if E != nil {
