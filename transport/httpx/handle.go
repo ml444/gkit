@@ -11,6 +11,7 @@ import (
 	"github.com/ml444/gkit/core"
 	"github.com/ml444/gkit/errorx"
 	"github.com/ml444/gkit/log"
+	"github.com/ml444/gkit/pkg/env"
 	"github.com/ml444/gutil/netx"
 )
 
@@ -41,7 +42,7 @@ func HandleContextByHTTP(ctx context.Context, r *http.Request, hook jwt.HookFunc
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
 		log.Warn("not found Authorization")
-		if core.IsLocalEnv() {
+		if env.IsLocalEnv() {
 			header[core.CorpIdKey] = core.GetCorpId4Headers(r.Header)
 			header[core.UserIdKey] = core.GetUserId4Headers(r.Header)
 			header[core.ClientIdKey] = core.GetHeader4HTTP(r.Header, core.HttpHeaderClientId)
