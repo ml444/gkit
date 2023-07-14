@@ -147,7 +147,9 @@ func (p *EndpointParser) handleWithReflect(req reflect.Value, callFunc ReflectCa
 		}
 
 		{
-			var r = req.Interface()
+			newReq := reflect.New(req.Type().Elem())
+			r := newReq.Interface()
+
 			err = json.NewDecoder(request.Body).Decode(r)
 			if err != nil && err != io.EOF {
 				log.Errorf("err: %v", err)
@@ -173,7 +175,7 @@ func (p *EndpointParser) handleWithReflect(req reflect.Value, callFunc ReflectCa
 			}
 
 			svcV := reflect.ValueOf(p.svc)
-			values := callFunc([]reflect.Value{svcV, reflect.ValueOf(ctx), req})
+			values := callFunc([]reflect.Value{svcV, reflect.ValueOf(ctx), newReq})
 			rspResult = values[0].Interface()
 			rspErr := values[1].Interface()
 
