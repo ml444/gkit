@@ -684,11 +684,11 @@ func (opt *ListOption) SetSkipCount() *ListOption {
 	return opt
 }
 
-func (opt *ListOption) CloneSkipOpts() *ListOption {
+func (opt *ListOption) CloneWithoutOpts() *ListOption {
 	l := NewListOption().
 		SetOffset(opt.GetOffset()).
 		SetLimit(opt.GetLimit())
-	if l.SkipCount {
+	if opt.SkipCount {
 		l.SetSkipCount()
 	}
 	return l
@@ -708,7 +708,7 @@ func getOptTypeFromInterface(typ interface{}) uint32 {
 }
 
 func (opt *ListOption) CloneChangeOptTypes(optPairs ...interface{}) *ListOption {
-	l := opt.CloneSkipOpts()
+	l := opt.CloneWithoutOpts()
 	if len(optPairs)%2 != 0 {
 		panic(fmt.Sprintf("invalid number of opts argument %d", len(optPairs)))
 	}
