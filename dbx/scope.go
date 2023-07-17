@@ -244,8 +244,9 @@ func (s *Scope) Or(query interface{}, args ...interface{}) *Scope {
 //
 //	db.Order("name DESC")
 //	db.Order(clause.OrderByColumn{Column: clause.Column{Name: "name"}, Desc: true})
-func (s *Scope) Order(value interface{}) {
+func (s *Scope) Order(value interface{}) *Scope {
 	s.Tx = s.Tx.Order(value)
+	return s
 }
 
 func (s *Scope) Group(query string) *Scope {
@@ -265,12 +266,14 @@ func (s *Scope) Count(total *int64) error {
 	return s.Tx.Count(total).Error
 }
 
-func (s *Scope) Offset(offset int) {
+func (s *Scope) Offset(offset int) *Scope {
 	s.Tx = s.Tx.Offset(offset)
+	return s
 }
 
-func (s *Scope) Limit(limit int) {
+func (s *Scope) Limit(limit int) *Scope {
 	s.Tx = s.Tx.Limit(limit)
+	return s
 }
 func (s *Scope) PaginateQuery(opt *listoption.ListOption, list interface{}) (*listoption.Paginate, error) {
 	var total int64
