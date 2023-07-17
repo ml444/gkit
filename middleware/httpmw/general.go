@@ -9,8 +9,8 @@ import (
 func CheckResponseError() middleware.AfterHandler {
 	return func(rsp interface{}, err error) (interface{}, error) {
 		if err != nil {
-			if Err, ok := err.(*errorx.Error); !ok {
-				err = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeUnknown, Err.Error())
+			if _, ok := err.(*errorx.Error); !ok {
+				err = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeUnknown, err.Error())
 			}
 		}
 		return rsp, err
