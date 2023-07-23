@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/status"
@@ -240,6 +242,9 @@ func IsNotFoundErr(err error, errCode int32) bool {
 		if eCode == ErrCodeRecordNotFoundSys || eCode == errCode {
 			return true
 		}
+	}
+	if strings.Contains(err.Error(), strconv.FormatInt(int64(errCode), 10)) {
+		return true
 	}
 	return false
 }

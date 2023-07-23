@@ -6,11 +6,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ml444/gkit/errorx"
-	"github.com/ml444/gkit/listoption"
-	log "github.com/ml444/glog"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"gorm.io/gorm"
+
+	"github.com/ml444/gkit/errorx"
+	"github.com/ml444/gkit/listoption"
+	"github.com/ml444/gkit/log"
 )
 
 const (
@@ -187,7 +188,7 @@ func (s *Scope) LikePrefix(field string, value string) *Scope {
 }
 
 func (s *Scope) Where(query interface{}, args ...interface{}) *Scope {
-	s.Tx.Where(query, args)
+	s.Tx.Where(query, args...)
 	return s
 }
 

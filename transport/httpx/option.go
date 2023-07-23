@@ -1,9 +1,10 @@
 package httpx
 
 import (
+	"time"
+
 	"github.com/ml444/gkit/auth/jwt"
 	"github.com/ml444/gkit/middleware"
-	"time"
 )
 
 type OptionFunc func(parser *EndpointParser)
@@ -17,6 +18,12 @@ func SetTimeoutMap(timeoutMap map[string]time.Duration) OptionFunc {
 func SetJwtHook(hook jwt.HookFunc) OptionFunc {
 	return func(parser *EndpointParser) {
 		parser.jwtHook = hook
+	}
+}
+
+func SetTransmitToken() OptionFunc {
+	return func(parser *EndpointParser) {
+		parser.isTransmitToken = true
 	}
 }
 

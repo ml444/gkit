@@ -4,15 +4,19 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
+
+	"github.com/ml444/gutil/netx"
+	"github.com/ml444/gutil/typex"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/ml444/gkit/auth"
 	"github.com/ml444/gkit/auth/jwt"
-	"github.com/ml444/gkit/core"
+	"github.com/ml444/gkit/biz/header"
 	"github.com/ml444/gkit/errorx"
 	"github.com/ml444/gkit/log"
 	"github.com/ml444/gkit/pkg/env"
-	"github.com/ml444/gutil/netx"
 )
 
 func getCacheTokenCustomData(ctx context.Context, signatureStr string) (*jwt.CustomData, error) {
@@ -33,21 +37,24 @@ func getCacheTokenCustomData(ctx context.Context, signatureStr string) (*jwt.Cus
 	return data, nil
 }
 
-func HandleContextByHTTP(ctx context.Context, r *http.Request, hook jwt.HookFunc) (context.Context, error) {
-	header := core.Header{
-		core.ClientTypeKey: core.GetHeader4HTTP(r.Header, core.HttpHeaderClientType),
-		core.RemoteIp:      netx.GetRemoteIp(r),
+func transferHeaderToCtx(ctx context.Context, r *http.Request, hook jwt.HookFunc, isTransferToken bool) (context.Context, error) {
+	h := map[string]string{
+		header.ClientTypeKey: header.GetHeader4HTTP(r.Header, header.ClientTypeKey),
+		header.RemoteIpKey:   netx.GetRemoteIp(r),
+		header.HttpPathKey:   r.URL.Path,
+		header.TraceIdKey:    header.GetTraceId4Headers(r.Header),
 	}
 	// Get token from Authorization header
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
 		log.Warn("not found Authorization")
 		if env.IsLocalEnv() {
-			header[core.CorpIdKey] = core.GetCorpId4Headers(r.Header)
-			header[core.UserIdKey] = core.GetUserId4Headers(r.Header)
-			header[core.ClientIdKey] = core.GetHeader4HTTP(r.Header, core.HttpHeaderClientId)
+			h[header.CorpIdKey] = header.GetHeader4HTTP(r.Header, header.CorpIdKey)
+			h[header.UserIdKey] = header.GetHeader4HTTP(r.Header, header.UserIdKey)
+			h[header.ClientIdKey] = header.GetHeader4HTTP(r.Header, header.ClientIdKey)
 		}
-		ctx = context.WithValue(ctx, core.HeadersKey, header)
+		md := metadata.New(h)
+		ctx = metadata.NewIncomingContext(ctx, md)
 		return ctx, nil
 	}
 	authHeaderParts := strings.Split(authHeader, " ")
@@ -55,7 +62,9 @@ func HandleContextByHTTP(ctx context.Context, r *http.Request, hook jwt.HookFunc
 		return ctx, jwt.ErrTokenFormat()
 	}
 	tokenString := authHeaderParts[1]
-
+	if isTransferToken {
+		h[header.TokenKey] = tokenString
+	}
 	partList := strings.Split(tokenString, ".")
 	if len(partList) != 3 {
 		return ctx, jwt.ErrTokenFormat()
@@ -103,20 +112,20 @@ func HandleContextByHTTP(ctx context.Context, r *http.Request, hook jwt.HookFunc
 		if needSaveData {
 			auth.SetCacheAuthDataBySign(ctx, signatureStr, data)
 		}
-		log.Info(data)
-		header[core.CorpIdKey] = data.CorpId
-		header[core.UserIdKey] = data.UserId
-		header[core.ClientIdKey] = data.ClientId
-		header[core.ClientTypeKey] = data.ClientType
+		log.Debug(data)
+		h[header.CorpIdKey] = strconv.FormatUint(data.CorpId, 10)
+		h[header.UserIdKey] = strconv.FormatUint(data.UserId, 10)
+		h[header.ClientIdKey] = data.ClientId
+		h[header.ClientTypeKey] = data.ClientType
 		if data.Extra != nil {
 			for k, v := range data.Extra {
-				header[k] = v
+				h[k] = typex.AnyToStr(v)
 			}
 		}
 	}
-	ctx = context.WithValue(ctx, core.HeadersKey, header)
 
-	//ctx = context.WithValue(ctx, jwt.KeyJWTToken, tokenString)
+	md := metadata.New(h)
+	ctx = metadata.NewIncomingContext(ctx, md)
 	return ctx, nil
 }
 

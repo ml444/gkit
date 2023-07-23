@@ -4,18 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/ml444/gkit/middleware"
 	"io"
 	"net/http"
 	"reflect"
 	"strings"
 	"time"
 
+	"github.com/ml444/gkit/middleware"
+
 	"github.com/gorilla/mux"
+	"github.com/ml444/gutil/str"
+
 	"github.com/ml444/gkit/auth/jwt"
 	"github.com/ml444/gkit/errorx"
 	"github.com/ml444/gkit/log"
-	"github.com/ml444/gutil/str"
 )
 
 const (
@@ -30,16 +32,13 @@ const globalTimeout = 60 * time.Second
 
 type HttpHandleFunc func(writer http.ResponseWriter, request *http.Request)
 type ReflectCallFunc func(in []reflect.Value) []reflect.Value
-type validator interface {
-	Validate() error
-}
 
 type EndpointParser struct {
-	svc            interface{}
-	router         *mux.Router
-	timeoutMap     map[string]time.Duration
-	jwtHook        jwt.HookFunc
-	enableCheckJWT bool
+	svc             interface{}
+	router          *mux.Router
+	timeoutMap      map[string]time.Duration
+	jwtHook         jwt.HookFunc
+	isTransmitToken bool
 
 	beforeHandlerList []middleware.BeforeHandler
 	afterHandlerList  []middleware.AfterHandler
@@ -130,9 +129,8 @@ func (p *EndpointParser) handleWithReflect(req reflect.Value, callFunc ReflectCa
 		//ctx = context.WithValue(ctx, core.KeyHeaders, request.Header)
 		var err error
 		var rspResult interface{}
-		//if p.enableCheckJWT
 		{
-			ctx, err = HandleContextByHTTP(ctx, request, p.jwtHook)
+			ctx, err = transferHeaderToCtx(ctx, request, p.jwtHook, p.isTransmitToken)
 			if err != nil {
 				log.Error(err)
 				if Err, ok := err.(*errorx.Error); ok {
