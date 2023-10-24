@@ -7,9 +7,9 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 
-	"github.com/ml444/gkit/biz/header"
 	"github.com/ml444/gkit/log"
 	"github.com/ml444/gkit/middleware"
+	header2 "github.com/ml444/gkit/pkg/header"
 	"github.com/ml444/gkit/transport"
 )
 
@@ -22,7 +22,7 @@ func GRPCServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 			tr = transport.GetTransportFromGrpcServer(ctx, info, transport.Metadata{})
 			ctx = transport.ToContext(ctx, tr)
 		}
-		traceId := header.GetTraceId(ctx)
+		traceId := header2.GetTraceId(ctx)
 		if traceId == "" {
 			var span trace.Span
 			ctx, span = tracer.Start(ctx, tr.GetOperation(), tr.GetReqHeader())
@@ -47,7 +47,7 @@ func GRPCClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
 			tr = transport.GetTransportFromGrpcClient(ctx, method, cc, transport.Metadata{})
 			ctx = transport.ToContext(ctx, tr)
 		}
-		traceId := header.GetTraceId(ctx)
+		traceId := header2.GetTraceId(ctx)
 		if traceId == "" {
 			var span trace.Span
 			ctx, span = tracer.Start(ctx, tr.GetOperation(), tr.GetReqHeader())
@@ -76,8 +76,8 @@ func HTTPMiddleware(opts ...Option) middleware.HttpMiddleware {
 			ctx, span = tracer.Start(ctx, tr.GetOperation(), tr.GetReqHeader())
 			defer func() { tracer.End(ctx, span, nil, nil) }()
 			traceId := TraceID(ctx)
-			writer.Header().Set(header.TraceIdKey, traceId)
-			header.SetTraceId2Headers(request.Header, traceId)
+			writer.Header().Set(header2.TraceIdKey, traceId)
+			header2.SetTraceId2Headers(request.Header, traceId)
 			CacheTraceId.SetTraceIdWithoutKey(traceId)
 			defer func() { CacheTraceId.SetTraceIdWithoutKey("") }()
 			log.Debugf("===>Server TraceId: %s", CacheTraceId.GetTraceIdWithoutKey())

@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.28.1
 // 	protoc        v3.21.5
-// source: listoption.proto
+// source: listoption/listoption.proto
 
 package listoption
 
@@ -20,45 +20,35 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// 分页拉取机制
-type ListOption struct {
+// Options for list queries
+type Options struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	// @desc: 搜索过滤逻辑，不支持逻辑或
-	//
-	//	options内部是逻辑与关系，暂不支持逻辑或；尽量避免复杂的过滤逻辑，后台不好分页
-	//
-	// @ignore: all
-	Options []*ListOption_Option `protobuf:"bytes,1,rep,name=options,proto3" json:"options,omitempty"`
-	// @desc: 需要获取的索引开始位置
-	Offset uint32 `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
-	// @desc: 分页的每页字段长度
-	Limit uint32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
-	// @desc: = true 时, 就算 offset = 0 也不要 count
-	SkipCount bool `protobuf:"varint,4,opt,name=skip_count,json=skipCount,proto3" json:"skip_count,omitempty"`
-	// @desc: 需要获取的索引开始位置标记
-	OffsetToken string `protobuf:"bytes,5,opt,name=offset_token,json=offsetToken,proto3" json:"offset_token,omitempty"`
+	// @desc:  options are internally a logical "And" relationship,
+	// logical "or" is not supported at this time.
+	// Avoid complex filtering queries
+	Options []*Options_Option `protobuf:"bytes,1,rep,name=options,proto3" json:"options,omitempty"`
 }
 
-func (x *ListOption) Reset() {
-	*x = ListOption{}
+func (x *Options) Reset() {
+	*x = Options{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_listoption_proto_msgTypes[0]
+		mi := &file_listoption_listoption_proto_msgTypes[0]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
 }
 
-func (x *ListOption) String() string {
+func (x *Options) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ListOption) ProtoMessage() {}
+func (*Options) ProtoMessage() {}
 
-func (x *ListOption) ProtoReflect() protoreflect.Message {
-	mi := &file_listoption_proto_msgTypes[0]
+func (x *Options) ProtoReflect() protoreflect.Message {
+	mi := &file_listoption_listoption_proto_msgTypes[0]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -69,67 +59,45 @@ func (x *ListOption) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ListOption.ProtoReflect.Descriptor instead.
-func (*ListOption) Descriptor() ([]byte, []int) {
-	return file_listoption_proto_rawDescGZIP(), []int{0}
+// Deprecated: Use Options.ProtoReflect.Descriptor instead.
+func (*Options) Descriptor() ([]byte, []int) {
+	return file_listoption_listoption_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *ListOption) GetOptions() []*ListOption_Option {
+func (x *Options) GetOptions() []*Options_Option {
 	if x != nil {
 		return x.Options
 	}
 	return nil
 }
 
-func (x *ListOption) GetOffset() uint32 {
-	if x != nil {
-		return x.Offset
-	}
-	return 0
-}
-
-func (x *ListOption) GetLimit() uint32 {
-	if x != nil {
-		return x.Limit
-	}
-	return 0
-}
-
-func (x *ListOption) GetSkipCount() bool {
-	if x != nil {
-		return x.SkipCount
-	}
-	return false
-}
-
-func (x *ListOption) GetOffsetToken() string {
-	if x != nil {
-		return x.OffsetToken
-	}
-	return ""
-}
-
+// There are two modes of paging:
+//  1. Classic paging mode. Use "Page", "Size" and "Total" for paging.
+//  2. Database preferred mode. Directly use "Offset" and "Size" for paging,
+//     similar to SQL's "offset" and "limit ".
+//     Of course, the total number is still "Total".
 type Paginate struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	// @desc: 当前获取到的第一个的索引位置
-	Offset uint32 `protobuf:"varint,1,opt,name=offset,proto3" json:"offset,omitempty"`
-	// @desc: 每页结果数
-	Limit uint32 `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
-	// @desc: 总页数
-	Total int64 `protobuf:"varint,3,opt,name=total,proto3" json:"total,omitempty"`
-	// @desc: 是否有更多数据，新字段，老接口不一定会填，要跟后端开发沟通好
-	HasMore bool `protobuf:"varint,4,opt,name=has_more,json=hasMore,proto3" json:"has_more,omitempty"`
-	// @desc: 下次索引开始位置标记,为空标示没有下一个了
-	NextOffsetToken string `protobuf:"bytes,5,opt,name=next_offset_token,json=nextOffsetToken,proto3" json:"next_offset_token,omitempty"`
+	// @desc: current page
+	Page uint32 `protobuf:"varint,1,opt,name=page,proto3" json:"page,omitempty"`
+	// @desc: page size
+	Size uint32 `protobuf:"varint,2,opt,name=size,proto3" json:"size,omitempty"`
+	// @desc: offset is the starting point of the table index.
+	Offset uint32 `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
+	// @desc: total number of data
+	Total int64 `protobuf:"varint,5,opt,name=total,proto3" json:"total,omitempty"`
+	// @desc: When SkipCount is true,
+	// even if CurrentPage is equal to 1, don't count the total.
+	SkipCount bool `protobuf:"varint,6,opt,name=skip_count,json=skipCount,proto3" json:"skip_count,omitempty"`
 }
 
 func (x *Paginate) Reset() {
 	*x = Paginate{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_listoption_proto_msgTypes[1]
+		mi := &file_listoption_listoption_proto_msgTypes[1]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -142,7 +110,7 @@ func (x *Paginate) String() string {
 func (*Paginate) ProtoMessage() {}
 
 func (x *Paginate) ProtoReflect() protoreflect.Message {
-	mi := &file_listoption_proto_msgTypes[1]
+	mi := &file_listoption_listoption_proto_msgTypes[1]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -155,19 +123,26 @@ func (x *Paginate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Paginate.ProtoReflect.Descriptor instead.
 func (*Paginate) Descriptor() ([]byte, []int) {
-	return file_listoption_proto_rawDescGZIP(), []int{1}
+	return file_listoption_listoption_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *Paginate) GetPage() uint32 {
+	if x != nil {
+		return x.Page
+	}
+	return 0
+}
+
+func (x *Paginate) GetSize() uint32 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
 }
 
 func (x *Paginate) GetOffset() uint32 {
 	if x != nil {
 		return x.Offset
-	}
-	return 0
-}
-
-func (x *Paginate) GetLimit() uint32 {
-	if x != nil {
-		return x.Limit
 	}
 	return 0
 }
@@ -179,48 +154,44 @@ func (x *Paginate) GetTotal() int64 {
 	return 0
 }
 
-func (x *Paginate) GetHasMore() bool {
+func (x *Paginate) GetSkipCount() bool {
 	if x != nil {
-		return x.HasMore
+		return x.SkipCount
 	}
 	return false
 }
 
-func (x *Paginate) GetNextOffsetToken() string {
-	if x != nil {
-		return x.NextOffsetToken
-	}
-	return ""
-}
-
-type ListOption_Option struct {
+// Scroll: mode. Do not count the total, Use "Size" and "NextToken" for paging.
+//
+//	through the "NextToken" keep getting the next page until the data is finished.
+type Scroll struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	// @desc: 类型，各业务定义的type
-	Type int32 `protobuf:"varint,1,opt,name=type,proto3" json:"type,omitempty"`
-	// @desc: 参数，只支持1个参数，参数实际类型和意义由type决定
-	Value string `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	// @desc: page size
+	Size uint32 `protobuf:"varint,1,opt,name=size,proto3" json:"size,omitempty"`
+	// @desc: next page token
+	NextToken string `protobuf:"bytes,2,opt,name=next_token,json=nextToken,proto3" json:"next_token,omitempty"`
 }
 
-func (x *ListOption_Option) Reset() {
-	*x = ListOption_Option{}
+func (x *Scroll) Reset() {
+	*x = Scroll{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_listoption_proto_msgTypes[2]
+		mi := &file_listoption_listoption_proto_msgTypes[2]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
 }
 
-func (x *ListOption_Option) String() string {
+func (x *Scroll) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ListOption_Option) ProtoMessage() {}
+func (*Scroll) ProtoMessage() {}
 
-func (x *ListOption_Option) ProtoReflect() protoreflect.Message {
-	mi := &file_listoption_proto_msgTypes[2]
+func (x *Scroll) ProtoReflect() protoreflect.Message {
+	mi := &file_listoption_listoption_proto_msgTypes[2]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -231,82 +202,140 @@ func (x *ListOption_Option) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ListOption_Option.ProtoReflect.Descriptor instead.
-func (*ListOption_Option) Descriptor() ([]byte, []int) {
-	return file_listoption_proto_rawDescGZIP(), []int{0, 0}
+// Deprecated: Use Scroll.ProtoReflect.Descriptor instead.
+func (*Scroll) Descriptor() ([]byte, []int) {
+	return file_listoption_listoption_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *ListOption_Option) GetType() int32 {
+func (x *Scroll) GetSize() uint32 {
 	if x != nil {
-		return x.Type
+		return x.Size
 	}
 	return 0
 }
 
-func (x *ListOption_Option) GetValue() string {
+func (x *Scroll) GetNextToken() string {
+	if x != nil {
+		return x.NextToken
+	}
+	return ""
+}
+
+type Options_Option struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// @desc: optional query item defined by each business,
+	// which determines the type of value
+	Kind int32 `protobuf:"varint,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	// @desc: The value is transmitted uniformly as a string,
+	// with kind determining the type of the value.
+	// If the value is an array or slice separate it with ",".
+	Value string `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+}
+
+func (x *Options_Option) Reset() {
+	*x = Options_Option{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_listoption_listoption_proto_msgTypes[3]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Options_Option) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Options_Option) ProtoMessage() {}
+
+func (x *Options_Option) ProtoReflect() protoreflect.Message {
+	mi := &file_listoption_listoption_proto_msgTypes[3]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Options_Option.ProtoReflect.Descriptor instead.
+func (*Options_Option) Descriptor() ([]byte, []int) {
+	return file_listoption_listoption_proto_rawDescGZIP(), []int{0, 0}
+}
+
+func (x *Options_Option) GetKind() int32 {
+	if x != nil {
+		return x.Kind
+	}
+	return 0
+}
+
+func (x *Options_Option) GetValue() string {
 	if x != nil {
 		return x.Value
 	}
 	return ""
 }
 
-var File_listoption_proto protoreflect.FileDescriptor
+var File_listoption_listoption_proto protoreflect.FileDescriptor
 
-var file_listoption_proto_rawDesc = []byte{
-	0x0a, 0x10, 0x6c, 0x69, 0x73, 0x74, 0x6f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x2e, 0x70, 0x72, 0x6f,
-	0x74, 0x6f, 0x12, 0x0a, 0x6c, 0x69, 0x73, 0x74, 0x6f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x22, 0xe9,
-	0x01, 0x0a, 0x0a, 0x4c, 0x69, 0x73, 0x74, 0x4f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x37, 0x0a,
-	0x07, 0x6f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x1d,
-	0x2e, 0x6c, 0x69, 0x73, 0x74, 0x6f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x2e, 0x4c, 0x69, 0x73, 0x74,
-	0x4f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x2e, 0x4f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x07, 0x6f,
-	0x70, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x12, 0x16, 0x0a, 0x06, 0x6f, 0x66, 0x66, 0x73, 0x65, 0x74,
-	0x18, 0x02, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x06, 0x6f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x12, 0x14,
-	0x0a, 0x05, 0x6c, 0x69, 0x6d, 0x69, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x05, 0x6c,
-	0x69, 0x6d, 0x69, 0x74, 0x12, 0x1d, 0x0a, 0x0a, 0x73, 0x6b, 0x69, 0x70, 0x5f, 0x63, 0x6f, 0x75,
-	0x6e, 0x74, 0x18, 0x04, 0x20, 0x01, 0x28, 0x08, 0x52, 0x09, 0x73, 0x6b, 0x69, 0x70, 0x43, 0x6f,
-	0x75, 0x6e, 0x74, 0x12, 0x21, 0x0a, 0x0c, 0x6f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x5f, 0x74, 0x6f,
-	0x6b, 0x65, 0x6e, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x6f, 0x66, 0x66, 0x73, 0x65,
-	0x74, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x1a, 0x32, 0x0a, 0x06, 0x4f, 0x70, 0x74, 0x69, 0x6f, 0x6e,
-	0x12, 0x12, 0x0a, 0x04, 0x74, 0x79, 0x70, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x05, 0x52, 0x04,
-	0x74, 0x79, 0x70, 0x65, 0x12, 0x14, 0x0a, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20,
-	0x01, 0x28, 0x09, 0x52, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x22, 0x95, 0x01, 0x0a, 0x08, 0x50,
-	0x61, 0x67, 0x69, 0x6e, 0x61, 0x74, 0x65, 0x12, 0x16, 0x0a, 0x06, 0x6f, 0x66, 0x66, 0x73, 0x65,
-	0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x06, 0x6f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x12,
-	0x14, 0x0a, 0x05, 0x6c, 0x69, 0x6d, 0x69, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x05,
-	0x6c, 0x69, 0x6d, 0x69, 0x74, 0x12, 0x14, 0x0a, 0x05, 0x74, 0x6f, 0x74, 0x61, 0x6c, 0x18, 0x03,
-	0x20, 0x01, 0x28, 0x03, 0x52, 0x05, 0x74, 0x6f, 0x74, 0x61, 0x6c, 0x12, 0x19, 0x0a, 0x08, 0x68,
-	0x61, 0x73, 0x5f, 0x6d, 0x6f, 0x72, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x08, 0x52, 0x07, 0x68,
-	0x61, 0x73, 0x4d, 0x6f, 0x72, 0x65, 0x12, 0x2a, 0x0a, 0x11, 0x6e, 0x65, 0x78, 0x74, 0x5f, 0x6f,
-	0x66, 0x66, 0x73, 0x65, 0x74, 0x5f, 0x74, 0x6f, 0x6b, 0x65, 0x6e, 0x18, 0x05, 0x20, 0x01, 0x28,
-	0x09, 0x52, 0x0f, 0x6e, 0x65, 0x78, 0x74, 0x4f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x54, 0x6f, 0x6b,
-	0x65, 0x6e, 0x42, 0x48, 0x0a, 0x1a, 0x63, 0x6f, 0x6d, 0x2e, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62,
-	0x2e, 0x67, 0x6b, 0x69, 0x74, 0x2e, 0x6c, 0x69, 0x73, 0x74, 0x6f, 0x70, 0x74, 0x69, 0x6f, 0x6e,
-	0x50, 0x01, 0x5a, 0x17, 0x2e, 0x2f, 0x6c, 0x69, 0x73, 0x74, 0x6f, 0x70, 0x74, 0x69, 0x6f, 0x6e,
-	0x3b, 0x6c, 0x69, 0x73, 0x74, 0x6f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0xa2, 0x02, 0x0e, 0x47, 0x6b,
-	0x69, 0x74, 0x4c, 0x69, 0x73, 0x74, 0x4f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x62, 0x06, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x33,
+var file_listoption_listoption_proto_rawDesc = []byte{
+	0x0a, 0x1b, 0x6c, 0x69, 0x73, 0x74, 0x6f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x2f, 0x6c, 0x69, 0x73,
+	0x74, 0x6f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x0a, 0x6c,
+	0x69, 0x73, 0x74, 0x6f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x22, 0x73, 0x0a, 0x07, 0x4f, 0x70, 0x74,
+	0x69, 0x6f, 0x6e, 0x73, 0x12, 0x34, 0x0a, 0x07, 0x6f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x18,
+	0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x1a, 0x2e, 0x6c, 0x69, 0x73, 0x74, 0x6f, 0x70, 0x74, 0x69,
+	0x6f, 0x6e, 0x2e, 0x4f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x2e, 0x4f, 0x70, 0x74, 0x69, 0x6f,
+	0x6e, 0x52, 0x07, 0x6f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x1a, 0x32, 0x0a, 0x06, 0x4f, 0x70,
+	0x74, 0x69, 0x6f, 0x6e, 0x12, 0x12, 0x0a, 0x04, 0x6b, 0x69, 0x6e, 0x64, 0x18, 0x01, 0x20, 0x01,
+	0x28, 0x05, 0x52, 0x04, 0x6b, 0x69, 0x6e, 0x64, 0x12, 0x14, 0x0a, 0x05, 0x76, 0x61, 0x6c, 0x75,
+	0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x22, 0x7f,
+	0x0a, 0x08, 0x50, 0x61, 0x67, 0x69, 0x6e, 0x61, 0x74, 0x65, 0x12, 0x12, 0x0a, 0x04, 0x70, 0x61,
+	0x67, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x04, 0x70, 0x61, 0x67, 0x65, 0x12, 0x12,
+	0x0a, 0x04, 0x73, 0x69, 0x7a, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x04, 0x73, 0x69,
+	0x7a, 0x65, 0x12, 0x16, 0x0a, 0x06, 0x6f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x18, 0x03, 0x20, 0x01,
+	0x28, 0x0d, 0x52, 0x06, 0x6f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x12, 0x14, 0x0a, 0x05, 0x74, 0x6f,
+	0x74, 0x61, 0x6c, 0x18, 0x05, 0x20, 0x01, 0x28, 0x03, 0x52, 0x05, 0x74, 0x6f, 0x74, 0x61, 0x6c,
+	0x12, 0x1d, 0x0a, 0x0a, 0x73, 0x6b, 0x69, 0x70, 0x5f, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x18, 0x06,
+	0x20, 0x01, 0x28, 0x08, 0x52, 0x09, 0x73, 0x6b, 0x69, 0x70, 0x43, 0x6f, 0x75, 0x6e, 0x74, 0x22,
+	0x3b, 0x0a, 0x06, 0x53, 0x63, 0x72, 0x6f, 0x6c, 0x6c, 0x12, 0x12, 0x0a, 0x04, 0x73, 0x69, 0x7a,
+	0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x04, 0x73, 0x69, 0x7a, 0x65, 0x12, 0x1d, 0x0a,
+	0x0a, 0x6e, 0x65, 0x78, 0x74, 0x5f, 0x74, 0x6f, 0x6b, 0x65, 0x6e, 0x18, 0x02, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x09, 0x6e, 0x65, 0x78, 0x74, 0x54, 0x6f, 0x6b, 0x65, 0x6e, 0x42, 0x5c, 0x0a, 0x1a,
+	0x63, 0x6f, 0x6d, 0x2e, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x67, 0x6b, 0x69, 0x74, 0x2e,
+	0x6c, 0x69, 0x73, 0x74, 0x6f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x50, 0x01, 0x5a, 0x2b, 0x67, 0x69,
+	0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x6d, 0x6c, 0x34, 0x34, 0x34, 0x2f, 0x67,
+	0x6b, 0x69, 0x74, 0x2f, 0x6c, 0x69, 0x73, 0x74, 0x6f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x3b, 0x6c,
+	0x69, 0x73, 0x74, 0x6f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0xa2, 0x02, 0x0e, 0x47, 0x6b, 0x69, 0x74,
+	0x4c, 0x69, 0x73, 0x74, 0x4f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74,
+	0x6f, 0x33,
 }
 
 var (
-	file_listoption_proto_rawDescOnce sync.Once
-	file_listoption_proto_rawDescData = file_listoption_proto_rawDesc
+	file_listoption_listoption_proto_rawDescOnce sync.Once
+	file_listoption_listoption_proto_rawDescData = file_listoption_listoption_proto_rawDesc
 )
 
-func file_listoption_proto_rawDescGZIP() []byte {
-	file_listoption_proto_rawDescOnce.Do(func() {
-		file_listoption_proto_rawDescData = protoimpl.X.CompressGZIP(file_listoption_proto_rawDescData)
+func file_listoption_listoption_proto_rawDescGZIP() []byte {
+	file_listoption_listoption_proto_rawDescOnce.Do(func() {
+		file_listoption_listoption_proto_rawDescData = protoimpl.X.CompressGZIP(file_listoption_listoption_proto_rawDescData)
 	})
-	return file_listoption_proto_rawDescData
+	return file_listoption_listoption_proto_rawDescData
 }
 
-var file_listoption_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
-var file_listoption_proto_goTypes = []interface{}{
-	(*ListOption)(nil),        // 0: listoption.ListOption
-	(*Paginate)(nil),          // 1: listoption.Paginate
-	(*ListOption_Option)(nil), // 2: listoption.ListOption.Option
+var file_listoption_listoption_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_listoption_listoption_proto_goTypes = []interface{}{
+	(*Options)(nil),        // 0: listoption.Options
+	(*Paginate)(nil),       // 1: listoption.Paginate
+	(*Scroll)(nil),         // 2: listoption.Scroll
+	(*Options_Option)(nil), // 3: listoption.Options.Option
 }
-var file_listoption_proto_depIdxs = []int32{
-	2, // 0: listoption.ListOption.options:type_name -> listoption.ListOption.Option
+var file_listoption_listoption_proto_depIdxs = []int32{
+	3, // 0: listoption.Options.options:type_name -> listoption.Options.Option
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -314,14 +343,14 @@ var file_listoption_proto_depIdxs = []int32{
 	0, // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_listoption_proto_init() }
-func file_listoption_proto_init() {
-	if File_listoption_proto != nil {
+func init() { file_listoption_listoption_proto_init() }
+func file_listoption_listoption_proto_init() {
+	if File_listoption_listoption_proto != nil {
 		return
 	}
 	if !protoimpl.UnsafeEnabled {
-		file_listoption_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ListOption); i {
+		file_listoption_listoption_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Options); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -332,7 +361,7 @@ func file_listoption_proto_init() {
 				return nil
 			}
 		}
-		file_listoption_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
+		file_listoption_listoption_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*Paginate); i {
 			case 0:
 				return &v.state
@@ -344,8 +373,20 @@ func file_listoption_proto_init() {
 				return nil
 			}
 		}
-		file_listoption_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ListOption_Option); i {
+		file_listoption_listoption_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Scroll); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_listoption_listoption_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Options_Option); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -361,18 +402,18 @@ func file_listoption_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: file_listoption_proto_rawDesc,
+			RawDescriptor: file_listoption_listoption_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_listoption_proto_goTypes,
-		DependencyIndexes: file_listoption_proto_depIdxs,
-		MessageInfos:      file_listoption_proto_msgTypes,
+		GoTypes:           file_listoption_listoption_proto_goTypes,
+		DependencyIndexes: file_listoption_listoption_proto_depIdxs,
+		MessageInfos:      file_listoption_listoption_proto_msgTypes,
 	}.Build()
-	File_listoption_proto = out.File
-	file_listoption_proto_rawDesc = nil
-	file_listoption_proto_goTypes = nil
-	file_listoption_proto_depIdxs = nil
+	File_listoption_listoption_proto = out.File
+	file_listoption_listoption_proto_rawDesc = nil
+	file_listoption_listoption_proto_goTypes = nil
+	file_listoption_listoption_proto_depIdxs = nil
 }

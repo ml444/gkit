@@ -11,22 +11,22 @@ import (
 	"github.com/ml444/gutil/typex"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/ml444/gkit/auth"
-	"github.com/ml444/gkit/auth/jwt"
-	"github.com/ml444/gkit/biz/header"
 	"github.com/ml444/gkit/errorx"
 	"github.com/ml444/gkit/log"
+	"github.com/ml444/gkit/pkg/auth"
+	jwt2 "github.com/ml444/gkit/pkg/auth/jwt"
 	"github.com/ml444/gkit/pkg/env"
+	header2 "github.com/ml444/gkit/pkg/header"
 )
 
-func getCacheTokenCustomData(ctx context.Context, signatureStr string) (*jwt.CustomData, error) {
+func getCacheTokenCustomData(ctx context.Context, signatureStr string) (*jwt2.CustomData, error) {
 	// cache
 	exist, err := auth.ExistCacheAuthDataBySign(ctx, signatureStr)
 	if err != nil {
 		log.Errorf("err: %v", err)
 		return nil, err
 	}
-	var data *jwt.CustomData
+	var data *jwt2.CustomData
 	if exist {
 		data, err = auth.GetCacheAuthDataBySign(ctx, signatureStr)
 		if err != nil {
@@ -37,37 +37,37 @@ func getCacheTokenCustomData(ctx context.Context, signatureStr string) (*jwt.Cus
 	return data, nil
 }
 
-func transferHeaderToCtx(ctx context.Context, r *http.Request, hook jwt.HookFunc, isTransferToken bool) (context.Context, error) {
+func transferHeaderToCtx(ctx context.Context, r *http.Request, hook jwt2.HookFunc, isTransferToken bool) (context.Context, error) {
 	h := map[string]string{
-		header.ClientTypeKey: header.GetHeader4HTTP(r.Header, header.ClientTypeKey),
-		header.RemoteIpKey:   netx.GetRemoteIp(r),
-		header.HttpPathKey:   r.URL.Path,
-		header.TraceIdKey:    header.GetTraceId4Headers(r.Header),
+		header2.ClientTypeKey: header2.GetHeader4HTTP(r.Header, header2.ClientTypeKey),
+		header2.RemoteIpKey:   netx.GetRemoteIp(r),
+		header2.HttpPathKey:   r.URL.Path,
+		header2.TraceIdKey:    header2.GetTraceId4Headers(r.Header),
 	}
 	// Get token from Authorization header
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
 		log.Warn("not found Authorization")
 		if env.IsLocalEnv() {
-			h[header.CorpIdKey] = header.GetHeader4HTTP(r.Header, header.CorpIdKey)
-			h[header.UserIdKey] = header.GetHeader4HTTP(r.Header, header.UserIdKey)
-			h[header.ClientIdKey] = header.GetHeader4HTTP(r.Header, header.ClientIdKey)
+			h[header2.CorpIdKey] = header2.GetHeader4HTTP(r.Header, header2.CorpIdKey)
+			h[header2.UserIdKey] = header2.GetHeader4HTTP(r.Header, header2.UserIdKey)
+			h[header2.ClientIdKey] = header2.GetHeader4HTTP(r.Header, header2.ClientIdKey)
 		}
 		md := metadata.New(h)
 		ctx = metadata.NewIncomingContext(ctx, md)
 		return ctx, nil
 	}
 	authHeaderParts := strings.Split(authHeader, " ")
-	if len(authHeaderParts) != 2 || !strings.EqualFold(authHeaderParts[0], jwt.Bearer) {
-		return ctx, jwt.ErrTokenFormat()
+	if len(authHeaderParts) != 2 || !strings.EqualFold(authHeaderParts[0], jwt2.Bearer) {
+		return ctx, jwt2.ErrTokenFormat()
 	}
 	tokenString := authHeaderParts[1]
 	if isTransferToken {
-		h[header.TokenKey] = tokenString
+		h[header2.TokenKey] = tokenString
 	}
 	partList := strings.Split(tokenString, ".")
 	if len(partList) != 3 {
-		return ctx, jwt.ErrTokenFormat()
+		return ctx, jwt2.ErrTokenFormat()
 	}
 	signatureStr := partList[2]
 	data, err := getCacheTokenCustomData(ctx, signatureStr)
@@ -77,8 +77,8 @@ func transferHeaderToCtx(ctx context.Context, r *http.Request, hook jwt.HookFunc
 	}
 	var needSaveData bool
 	if data == nil {
-		var claims *jwt.CustomClaims
-		claims, err = jwt.ParsePayload(partList[1])
+		var claims *jwt2.CustomClaims
+		claims, err = jwt2.ParsePayload(partList[1])
 		if err != nil {
 			log.Error(err)
 			return ctx, err
@@ -113,10 +113,10 @@ func transferHeaderToCtx(ctx context.Context, r *http.Request, hook jwt.HookFunc
 			auth.SetCacheAuthDataBySign(ctx, signatureStr, data)
 		}
 		log.Debug(data)
-		h[header.CorpIdKey] = strconv.FormatUint(data.CorpId, 10)
-		h[header.UserIdKey] = strconv.FormatUint(data.UserId, 10)
-		h[header.ClientIdKey] = data.ClientId
-		h[header.ClientTypeKey] = data.ClientType
+		h[header2.CorpIdKey] = strconv.FormatUint(data.CorpId, 10)
+		h[header2.UserIdKey] = strconv.FormatUint(data.UserId, 10)
+		h[header2.ClientIdKey] = data.ClientId
+		h[header2.ClientTypeKey] = data.ClientType
 		if data.Extra != nil {
 			for k, v := range data.Extra {
 				h[k] = typex.AnyToStr(v)
@@ -130,8 +130,8 @@ func transferHeaderToCtx(ctx context.Context, r *http.Request, hook jwt.HookFunc
 }
 
 func AddJWT2HttpHeader(token string, r *http.Request) {
-	if !strings.HasPrefix(token, jwt.BearerPrefix) {
-		token = fmt.Sprintf(jwt.BearerFormat, token)
+	if !strings.HasPrefix(token, jwt2.BearerPrefix) {
+		token = fmt.Sprintf(jwt2.BearerFormat, token)
 	}
 	r.Header.Add("Authorization", token)
 }

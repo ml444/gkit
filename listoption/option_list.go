@@ -30,7 +30,7 @@ const (
 )
 
 type Handler struct {
-	typ             int
+	key             int
 	cbNone          func() error
 	cbInt32         func(val int32) error
 	cbInt32List     func(valList []int32) error
@@ -49,205 +49,203 @@ type Handler struct {
 	cbStringList    func(val []string) error
 	ignoreZeroValue bool
 }
+
+func (h *Handler) setValue(v interface{}) {}
+func (h *Handler) apply() error           { return nil }
+
 type Processor struct {
-	listOption *ListOption
-	handlers   map[int32]*Handler
+	listOption *Options
+	handlers   map[int32]handler
 }
 
-func toInt32(i interface{}) int32 {
-	t := reflect.TypeOf(i)
-	k := t.Kind()
-	switch k {
-	case reflect.Int,
-		reflect.Int32,
-		reflect.Int64,
-		reflect.Int16,
-		reflect.Int8:
-		return int32(reflect.ValueOf(i).Int())
-	case reflect.Uint,
-		reflect.Uint32,
-		reflect.Uint64,
-		reflect.Uint16,
-		reflect.Uint8:
-		return int32(reflect.ValueOf(i).Uint())
+func toInt32(key interface{}) int32 {
+	switch x := key.(type) {
+	case int:
+		return int32(x)
+	case int8:
+		return int32(x)
+	case int16:
+		return int32(x)
+	case int32:
+		return x
+	case int64:
+		return int32(x)
+	case uint:
+		return int32(x)
+	case uint8:
+		return int32(x)
+	case uint16:
+		return int32(x)
+	case uint32:
+		return int32(x)
+	case uint64:
+		return int32(x)
+	default:
+		return 0
 	}
-	return 0
 }
 
-func NewProcessor(listOption *ListOption) *Processor {
+func NewProcessor(listOption *Options) *Processor {
 	return &Processor{
 		listOption: listOption,
-		handlers:   make(map[int32]*Handler),
+		handlers:   make(map[int32]handler),
 	}
 }
 
-func (p *Processor) AddNone(typ interface{}, cb func() error) *Processor {
-	x := toInt32(typ)
-	p.handlers[x] = &Handler{
-		typ:    ValueTypeNil,
+func (p *Processor) setHandler(key interface{}, h handler) {
+	p.handlers[toInt32(key)] = h
+}
+
+func (p *Processor) AddNone(key interface{}, cb func() error) *Processor {
+	p.setHandler(key, &Handler{
+		key:    ValueTypeNil,
 		cbNone: cb,
-	}
+	})
 	return p
 }
-func (p *Processor) AddBool(typ interface{}, cb func(val bool) error) *Processor {
-	x := toInt32(typ)
-	p.handlers[x] = &Handler{
-		typ:    ValueTypeBool,
+func (p *Processor) AddBool(key interface{}, cb func(val bool) error) *Processor {
+	p.setHandler(key, &Handler{
+		key:    ValueTypeBool,
 		cbBool: cb,
-	}
+	})
 	return p
 }
 
-func (p *Processor) AddInt32(typ interface{}, cb func(val int32) error) *Processor {
-	x := toInt32(typ)
-	p.handlers[x] = &Handler{
-		typ:     ValueTypeInt32,
+func (p *Processor) AddInt32(key interface{}, cb func(val int32) error) *Processor {
+	p.setHandler(key, &Handler{
+		key:     ValueTypeInt32,
 		cbInt32: cb,
-	}
+	})
 	return p
 }
-func (p *Processor) AddInt32List(typ interface{}, cb func(valList []int32) error) *Processor {
-	x := toInt32(typ)
-	p.handlers[x] = &Handler{
-		typ:             ValueTypeUint32List,
+func (p *Processor) AddInt32List(key interface{}, cb func(valList []int32) error) *Processor {
+	p.setHandler(key, &Handler{
+		key:             ValueTypeUint32List,
 		cbInt32List:     cb,
 		ignoreZeroValue: true,
-	}
+	})
 	return p
 }
-func (p *Processor) AddInt32Range(typ interface{}, cb func(begin, end int32) error) *Processor {
-	x := toInt32(typ)
-	p.handlers[x] = &Handler{
-		typ:             ValueTypeUint32Range,
+func (p *Processor) AddInt32Range(key interface{}, cb func(begin, end int32) error) *Processor {
+	p.setHandler(key, &Handler{
+		key:             ValueTypeUint32Range,
 		cbInt32Range:    cb,
 		ignoreZeroValue: true,
-	}
+	})
 	return p
 }
 
-func (p *Processor) AddString(typ interface{}, cb func(val string) error) *Processor {
-	x := toInt32(typ)
-	p.handlers[x] = &Handler{
-		typ:      ValueTypeString,
+func (p *Processor) AddString(key interface{}, cb func(val string) error) *Processor {
+	p.setHandler(key, &Handler{
+		key:      ValueTypeString,
 		cbString: cb,
-	}
+	})
 	return p
 }
-func (p *Processor) AddStringIgnoreZero(typ interface{}, cb func(val string) error) *Processor {
-	x := toInt32(typ)
-	p.handlers[x] = &Handler{
-		typ:             ValueTypeString,
+func (p *Processor) AddStringIgnoreZero(key interface{}, cb func(val string) error) *Processor {
+	p.setHandler(key, &Handler{
+		key:             ValueTypeString,
 		cbString:        cb,
 		ignoreZeroValue: true,
-	}
+	})
 	return p
 }
-func (p *Processor) AddStringList(typ interface{}, cb func(val []string) error) *Processor {
-	x := toInt32(typ)
-	p.handlers[x] = &Handler{
-		typ:             ValueTypeStringList,
+func (p *Processor) AddStringList(key interface{}, cb func(val []string) error) *Processor {
+	p.setHandler(key, &Handler{
+		key:             ValueTypeStringList,
 		cbStringList:    cb,
 		ignoreZeroValue: true,
-	}
+	})
 	return p
 }
 
-func (p *Processor) AddUint32(typ interface{}, cb func(val uint32) error) *Processor {
-	x := toInt32(typ)
-	p.handlers[x] = &Handler{
-		typ:      ValueTypeUint32,
+func (p *Processor) AddUint32(key interface{}, cb func(val uint32) error) *Processor {
+	p.setHandler(key, &Handler{
+		key:      ValueTypeUint32,
 		cbUint32: cb,
-	}
+	})
 	return p
 }
-func (p *Processor) AddUint32List(typ interface{}, cb func(valList []uint32) error) *Processor {
-	x := toInt32(typ)
-	p.handlers[x] = &Handler{
-		typ:             ValueTypeUint32List,
+func (p *Processor) AddUint32List(key interface{}, cb func(valList []uint32) error) *Processor {
+	p.setHandler(key, &Handler{
+		key:             ValueTypeUint32List,
 		cbUint32List:    cb,
 		ignoreZeroValue: true,
-	}
+	})
 	return p
 }
-func (p *Processor) AddUint32Range(typ interface{}, cb func(begin, end uint32) error) *Processor {
-	x := toInt32(typ)
-	p.handlers[x] = &Handler{
-		typ:             ValueTypeUint32Range,
+func (p *Processor) AddUint32Range(key interface{}, cb func(begin, end uint32) error) *Processor {
+	p.setHandler(key, &Handler{
+		key:             ValueTypeUint32Range,
 		cbUint32Range:   cb,
 		ignoreZeroValue: true,
-	}
+	})
 	return p
 }
 
-func (p *Processor) AddUint64(typ interface{}, cb func(val uint64) error) *Processor {
-	x := toInt32(typ)
-	p.handlers[x] = &Handler{
-		typ:      ValueTypeUint64,
+func (p *Processor) AddUint64(key interface{}, cb func(val uint64) error) *Processor {
+	p.setHandler(key, &Handler{
+		key:      ValueTypeUint64,
 		cbUint64: cb,
-	}
+	})
 	return p
 }
-func (p *Processor) AddUint64List(typ interface{}, cb func(valList []uint64) error) *Processor {
-	x := toInt32(typ)
-	p.handlers[x] = &Handler{
-		typ:             ValueTypeUint64List,
+func (p *Processor) AddUint64List(key interface{}, cb func(valList []uint64) error) *Processor {
+	p.setHandler(key, &Handler{
+		key:             ValueTypeUint64List,
 		cbUint64List:    cb,
 		ignoreZeroValue: true,
-	}
+	})
 	return p
 }
-func (p *Processor) AddUint64Range(typ interface{}, cb func(begin, end uint64) error) *Processor {
-	x := toInt32(typ)
-	p.handlers[x] = &Handler{
-		typ:             ValueTypeUint32Range,
+func (p *Processor) AddUint64Range(key interface{}, cb func(begin, end uint64) error) *Processor {
+	p.setHandler(key, &Handler{
+		key:             ValueTypeUint32Range,
 		cbUint64Range:   cb,
 		ignoreZeroValue: true,
-	}
+	})
 	return p
 }
 
-func (p *Processor) AddInt64(typ interface{}, cb func(val int64) error) *Processor {
-	x := toInt32(typ)
-	p.handlers[x] = &Handler{
-		typ:     ValueTypeUint64,
+func (p *Processor) AddInt64(key interface{}, cb func(val int64) error) *Processor {
+	p.setHandler(key, &Handler{
+		key:     ValueTypeUint64,
 		cbInt64: cb,
-	}
+	})
 	return p
 }
-func (p *Processor) AddInt64List(typ interface{}, cb func(valList []int64) error) *Processor {
-	x := toInt32(typ)
-	p.handlers[x] = &Handler{
-		typ:             ValueTypeUint64List,
+func (p *Processor) AddInt64List(key interface{}, cb func(valList []int64) error) *Processor {
+	p.setHandler(key, &Handler{
+		key:             ValueTypeUint64List,
 		cbInt64List:     cb,
 		ignoreZeroValue: true,
-	}
+	})
 	return p
 }
-func (p *Processor) AddInt64Range(typ interface{}, cb func(begin, end int64) error) *Processor {
-	x := toInt32(typ)
-	p.handlers[x] = &Handler{
-		typ:             ValueTypeUint32Range,
+func (p *Processor) AddInt64Range(key interface{}, cb func(begin, end int64) error) *Processor {
+	p.setHandler(key, &Handler{
+		key:             ValueTypeUint32Range,
 		cbInt64Range:    cb,
 		ignoreZeroValue: true,
-	}
+	})
 	return p
 }
 
 func (p *Processor) Process() error {
-	if p.listOption == nil || p.handlers == nil || len(p.handlers) == 0 {
+	if p.listOption == nil || len(p.handlers) == 0 {
 		return nil
 	}
-	newError := func(typ int32, expectType string) error {
+	newError := func(key int32, expectType string) error {
 		return errorx.CreateErrorf(errorx.DefaultStatusCode, errorx.ErrCodeInvalidParamSys,
-			fmt.Sprintf("invalid option value with type %d, expected %s", typ, expectType))
+			fmt.Sprintf("invalid option value with type %d, expected %s", key, expectType))
 	}
 	var err error
 	for _, v := range p.listOption.Options {
-		h := p.handlers[v.Type]
+		h := p.handlers[v.Kind].(*Handler)
 		if h == nil {
 			continue
 		}
-		switch h.typ {
+		switch h.key {
 		case ValueTypeNil:
 			if h.cbNone != nil {
 				err = h.cbNone()
@@ -257,9 +255,6 @@ func (p *Processor) Process() error {
 			}
 
 		case ValueTypeBool:
-			//if v.Value != "0" && v.Value != "1" {
-			//	continue
-			//}
 			value := strings.ToLower(v.Value)
 			var x bool
 			if inSliceStr(value, []string{"1", "true"}) {
@@ -313,7 +308,7 @@ func (p *Processor) Process() error {
 			}
 			x, err := strconv.ParseInt(v.Value, 10, 32)
 			if err != nil {
-				return newError(v.Type, "int32")
+				return newError(v.Kind, "int32")
 			}
 			if h.cbInt32 != nil {
 				err = h.cbInt32(int32(x))
@@ -331,7 +326,7 @@ func (p *Processor) Process() error {
 			for _, item := range list {
 				x, err := strconv.ParseInt(item, 10, 32)
 				if err != nil {
-					return newError(v.Type, "int32")
+					return newError(v.Kind, "int32")
 				}
 				intList = append(intList, int32(x))
 			}
@@ -349,11 +344,11 @@ func (p *Processor) Process() error {
 			}
 			t1, err := strconv.ParseInt(tStr[0], 10, 64)
 			if err != nil {
-				return newError(v.Type, "int32")
+				return newError(v.Kind, "int32")
 			}
 			t2, err := strconv.ParseInt(tStr[1], 10, 64)
 			if err != nil {
-				return newError(v.Type, "int32")
+				return newError(v.Kind, "int32")
 			}
 			if h.cbInt32Range != nil {
 				if err = h.cbInt32Range(int32(t1), int32(t2)); err != nil {
@@ -367,7 +362,7 @@ func (p *Processor) Process() error {
 			}
 			x, err := strconv.ParseUint(v.Value, 10, 32)
 			if err != nil {
-				return newError(v.Type, "uint32")
+				return newError(v.Kind, "uint32")
 			}
 			if h.cbUint32 != nil {
 				err = h.cbUint32(uint32(x))
@@ -385,7 +380,7 @@ func (p *Processor) Process() error {
 			for _, item := range list {
 				x, err := strconv.ParseUint(item, 10, 32)
 				if err != nil {
-					return newError(v.Type, "uint32")
+					return newError(v.Kind, "uint32")
 				}
 				intList = append(intList, uint32(x))
 			}
@@ -403,11 +398,11 @@ func (p *Processor) Process() error {
 			}
 			t1, err := strconv.ParseUint(tStr[0], 10, 64)
 			if err != nil {
-				return newError(v.Type, "uint32")
+				return newError(v.Kind, "uint32")
 			}
 			t2, err := strconv.ParseUint(tStr[1], 10, 64)
 			if err != nil {
-				return newError(v.Type, "uint32")
+				return newError(v.Kind, "uint32")
 			}
 			if h.cbUint32Range != nil {
 				if err = h.cbUint32Range(uint32(t1), uint32(t2)); err != nil {
@@ -421,7 +416,7 @@ func (p *Processor) Process() error {
 			}
 			x, err := strconv.ParseUint(v.Value, 10, 64)
 			if err != nil {
-				return newError(v.Type, "uint64")
+				return newError(v.Kind, "uint64")
 			}
 			if h.cbUint64 != nil {
 				err = h.cbUint64(x)
@@ -439,7 +434,7 @@ func (p *Processor) Process() error {
 			for _, item := range list {
 				x, err := strconv.ParseUint(item, 10, 64)
 				if err != nil {
-					return newError(v.Type, "uint64")
+					return newError(v.Kind, "uint64")
 				}
 				intList = append(intList, x)
 			}
@@ -457,11 +452,11 @@ func (p *Processor) Process() error {
 			}
 			t1, err := strconv.ParseUint(tStr[0], 10, 64)
 			if err != nil {
-				return newError(v.Type, "uint64")
+				return newError(v.Kind, "uint64")
 			}
 			t2, err := strconv.ParseUint(tStr[1], 10, 64)
 			if err != nil {
-				return newError(v.Type, "uint64")
+				return newError(v.Kind, "uint64")
 			}
 			if h.cbUint64Range != nil {
 				if err = h.cbUint64Range(t1, t2); err != nil {
@@ -475,7 +470,7 @@ func (p *Processor) Process() error {
 			}
 			x, err := strconv.ParseInt(v.Value, 10, 32)
 			if err != nil {
-				return newError(v.Type, "int64")
+				return newError(v.Kind, "int64")
 			}
 			if h.cbInt64 != nil {
 				err = h.cbInt64(x)
@@ -493,7 +488,7 @@ func (p *Processor) Process() error {
 			for _, item := range list {
 				x, err := strconv.ParseInt(item, 10, 32)
 				if err != nil {
-					return newError(v.Type, "int64")
+					return newError(v.Kind, "int64")
 				}
 				intList = append(intList, x)
 			}
@@ -511,11 +506,11 @@ func (p *Processor) Process() error {
 			}
 			t1, err := strconv.ParseInt(tStr[0], 10, 64)
 			if err != nil {
-				return newError(v.Type, "int64")
+				return newError(v.Kind, "int64")
 			}
 			t2, err := strconv.ParseInt(tStr[1], 10, 64)
 			if err != nil {
-				return newError(v.Type, "int64")
+				return newError(v.Kind, "int64")
 			}
 			if h.cbInt64Range != nil {
 				if err = h.cbInt64Range(t1, t2); err != nil {
@@ -526,6 +521,7 @@ func (p *Processor) Process() error {
 	}
 	return nil
 }
+
 func toSplitStr(s string, ignoreZeroValue bool) (tStr []string, isContinue bool) {
 	if strings.Index(s, ",") > 0 {
 		tStr = strings.Split(s, ",")
@@ -577,40 +573,30 @@ func toStr(i interface{}) string {
 	return fmt.Sprintf("%v", i)
 }
 
-func NewListOption(opts ...interface{}) *ListOption {
+func NewListOption(opts ...interface{}) *Options {
 	if len(opts)%2 != 0 {
 		panic(fmt.Sprintf("invalid number of opts argument %d", len(opts)))
 	}
-	l := &ListOption{}
+	l := &Options{}
 	for i := 0; i < len(opts); i += 2 {
 		l.AddOpt(opts[i], opts[i+1])
 	}
 	return l
 }
 
-func (opt *ListOption) SetLimit(limit uint32) *ListOption {
-	opt.Limit = limit
-	return opt
-}
-
-func (opt *ListOption) SetOffset(offset uint32) *ListOption {
-	opt.Offset = offset
-	return opt
-}
-
-func (opt *ListOption) IsOptExist(typ interface{}) bool {
-	var typInt int32
-	if reflect.TypeOf(typ).Kind() == reflect.Uint32 {
-		typInt = int32(reflect.ValueOf(typ).Uint())
+func (opt *Options) IsOptExist(key interface{}) bool {
+	var intKind int32
+	if reflect.TypeOf(key).Kind() == reflect.Uint32 {
+		intKind = int32(reflect.ValueOf(key).Uint())
 	} else {
-		typInt = int32(reflect.ValueOf(typ).Int())
+		intKind = int32(reflect.ValueOf(key).Int())
 	}
-	if typInt <= 0 {
-		panic(fmt.Sprintf("invalid type %d", typ))
+	if intKind <= 0 {
+		panic(fmt.Sprintf("invalid type %d", key))
 	}
 
 	for _, opt := range opt.Options {
-		if opt.Type == typInt {
+		if opt.Kind == intKind {
 			return true
 		}
 	}
@@ -618,19 +604,19 @@ func (opt *ListOption) IsOptExist(typ interface{}) bool {
 	return false
 }
 
-func (opt *ListOption) GetOptValue(typ interface{}) (string, bool) {
-	var typInt int32
-	if reflect.TypeOf(typ).Kind() == reflect.Uint32 {
-		typInt = int32(reflect.ValueOf(typ).Uint())
+func (opt *Options) GetOptValue(key interface{}) (string, bool) {
+	var intKind int32
+	if reflect.TypeOf(key).Kind() == reflect.Uint32 {
+		intKind = int32(reflect.ValueOf(key).Uint())
 	} else {
-		typInt = int32(reflect.ValueOf(typ).Int())
+		intKind = int32(reflect.ValueOf(key).Int())
 	}
-	if typInt <= 0 {
-		panic(fmt.Sprintf("invalid type %d", typ))
+	if intKind <= 0 {
+		panic(fmt.Sprintf("invalid type %d", key))
 	}
 
 	for _, opt := range opt.Options {
-		if opt.Type == typInt {
+		if opt.Kind == intKind {
 			return opt.Value, true
 		}
 	}
@@ -638,23 +624,23 @@ func (opt *ListOption) GetOptValue(typ interface{}) (string, bool) {
 	return "", false
 }
 
-func (opt *ListOption) AddOptIf(flag bool, typ, val interface{}) *ListOption {
+func (opt *Options) AddOptIf(flag bool, key, val interface{}) *Options {
 	if flag {
-		opt.AddOpt(typ, val)
+		opt.AddOpt(key, val)
 	}
 
 	return opt
 }
 
-func (opt *ListOption) AddOpt(typ, val interface{}) *ListOption {
+func (opt *Options) AddOpt(key, val interface{}) *Options {
 	var typInt int32
-	if reflect.TypeOf(typ).Kind() == reflect.Uint32 {
-		typInt = int32(reflect.ValueOf(typ).Uint())
+	if reflect.TypeOf(key).Kind() == reflect.Uint32 {
+		typInt = int32(reflect.ValueOf(key).Uint())
 	} else {
-		typInt = int32(reflect.ValueOf(typ).Int())
+		typInt = int32(reflect.ValueOf(key).Int())
 	}
 	if typInt <= 0 {
-		panic(fmt.Sprintf("invalid type %d", typ))
+		panic(fmt.Sprintf("invalid type %d", key))
 	}
 	typeOfVal := reflect.TypeOf(val)
 	var strVal string
@@ -675,54 +661,6 @@ func (opt *ListOption) AddOpt(typ, val interface{}) *ListOption {
 		}
 	}
 	opt.Options = append(opt.Options,
-		&ListOption_Option{Type: typInt, Value: strVal})
+		&Options_Option{Kind: typInt, Value: strVal})
 	return opt
-}
-
-func (opt *ListOption) SetSkipCount() *ListOption {
-	opt.SkipCount = true
-	return opt
-}
-
-func (opt *ListOption) CloneWithoutOpts() *ListOption {
-	l := NewListOption().
-		SetOffset(opt.GetOffset()).
-		SetLimit(opt.GetLimit())
-	if opt.SkipCount {
-		l.SetSkipCount()
-	}
-	return l
-}
-
-func getOptTypeFromInterface(typ interface{}) uint32 {
-	t := reflect.TypeOf(typ)
-	v := reflect.ValueOf(typ)
-	if t.Kind() == reflect.Int32 {
-		return uint32(v.Int())
-	} else if t.Kind() == reflect.Uint32 {
-		return uint32(v.Uint())
-	} else {
-		panic(fmt.Sprintf("unsupported type %s of opt with value %v", t.String(), typ))
-	}
-	//return 0
-}
-
-func (opt *ListOption) CloneChangeOptTypes(optPairs ...interface{}) *ListOption {
-	l := opt.CloneWithoutOpts()
-	if len(optPairs)%2 != 0 {
-		panic(fmt.Sprintf("invalid number of opts argument %d", len(optPairs)))
-	}
-	kv := map[uint32]uint32{}
-	for i := 0; i < len(optPairs); i += 2 {
-		typ := optPairs[i]
-		val := optPairs[i+1]
-		kv[getOptTypeFromInterface(typ)] = getOptTypeFromInterface(val)
-	}
-	for _, v := range opt.Options {
-		t := uint32(v.Type)
-		if vv, ok := kv[t]; ok {
-			l.AddOpt(vv, v.Value)
-		}
-	}
-	return l
 }

@@ -23,12 +23,6 @@ const DefaultLimit uint32 = 2000
 const DefaultOffset uint32 = 0
 const MaxLimit uint32 = 100000
 
-var EnableResetDateTime = true
-
-func DisableResetSysDateTimeField() {
-	EnableResetDateTime = false
-}
-
 type ModelBase interface {
 	ProtoReflect() protoreflect.Message
 	GetId() uint64
@@ -46,12 +40,15 @@ type ProtoDeletedAt interface {
 	GetDeletedAt() uint32
 }
 
+type GenerateIDFunc func(ctx context.Context, cnt int) []uint64
+
 type Scope struct {
 	Tx           *gorm.DB
 	model        interface{}
 	NotFoundErr  error
 	RowsAffected int64
-	EnableGUID   bool
+	idFunc       GenerateIDFunc
+	resetTime    bool
 }
 
 func NewScope(db *gorm.DB, model interface{}) *Scope {
@@ -60,26 +57,24 @@ func NewScope(db *gorm.DB, model interface{}) *Scope {
 		tx = tx.Where("deleted_at = 0")
 	}
 	return &Scope{
-		Tx:         tx,
-		model:      model,
-		EnableGUID: true,
+		Tx:    tx,
+		model: model,
 	}
 }
 
 func NewScopeOfPure(db *gorm.DB, model interface{}) *Scope {
 	return &Scope{
-		Tx:         db.Model(model),
-		model:      model,
-		EnableGUID: true,
+		Tx:    db.Model(model),
+		model: model,
 	}
 }
-
+func (s *Scope) SetGenerateIDFunc(idFunc GenerateIDFunc) *Scope {
+	s.idFunc = idFunc
+	return s
+}
 func (s *Scope) SetNotFoundErr(notFoundErrCode int32) *Scope {
 	s.NotFoundErr = errorx.New(notFoundErrCode)
 	return s
-}
-func (s *Scope) DisableGUID() {
-	s.EnableGUID = false
 }
 
 func (s *Scope) fillResult() {
@@ -96,19 +91,14 @@ func (s *Scope) ResetSysDateTimeField(v interface{}) {
 	}
 }
 
-func (s *Scope) Create(ctx context.Context, v interface{}) error {
-	if EnableResetDateTime {
+func (s *Scope) Create(v interface{}) error {
+	if s.resetTime {
 		s.ResetSysDateTimeField(v)
 	}
-	// if s.EnableGUID {
+	// if s.idFunc != nil {
 	// 	m, ok := v.(ModelBase)
 	// 	if ok && m.GetId() == 0 {
-	// 		// get guid
-	// 		rsp, err := guid.GetGuid(ctx, &guid.GetGuidReq{})
-	// 		if err != nil {
-	// 			log.Errorf("err: %v", err)
-	// 			return err
-	// 		}
+	// 		// get id
 	// 		protoMsg := m.ProtoReflect()
 	// 		protoMsg.Set(protoMsg.Descriptor().Fields().ByJSONName("id"), protoreflect.ValueOfUint64(rsp.Id))
 	// 	}
@@ -125,12 +115,10 @@ func (s *Scope) CreateInBatches(values interface{}, batchSize int) error {
 
 // Update updates attributes using callbacks. values must be a struct or map.
 func (s *Scope) Update(v interface{}, conds ...interface{}) error {
-	if EnableResetDateTime {
+	if s.resetTime {
 		s.ResetSysDateTimeField(v)
 	}
-	if condsLen := len(conds); condsLen == 1 {
-		s.Tx.Where(conds[0])
-	} else if condsLen > 1 {
+	if len(conds) > 0 {
 		s.Tx.Where(conds[0], conds[1:])
 	}
 	s.Tx.Updates(v)
@@ -139,22 +127,20 @@ func (s *Scope) Update(v interface{}, conds ...interface{}) error {
 	}
 	s.fillResult()
 	if s.Tx.RowsAffected == 0 {
-		log.Warnf("model: %v, conds: %v; RowsAffected: 0", v, conds)
+		log.Warnf("model: %v, RowsAffected: 0", v)
 	}
 	return nil
 }
 
-func (s *Scope) Delete(v interface{}, conds ...interface{}) error {
+func (s *Scope) Delete(conds ...interface{}) error {
 	defer s.fillResult()
-	if _, ok := v.(ProtoDeletedAt); ok {
-		if condsLen := len(conds); condsLen == 1 {
-			s.Tx.Where(conds[0])
-		} else if condsLen > 1 {
+	if _, ok := s.model.(ProtoDeletedAt); ok {
+		if len(conds) > 1 {
 			s.Tx.Where(conds[0], conds[1:])
 		}
 		return s.Tx.UpdateColumn(ProtoMessageFieldDeletedAt, time.Now().Unix()).Error
 	}
-	return s.Tx.Delete(v, conds).Error
+	return s.Tx.Delete(s.model, conds).Error
 }
 
 func (s *Scope) First(dest interface{}, conds ...interface{}) error {
@@ -163,7 +149,11 @@ func (s *Scope) First(dest interface{}, conds ...interface{}) error {
 		if s.NotFoundErr != nil {
 			return s.NotFoundErr
 		}
-		return errorx.CreateError(http.StatusNotFound, errorx.ErrCodeRecordNotFoundSys, err.Error())
+		return errorx.CreateError(
+			http.StatusNotFound,
+			errorx.ErrCodeRecordNotFoundSys,
+			err.Error(),
+		)
 	}
 	return err
 }
@@ -204,7 +194,7 @@ func (s *Scope) NotIn(field string, values interface{}) *Scope {
 
 // Ne :Where("field != ?", arg)
 func (s *Scope) Ne(field string, arg interface{}) *Scope {
-	s.Tx.Where(fmt.Sprintf("%s = ?", field), arg)
+	s.Tx.Where(fmt.Sprintf("%s != ?", field), arg)
 	return s
 }
 func (s *Scope) Eq(field string, arg interface{}) *Scope {
@@ -241,11 +231,8 @@ func (s *Scope) Or(query interface{}, args ...interface{}) *Scope {
 	return s
 }
 
-// Order specify order when retrieving records from database
-//
-//	db.Order("name DESC")
-//	db.Order(clause.OrderByColumn{Column: clause.Column{Name: "name"}, Desc: true})
-func (s *Scope) Order(value interface{}) *Scope {
+// Order db.Order("name DESC")
+func (s *Scope) Order(value string) *Scope {
 	s.Tx = s.Tx.Order(value)
 	return s
 }
@@ -263,8 +250,9 @@ func (s *Scope) Joins(query string, args ...interface{}) *Scope {
 	return s
 }
 
-func (s *Scope) Count(total *int64) error {
-	return s.Tx.Count(total).Error
+func (s *Scope) Count() (total int64, err error) {
+	err = s.Tx.Count(&total).Error
+	return total, err
 }
 
 func (s *Scope) Offset(offset int) *Scope {
@@ -276,15 +264,21 @@ func (s *Scope) Limit(limit int) *Scope {
 	s.Tx = s.Tx.Limit(limit)
 	return s
 }
-func (s *Scope) PaginateQuery(opt *listoption.ListOption, list interface{}) (*listoption.Paginate, error) {
+func (s *Scope) PaginateQuery(opt *listoption.Paginate, list interface{}) (*listoption.Paginate, error) {
 	var total int64
-	if opt != nil && opt.Offset == 0 && !opt.SkipCount {
-		err := s.Tx.Count(&total).Error
-		if err != nil && err != gorm.ErrRecordNotFound {
-			return nil, err
+	if opt != nil {
+		if opt.Offset == 0 && opt.Page > 1 {
+			opt.Offset = (opt.Page - 1) * opt.Size
+		}
+		if opt.Offset == 0 && !opt.SkipCount {
+			err := s.Tx.Count(&total).Error
+			if err != nil && err != gorm.ErrRecordNotFound {
+				return nil, err
+			}
 		}
 	}
-	opt = s.SetOffsetAndLimitByListOption(opt)
+
+	opt = s.SetOffsetAndLimitByPaginate(opt)
 	err := s.Find(list)
 	if err != nil {
 		log.Error(err.Error())
@@ -292,25 +286,28 @@ func (s *Scope) PaginateQuery(opt *listoption.ListOption, list interface{}) (*li
 	}
 	p := listoption.Paginate{
 		Offset: opt.Offset,
-		Limit:  opt.Limit,
+		Size:   opt.Size,
 		Total:  total,
 	}
 	return &p, nil
 }
 
-func (s *Scope) SetOffsetAndLimitByListOption(opt *listoption.ListOption) *listoption.ListOption {
+func (s *Scope) SetOffsetAndLimitByPaginate(opt *listoption.Paginate) *listoption.Paginate {
 	if opt != nil {
-		if opt.Limit == 0 {
-			opt.Limit = DefaultLimit
-		} else if opt.Limit > MaxLimit {
-			opt.Limit = MaxLimit
+		if opt.Size == 0 {
+			opt.Size = DefaultLimit
+		} else if opt.Size > MaxLimit {
+			opt.Size = MaxLimit
+		}
+		if opt.Offset == 0 && opt.Page > 1 {
+			opt.Offset = (opt.Page - 1) * opt.Size
 		}
 	} else {
-		opt = &listoption.ListOption{}
-		opt.Limit = DefaultLimit
+		opt = &listoption.Paginate{}
+		opt.Size = DefaultLimit
 		opt.Offset = DefaultOffset
 	}
-	s.Tx = s.Tx.Limit(int(opt.Limit)).Offset(int(opt.Offset))
+	s.Tx = s.Tx.Limit(int(opt.Size)).Offset(int(opt.Offset))
 	return opt
 }
 

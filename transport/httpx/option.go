@@ -3,8 +3,8 @@ package httpx
 import (
 	"time"
 
-	"github.com/ml444/gkit/auth/jwt"
 	"github.com/ml444/gkit/middleware"
+	"github.com/ml444/gkit/pkg/auth/jwt"
 )
 
 type OptionFunc func(parser *EndpointParser)

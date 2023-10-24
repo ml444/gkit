@@ -47,7 +47,7 @@ func NewServer(registerFunc func(s grpc.ServiceRegistrar), opts ...ServerOption)
 	} else {
 		s.grpcOpts = append(s.grpcOpts, grpc.Creds(insecure.NewCredentials()))
 	}
-	s.GRPCServer = xds.NewGRPCServer(s.grpcOpts...)
+	s.GRPCServer, _ = xds.NewGRPCServer(s.grpcOpts...)
 	if !s.customHealth {
 		s.health.SetServingStatus(s.name, healthpb.HealthCheckResponse_SERVING)
 		healthpb.RegisterHealthServer(s.GRPCServer, s.health)

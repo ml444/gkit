@@ -2,10 +2,11 @@ package auth
 
 import (
 	"fmt"
-	"github.com/ml444/gkit/auth/jwt"
-	"github.com/ml444/gkit/log"
 	"os"
 	"time"
+
+	"github.com/ml444/gkit/log"
+	"github.com/ml444/gkit/pkg/auth/jwt"
 )
 
 const (

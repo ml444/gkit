@@ -151,9 +151,9 @@ func Errorf(statusCode int32, errCode int32, format string, a ...interface{}) er
 	return CreateError(statusCode, errCode, fmt.Sprintf(format, a...))
 }
 
-// Code returns the http code for an error.
+// StatusCode returns the http code for an error.
 // It supports wrapped errorx.
-func Code(err error) int {
+func StatusCode(err error) int {
 	if err == nil {
 		return 200 //nolint:gomnd
 	}

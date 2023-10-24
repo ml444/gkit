@@ -25,6 +25,7 @@ type Logger interface {
 	Error(...interface{})
 	Fatal(...interface{})
 
+	Printf(template string, args ...interface{})
 	Debugf(template string, args ...interface{})
 	Infof(template string, args ...interface{})
 	Warnf(template string, args ...interface{})
@@ -43,6 +44,9 @@ func NewNopLogger() Logger {
 
 func SetLogger(lg Logger) {
 	logger = lg
+}
+func GetLogger() Logger {
+	return logger
 }
 
 func NewDefaultLogger(output Writer) *DefaultLogger {
@@ -83,6 +87,9 @@ func (l *DefaultLogger) Fatal(values ...interface{}) {
 	l.Log(FatalLevel, fmt.Sprintln(values...))
 }
 
+func (l *DefaultLogger) Printf(template string, values ...interface{}) {
+	l.Log(DebugLevel, fmt.Sprintf(template, values...))
+}
 func (l *DefaultLogger) Debugf(template string, values ...interface{}) {
 	l.Log(DebugLevel, fmt.Sprintf(template, values...))
 }

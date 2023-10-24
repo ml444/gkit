@@ -26,7 +26,7 @@ type ITransport interface {
 	// grpc
 	// http
 	GetType() Type
-	// GetEndpoint return server or client endpoint
+	// GetEndpoint return server or client Endpoint
 	// Server Transport: grpc://127.0.0.1:9000
 	// Client Transport: discovery:///provider-demo
 	GetEndpoint() string
@@ -48,26 +48,27 @@ var _ ITransport = (*Transport)(nil)
 
 // Transport is a gRPC transport.
 type Transport struct {
-	typ       Type
-	endpoint  string
-	operation string
+	Type      Type
+	Endpoint  string
+	Operation string
 	InHeader  IMeta
 	OutHeader IMeta
+	Request   *http.Request
 }
 
 // GetType returns the transport Type.
 func (tr *Transport) GetType() Type {
-	return tr.typ
+	return tr.Type
 }
 
-// GetEndpoint returns the transport endpoint.
+// GetEndpoint returns the transport Endpoint.
 func (tr *Transport) GetEndpoint() string {
-	return tr.endpoint
+	return tr.Endpoint
 }
 
-// GetOperation returns the transport operation.
+// GetOperation returns the transport Operation.
 func (tr *Transport) GetOperation() string {
-	return tr.operation
+	return tr.Operation
 }
 
 // GetReqHeader returns the request header.
@@ -78,6 +79,15 @@ func (tr *Transport) GetReqHeader() IMeta {
 // GetRspHeader returns the reply header.
 func (tr *Transport) GetRspHeader() IMeta {
 	return tr.OutHeader
+}
+
+// SetOperation sets the transport Operation.
+func SetOperation(ctx context.Context, op string) {
+	if tr, ok := FromContext(ctx); ok {
+		if tr, ok := tr.(*Transport); ok {
+			tr.Operation = op
+		}
+	}
 }
 
 type (
@@ -97,27 +107,27 @@ func FromContext(ctx context.Context) (tr ITransport, ok bool) {
 
 func GetTransportFromHTTP(r *http.Request) ITransport {
 	return &Transport{
-		typ:       TypeHTTP,
-		endpoint:  r.URL.String(),
-		operation: r.URL.Path,
+		Type:      TypeHTTP,
+		Endpoint:  r.URL.String(),
+		Operation: r.URL.Path,
 		InHeader:  (Metadata)(r.Header),
 	}
 }
 
 func GetTransportFromGrpcClient(ctx context.Context, method string, cc *grpc.ClientConn, header IMeta) ITransport {
 	return &Transport{
-		typ:       TypeGRPC,
-		endpoint:  cc.Target(),
-		operation: method,
+		Type:      TypeGRPC,
+		Endpoint:  cc.Target(),
+		Operation: method,
 		InHeader:  header,
 	}
 }
 
 func GetTransportFromGrpcServer(ctx context.Context, info *grpc.UnaryServerInfo, header IMeta) ITransport {
 	return &Transport{
-		typ:       TypeGRPC,
-		endpoint:  GrpcHostAddress,
-		operation: info.FullMethod,
+		Type:      TypeGRPC,
+		Endpoint:  GrpcHostAddress,
+		Operation: info.FullMethod,
 		InHeader:  header,
 	}
 }

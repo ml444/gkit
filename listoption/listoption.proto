@@ -1,53 +1,55 @@
 syntax = "proto3";
-
+// protoc --proto_path=. --go_out=paths=source_relative:. ./listoption/listoption.proto
 package listoption;
 
-option go_package = "./listoption;listoption";
+option go_package = "github.com/ml444/gkit/listoption;listoption";
 option java_multiple_files = true;
 option java_package = "com.github.gkit.listoption";
 option objc_class_prefix = "GkitListOption";
 
-// 分页拉取机制
-message ListOption {
-  message Option {
-    // @desc: 类型，各业务定义的type
-    int32 type = 1;
+// Options for list queries
+message Options {
+    message Option {
+        // @desc: optional query item defined by each business,
+        // which determines the type of value
+        int32 kind = 1;
+        // @desc: The value is transmitted uniformly as a string,
+        // with kind determining the type of the value.
+        // If the value is an array or slice separate it with ",".
+        string value = 2;
+    }
 
-    // @desc: 参数，只支持1个参数，参数实际类型和意义由type决定
-    string value = 2;
-  }
-
-  // @desc: 搜索过滤逻辑，不支持逻辑或
-  //   options内部是逻辑与关系，暂不支持逻辑或；尽量避免复杂的过滤逻辑，后台不好分页
-  // @ignore: all
-  repeated Option options = 1;
-
-  // @desc: 需要获取的索引开始位置
-  uint32 offset = 2;
-
-  // @desc: 分页的每页字段长度
-  uint32 limit = 3;
-
-  // @desc: = true 时, 就算 offset = 0 也不要 count
-  bool skip_count = 4;
-
-  // @desc: 需要获取的索引开始位置标记
-  string offset_token = 5;
+    // @desc:  options are internally a logical "And" relationship,
+    // logical "or" is not supported at this time.
+    // Avoid complex filtering queries
+    repeated Option options = 1;
 }
 
+// There are two modes of paging:
+//1. Classic paging mode. Use "Page", "Size" and "Total" for paging.
+//2. Database preferred mode. Directly use "Offset" and "Size" for paging,
+//   similar to SQL's "offset" and "limit ".
+//   Of course, the total number is still "Total".
 message Paginate {
-  // @desc: 当前获取到的第一个的索引位置
-  uint32 offset = 1;
-
-  // @desc: 每页结果数
-  uint32 limit = 2;
-
-  // @desc: 总页数
-  int64 total = 3;
-
-  // @desc: 是否有更多数据，新字段，老接口不一定会填，要跟后端开发沟通好
-  bool has_more = 4;
-
-  // @desc: 下次索引开始位置标记,为空标示没有下一个了
-  string next_offset_token = 5;
+    // @desc: current page
+    uint32 page = 1;
+    // @desc: page size
+    uint32 size = 2;
+    // @desc: offset is the starting point of the table index.
+    uint32 offset = 3;
+    // @desc: total number of data
+    int64 total = 5;
+    // @desc: When SkipCount is true,
+    // even if CurrentPage is equal to 1, don't count the total.
+    bool skip_count = 6;
 }
+
+// Scroll: mode. Do not count the total, Use "Size" and "NextToken" for paging.
+//      through the "NextToken" keep getting the next page until the data is finished.
+message Scroll {
+    // @desc: page size
+    uint32 size = 1;
+    // @desc: next page token
+    string next_token = 2;
+}
+

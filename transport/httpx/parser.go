@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/ml444/gkit/middleware"
+	"github.com/ml444/gkit/pkg/auth/jwt"
 
 	"github.com/gorilla/mux"
 	"github.com/ml444/gutil/str"
 
-	"github.com/ml444/gkit/auth/jwt"
 	"github.com/ml444/gkit/errorx"
 	"github.com/ml444/gkit/log"
 )

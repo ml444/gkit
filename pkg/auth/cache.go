@@ -3,10 +3,12 @@ package auth
 import (
 	"context"
 	"encoding/json"
-	"github.com/ml444/gkit/auth/jwt"
-	"github.com/ml444/gkit/log"
-	"github.com/redis/go-redis/v9"
 	"time"
+
+	"github.com/ml444/gkit/log"
+	"github.com/ml444/gkit/pkg/auth/jwt"
+
+	"github.com/redis/go-redis/v9"
 )
 
 const (
