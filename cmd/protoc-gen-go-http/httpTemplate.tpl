@@ -38,6 +38,7 @@ func _{{$svrType}}_{{.Name}}{{.Num}}_HTTP_Handler(srv {{$svrType}}HTTPServer) fu
 			return err
 		}
 		{{- end}}
+		log.Infof("Request: %v", &in)
 		transport.SetOperation(ctx,Operation{{$svrType}}{{.OriginalName}})
 		reply, err := srv.{{.Name}}(ctx, &in)
 		if err != nil {
