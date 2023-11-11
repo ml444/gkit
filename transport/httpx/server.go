@@ -198,7 +198,7 @@ func (s *Server) filter() mux.MiddlewareFunc {
 				// /path/123 -> /path/{id}
 				pathTemplate, _ = route.GetPathTemplate()
 			}
-
+			log.Debugf("%s %s", req.Method, pathTemplate)
 			tr := &transport.Transport{
 				Operation: pathTemplate,
 				//pathTemplate: pathTemplate,
