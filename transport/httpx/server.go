@@ -61,15 +61,6 @@ func TLSConfig(c *tls.Config) ServerOption {
 	}
 }
 
-// StrictSlash is with mux's StrictSlash
-// If true, when the path pattern is "/path/", accessing "/path" will
-// redirect to the former and vice versa.
-func StrictSlash(strictSlash bool) ServerOption {
-	return func(o *Server) {
-		o.strictSlash = strictSlash
-	}
-}
-
 // Listener with server lis
 func Listener(lis net.Listener) ServerOption {
 	return func(s *Server) {
@@ -77,10 +68,33 @@ func Listener(lis net.Listener) ServerOption {
 	}
 }
 
-// PathPrefix with mux's PathPrefix, router will replaced by a subrouter that start with prefix.
-func PathPrefix(prefix string) ServerOption {
+// RouterPathPrefix with mux's PathPrefix, router will replace by a subrouter that start with prefix.
+func RouterPathPrefix(prefix string) ServerOption {
 	return func(s *Server) {
 		s.router = s.router.PathPrefix(prefix).Subrouter()
+	}
+}
+
+// RouterStrictSlash with mux's StrictSlash
+// If true, when the path pattern is "/path/", accessing "/path" will
+// redirect to the former and vice versa.
+func RouterStrictSlash(strictSlash bool) ServerOption {
+	return func(s *Server) {
+		s.router = s.router.StrictSlash(strictSlash)
+	}
+}
+
+// RouterSkipClean with mux's SkipClean
+func RouterSkipClean(skipClean bool) ServerOption {
+	return func(s *Server) {
+		s.router = s.router.SkipClean(skipClean)
+	}
+}
+
+// RouterUseEncodedPath with mux's SkipClean
+func RouterUseEncodedPath() ServerOption {
+	return func(s *Server) {
+		s.router = s.router.UseEncodedPath()
 	}
 }
 
@@ -98,22 +112,18 @@ type Server struct {
 	router      *mux.Router
 }
 
-// NewServer creates an HTTP server by options.
 func NewServer(opts ...ServerOption) *Server {
 	srv := &Server{
 		network:     "tcp",
 		address:     ":5050",
 		timeout:     1 * time.Second,
 		strictSlash: true,
-		router:      mux.NewRouter(),
+		router:      NewMuxRouter(),
 	}
 	for _, o := range opts {
 		o(srv)
 	}
-	srv.router.StrictSlash(srv.strictSlash)
-	srv.router.NotFoundHandler = http.DefaultServeMux
-	srv.router.MethodNotAllowedHandler = http.DefaultServeMux
-	srv.router.Use(srv.filter())
+	srv.router.Use(srv.globalMiddleware())
 	srv.Server = &http.Server{
 		Handler:   srv.router,
 		TLSConfig: srv.tlsConf,
@@ -151,7 +161,7 @@ func (s *Server) WalkHandle(handle func(method, path string, handler http.Handle
 
 // Route registers an HTTP router.
 func (s *Server) Route(prefix string, filters ...middleware.HttpMiddleware) *Router {
-	return newRouter(prefix, s, filters...)
+	return newRouter(prefix, s.router, DefaultErrorEncoder, filters...)
 }
 
 // Handle registers a new route with a matcher for the URL path.
@@ -179,7 +189,7 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	s.Handler.ServeHTTP(res, req)
 }
 
-func (s *Server) filter() mux.MiddlewareFunc {
+func (s *Server) globalMiddleware() mux.MiddlewareFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			var (
@@ -227,7 +237,7 @@ func (s *Server) Endpoint() (*url.URL, error) {
 	return s.endpoint, nil
 }
 
-// Start start the HTTP server.
+// Start the HTTP server.
 func (s *Server) Start(ctx context.Context) error {
 	if err := s.listenAndEndpoint(); err != nil {
 		return err
@@ -248,7 +258,7 @@ func (s *Server) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop stop the HTTP server.
+// Stop the HTTP server.
 func (s *Server) Stop(ctx context.Context) error {
 	log.Info("[HTTP] server stopping")
 	return s.Shutdown(ctx)

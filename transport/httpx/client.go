@@ -39,7 +39,7 @@ type clientOptions struct {
 }
 
 // WithSubset with client disocvery subset size.
-// zero value means subset filter disabled
+// zero value means subset globalMiddleware disabled
 func WithSubset(size int) ClientOption {
 	return func(o *clientOptions) {
 		o.subsetSize = size

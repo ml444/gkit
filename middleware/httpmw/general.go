@@ -1,9 +1,10 @@
 package httpmw
 
 import (
+	"reflect"
+
 	"github.com/ml444/gkit/errorx"
 	"github.com/ml444/gkit/middleware"
-	"reflect"
 )
 
 func CheckResponseError() middleware.AfterHandler {

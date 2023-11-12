@@ -76,6 +76,15 @@ func getCoder(contentSubtype string) encoding.Coder {
 	return c
 }
 
+// DecodeRequestFunc is decode request func.
+type DecodeRequestFunc func(*http.Request, interface{}) error
+
+// EncodeResponseFunc is encode response func.
+type EncodeResponseFunc func(http.ResponseWriter, *http.Request, interface{}) error
+
+// EncodeErrorFunc is encode error func.
+type EncodeErrorFunc func(http.ResponseWriter, *http.Request, error)
+
 // DefaultResponseEncoder encodes the object to the HTTP response.
 func DefaultResponseEncoder(w http.ResponseWriter, r *http.Request, v interface{}) error {
 	if v == nil {
