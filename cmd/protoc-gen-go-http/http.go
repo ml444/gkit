@@ -16,9 +16,10 @@ import (
 )
 
 const (
-	contextPackage   = protogen.GoImportPath("context")
-	transportPackage = protogen.GoImportPath("github.com/ml444/gkit/transport")
-	httpxPackage     = protogen.GoImportPath("github.com/ml444/gkit/transport/httpx")
+	contextPackage    = protogen.GoImportPath("context")
+	middlewarePackage = protogen.GoImportPath("github.com/ml444/gkit/middleware")
+	transportPackage  = protogen.GoImportPath("github.com/ml444/gkit/transport")
+	httpxPackage      = protogen.GoImportPath("github.com/ml444/gkit/transport/httpx")
 )
 
 var methodSets = make(map[string]int)
@@ -49,9 +50,8 @@ func generateFileContent(gen *protogen.Plugin, file *protogen.File, g *protogen.
 	if len(file.Services) == 0 {
 		return
 	}
-	g.P("// This is a compile-time assertion to ensure that this generated file")
-	g.P("// is compatible with the gkit package it is being compiled against.")
 	g.P("var _ = new(", contextPackage.Ident("Context"), ")")
+	g.P("var _  = make([]", middlewarePackage.Ident("Middleware"), ", 0)")
 	g.P("var _ ", transportPackage.Ident("Server"), " = new(", httpxPackage.Ident("Server"), ")")
 	g.P()
 

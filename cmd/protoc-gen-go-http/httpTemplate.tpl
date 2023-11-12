@@ -17,12 +17,12 @@ type {{.ServiceType}}HTTPServer interface {
 func Register{{.ServiceType}}HTTPServer(s *httpx.Server, srv {{.ServiceType}}HTTPServer) {
 	r := s.Route("/")
 	{{- range .Methods}}
-	r.{{.Method}}("{{.Path}}", _{{$svrType}}_{{.Name}}{{.Num}}_HTTP_Handler(srv))
+	r.{{.Method}}("{{.Path}}", _{{$svrType}}_{{.Name}}{{.Num}}_HTTP_Handler(srv, s.Middlewares()...))
 	{{- end}}
 }
 
 {{range .Methods}}
-func _{{$svrType}}_{{.Name}}{{.Num}}_HTTP_Handler(srv {{$svrType}}HTTPServer) func(ctx httpx.Context) error {
+func {{$svrType}}_{{.Name}}{{.Num}}_HTTP_Handler(srv {{$svrType}}HTTPServer, mws ...middleware.Middleware) func(ctx httpx.Context) error {
 	return func(ctx httpx.Context) error {
 		var in {{.Request}}
 		{{- if .HasBody}}
@@ -38,9 +38,11 @@ func _{{$svrType}}_{{.Name}}{{.Num}}_HTTP_Handler(srv {{$svrType}}HTTPServer) fu
 			return err
 		}
 		{{- end}}
-		log.Infof("Request: %v", &in)
 		transport.SetOperation(ctx,Operation{{$svrType}}{{.OriginalName}})
-		reply, err := srv.{{.Name}}(ctx, &in)
+		handler := middleware.Chain(mws...)(func(ctx context.Context, req interface{}) (interface{}, error) {
+            return srv.{{.Name}}(ctx, req.(*{{.Request}}))
+        })
+        reply, err := handler(ctx, &in)
 		if err != nil {
 			return err
 		}
