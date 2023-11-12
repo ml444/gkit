@@ -26,7 +26,7 @@ type Server struct {
 	tlsConf      *tls.Config
 	grpcOpts     []grpc.ServerOption
 	health       *health.Server
-	customHealth bool
+	enableHealth bool
 	debug        bool
 }
 
@@ -48,7 +48,7 @@ func NewServer(registerFunc func(s grpc.ServiceRegistrar), opts ...ServerOption)
 		s.grpcOpts = append(s.grpcOpts, grpc.Creds(insecure.NewCredentials()))
 	}
 	s.GRPCServer, _ = xds.NewGRPCServer(s.grpcOpts...)
-	if !s.customHealth {
+	if s.enableHealth {
 		s.health.SetServingStatus(s.name, healthpb.HealthCheckResponse_SERVING)
 		healthpb.RegisterHealthServer(s.GRPCServer, s.health)
 	}

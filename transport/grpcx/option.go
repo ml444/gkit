@@ -37,10 +37,10 @@ func Name(name string) ServerOption {
 	}
 }
 
-// CustomHealth Checks server.
-func CustomHealth() ServerOption {
+// EnableHealth Checks server.
+func EnableHealth() ServerOption {
 	return func(s *Server) {
-		s.customHealth = true
+		s.enableHealth = true
 	}
 }
 

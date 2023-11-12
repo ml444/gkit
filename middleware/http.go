@@ -15,7 +15,7 @@ type HttpHandler func(writer http.ResponseWriter, request *http.Request)
 
 type HttpMiddleware func(http.Handler) http.Handler
 
-func Chain(middlewares ...HttpMiddleware) HttpMiddleware {
+func HTTPChain(middlewares ...HttpMiddleware) HttpMiddleware {
 	return func(next http.Handler) http.Handler {
 		for i := len(middlewares) - 1; i >= 0; i-- { // reverse
 			next = middlewares[i](next)

@@ -71,8 +71,8 @@ func (r *Router) Handle(method, relativePath string, h HandlerFunc, middlewares 
 		ctx.Reset(nil, nil)
 		r.pool.Put(ctx)
 	}))
-	next = middleware.Chain(middlewares...)(next)
-	next = middleware.Chain(r.middlewares...)(next)
+	next = middleware.HTTPChain(middlewares...)(next)
+	next = middleware.HTTPChain(r.middlewares...)(next)
 	r.router.Handle(path.Join(r.prefix, relativePath), next).Methods(method)
 }
 

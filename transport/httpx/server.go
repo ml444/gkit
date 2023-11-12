@@ -23,81 +23,6 @@ var (
 	_ http.Handler = (*Server)(nil)
 )
 
-// ServerOption is an HTTP server option.
-type ServerOption func(*Server)
-
-// Network with server network.
-func Network(network string) ServerOption {
-	return func(s *Server) {
-		s.network = network
-	}
-}
-
-// Address with server address.
-func Address(addr string) ServerOption {
-	return func(s *Server) {
-		s.address = addr
-	}
-}
-
-// Endpoint with server address.
-func Endpoint(endpoint *url.URL) ServerOption {
-	return func(s *Server) {
-		s.endpoint = endpoint
-	}
-}
-
-// Timeout with server timeout.
-func Timeout(timeout time.Duration) ServerOption {
-	return func(s *Server) {
-		s.timeout = timeout
-	}
-}
-
-// TLSConfig with TLS config.
-func TLSConfig(c *tls.Config) ServerOption {
-	return func(o *Server) {
-		o.tlsConf = c
-	}
-}
-
-// Listener with server lis
-func Listener(lis net.Listener) ServerOption {
-	return func(s *Server) {
-		s.lis = lis
-	}
-}
-
-// RouterPathPrefix with mux's PathPrefix, router will replace by a subrouter that start with prefix.
-func RouterPathPrefix(prefix string) ServerOption {
-	return func(s *Server) {
-		s.router = s.router.PathPrefix(prefix).Subrouter()
-	}
-}
-
-// RouterStrictSlash with mux's StrictSlash
-// If true, when the path pattern is "/path/", accessing "/path" will
-// redirect to the former and vice versa.
-func RouterStrictSlash(strictSlash bool) ServerOption {
-	return func(s *Server) {
-		s.router = s.router.StrictSlash(strictSlash)
-	}
-}
-
-// RouterSkipClean with mux's SkipClean
-func RouterSkipClean(skipClean bool) ServerOption {
-	return func(s *Server) {
-		s.router = s.router.SkipClean(skipClean)
-	}
-}
-
-// RouterUseEncodedPath with mux's SkipClean
-func RouterUseEncodedPath() ServerOption {
-	return func(s *Server) {
-		s.router = s.router.UseEncodedPath()
-	}
-}
-
 // Server is an HTTP server wrapper.
 type Server struct {
 	*http.Server
@@ -108,17 +33,16 @@ type Server struct {
 	network     string
 	address     string
 	timeout     time.Duration
-	strictSlash bool
 	router      *mux.Router
+	middlewares []middleware.Middleware
 }
 
 func NewServer(opts ...ServerOption) *Server {
 	srv := &Server{
-		network:     "tcp",
-		address:     ":5050",
-		timeout:     1 * time.Second,
-		strictSlash: true,
-		router:      NewMuxRouter(),
+		network: "tcp",
+		address: ":5050",
+		timeout: 1 * time.Second,
+		router:  NewMuxRouter(),
 	}
 	for _, o := range opts {
 		o(srv)
@@ -129,6 +53,9 @@ func NewServer(opts ...ServerOption) *Server {
 		TLSConfig: srv.tlsConf,
 	}
 	return srv
+}
+func (s *Server) Middlewares() []middleware.Middleware {
+	return s.middlewares
 }
 
 // WalkRoute walks the router and all its sub-routers, calling walkFn for each route in the tree.
@@ -160,8 +87,8 @@ func (s *Server) WalkHandle(handle func(method, path string, handler http.Handle
 }
 
 // Route registers an HTTP router.
-func (s *Server) Route(prefix string, filters ...middleware.HttpMiddleware) *Router {
-	return newRouter(prefix, s.router, DefaultErrorEncoder, filters...)
+func (s *Server) Route(prefix string, httpMiddlewares ...middleware.HttpMiddleware) *Router {
+	return newRouter(prefix, s.router, DefaultErrorEncoder, httpMiddlewares...)
 }
 
 // Handle registers a new route with a matcher for the URL path.
