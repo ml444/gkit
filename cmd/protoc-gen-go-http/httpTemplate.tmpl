@@ -17,7 +17,7 @@ type {{.ServiceType}}HTTPServer interface {
 func Register{{.ServiceType}}HTTPServer(s *httpx.Server, srv {{.ServiceType}}HTTPServer) {
 	r := s.Route("/")
 	{{- range .Methods}}
-	r.{{.Method}}("{{.Path}}", _{{$svrType}}_{{.Name}}{{.Num}}_HTTP_Handler(srv, s.Middlewares()...))
+	r.{{.Method}}("{{.Path}}", {{$svrType}}_{{.Name}}{{.Num}}_HTTP_Handler(srv, s.Middlewares()...))
 	{{- end}}
 }
 
