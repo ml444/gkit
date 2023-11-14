@@ -5,7 +5,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	xdscreds "google.golang.org/grpc/credentials/xds"
 
-	"github.com/ml444/gkit/middleware/grpcmw"
+	"github.com/ml444/gkit/middleware/general"
 )
 
 // NewXDSConn new a connection of xDs
@@ -22,7 +22,7 @@ func NewXDSConn(dsn string) (*grpc.ClientConn, error) {
 	conn, err = grpc.Dial(
 		dsn,
 		grpc.WithTransportCredentials(creds),
-		grpc.WithChainUnaryInterceptor(grpcmw.ClientErrorInterceptor),
+		grpc.WithChainUnaryInterceptor(general.ClientErrorInterceptor),
 	)
 	if err != nil {
 		return nil, err

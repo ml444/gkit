@@ -1,15 +1,29 @@
-package grpcmw
+package general
 
 import (
 	"context"
 
-	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/pkg/errors"
+
 	"github.com/ml444/gkit/errorx"
+	"github.com/ml444/gkit/middleware"
 )
+
+func ProcessingNonstandardErrors() middleware.Middleware {
+	return func(handler middleware.ServiceHandler) middleware.ServiceHandler {
+		return func(ctx context.Context, req interface{}) (rsp interface{}, err error) {
+			rsp, err = handler(ctx, req)
+			if err != nil {
+				return rsp, errorx.FromError(err)
+			}
+			return
+		}
+	}
+}
 
 func ServerErrorInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 	resp, err := handler(ctx, req)
@@ -32,7 +46,7 @@ func toStatusError(err error) error {
 		return errorx.CreateErrorf(
 			errorx.UnknownStatusCode,
 			errorx.ErrCodeUnknown,
-			"serialization err: %s to %s", pbErr.String(), e.Error(),
+			"errorx: %s to %s", pbErr.String(), e.Error(),
 		)
 	}
 	return st.Err()

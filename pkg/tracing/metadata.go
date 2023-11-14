@@ -4,8 +4,6 @@ import (
 	"context"
 
 	"go.opentelemetry.io/otel/propagation"
-	
-	"github.com/ml444/gkit/log"
 )
 
 const serviceHeader = "x-md-service-name"
@@ -17,7 +15,7 @@ var _ propagation.TextMapPropagator = Metadata{}
 
 // Inject sets metadata key-values from ctx into the carrier.
 func (b Metadata) Inject(ctx context.Context, carrier propagation.TextMapCarrier) {
-	carrier.Set(serviceHeader, log.GetLoggerName())
+	//carrier.Set(serviceHeader, log.GetLoggerName())
 }
 
 // Extract returns a copy of parent with the metadata from the carrier added.

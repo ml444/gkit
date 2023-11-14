@@ -1,10 +1,12 @@
-package grpcmw
+package recovery
 
 import (
 	"context"
+
+	"google.golang.org/grpc"
+
 	"github.com/ml444/gkit/log"
 	"github.com/ml444/gkit/middleware"
-	"google.golang.org/grpc"
 )
 
 // UnaryServerInterceptor returns a new unary server interceptor for panic recovery.

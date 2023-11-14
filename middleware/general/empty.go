@@ -1,21 +1,19 @@
-package logging
+package general
 
 import (
 	"context"
-	"time"
+	"reflect"
 
-	"github.com/ml444/gkit/log"
 	"github.com/ml444/gkit/middleware"
 )
 
-func PrintInfo() middleware.Middleware {
+func ReplaceEmptyResponse(data interface{}) middleware.Middleware {
 	return func(handler middleware.ServiceHandler) middleware.ServiceHandler {
 		return func(ctx context.Context, req interface{}) (rsp interface{}, err error) {
-			log.Infof("req: %+v", req)
-			startTime := time.Now()
 			rsp, err = handler(ctx, req)
-			end := time.Since(startTime).Milliseconds()
-			log.Infof("[%dms] rsp: %+v", end, rsp)
+			if err == nil && (rsp == nil || reflect.ValueOf(rsp).Elem().IsZero()) {
+				return data, nil
+			}
 			return
 		}
 	}

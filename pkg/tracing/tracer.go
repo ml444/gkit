@@ -6,8 +6,6 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/ml444/gkit/errorx"
-
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -64,9 +62,9 @@ func (t *Tracer) Start(ctx context.Context, operation string, carrier propagatio
 func (t *Tracer) End(_ context.Context, span trace.Span, m interface{}, err error) {
 	if err != nil {
 		span.RecordError(err)
-		if e := errorx.FromError(err); e != nil {
-			span.SetAttributes(attribute.Key("rpc.status_code").Int64(int64(e.StatusCode)))
-		}
+		//if e := errorx.FromError(err); e != nil {
+		//	span.SetAttributes(attribute.Key("rpc.status_code").Int64(int64(e.StatusCode)))
+		//}
 		span.SetStatus(codes.Error, err.Error())
 	} else {
 		span.SetStatus(codes.Ok, "OK")
