@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ml444/gkit/middleware"
+	"github.com/ml444/gkit/pkg/header"
 	"github.com/ml444/gkit/transport"
 )
 
@@ -96,7 +97,7 @@ func (client *Client) Invoke(ctx context.Context, method, path string, args inte
 	}
 	ctx = transport.ToContext(ctx, &transport.Transport{
 		Endpoint:  client.endpoint,
-		InHeader:  (transport.Metadata)(req.Header),
+		InHeader:  (header.Header)(req.Header),
 		Operation: c.operation,
 		Request:   req,
 		//pathTemplate: c.pathTemplate,

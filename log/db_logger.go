@@ -5,8 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"gorm.io/gorm"
-	logger2 "gorm.io/gorm/logger"
-	"gorm.io/gorm/utils"
+	gormlogger "gorm.io/gorm/logger"
 	"time"
 )
 
@@ -27,28 +26,28 @@ const (
 )
 
 // NewGormLogger initialize logger
-func NewGormLogger(writer logger2.Writer, config logger2.Config) logger2.Interface {
+func NewGormLogger(cfg gormlogger.Config) gormlogger.Interface {
 	var (
-		infoStr      = "%s\n[info] "
-		warnStr      = "%s\n[warn] "
-		errStr       = "%s\n[error] "
-		traceStr     = "%s\n[%.3fms] [rows:%v] %s"
-		traceWarnStr = "%s %s\n[%.3fms] [rows:%v] %s"
-		traceErrStr  = "%s %s\n[%.3fms] [rows:%v] %s"
+		infoStr      = "[INF] %s %s"
+		warnStr      = "[WAR] %s %s"
+		errStr       = "[ERR] %s %s"
+		traceStr     = "[INF] [%.3fms] [rows:%v] %s\n"
+		traceWarnStr = "[WAR] %s [%.3fms] [rows:%v] %s\n"
+		traceErrStr  = "[ERR] %s [%.3fms] [rows:%v] %s\n"
 	)
 
-	if config.Colorful {
-		infoStr = Green + "[info] " + Reset
-		warnStr = Magenta + "[warn] " + Reset
-		errStr = Red + "[error] " + Reset
-		traceStr = Yellow + "[%.3fms] " + BlueBold + "[rows:%v]" + Reset + " %s"
-		traceWarnStr = Yellow + "%s\n" + Reset + RedBold + "[%.3fms] " + Yellow + "[rows:%v]" + Magenta + " %s" + Reset
-		traceErrStr = MagentaBold + "%s\n" + Reset + Yellow + "[%.3fms] " + BlueBold + "[rows:%v]" + Reset + " %s"
+	if cfg.Colorful {
+		infoStr = Green + "[INF] " + Reset + "%s %s"
+		warnStr = Magenta + "[WAR] " + Reset + "%s %s"
+		errStr = Red + "[ERR] " + Reset + "%s %s"
+		traceStr = Green + "[INF] " + Yellow + "[%.3fms] " + BlueBold + "[rows:%v]" + Reset + " %s\n"
+		traceWarnStr = Magenta + "[WAR] " + Yellow + "%s" + Reset + RedBold + "[%.3fms] " + Yellow + "[rows:%v]" + Magenta + " %s" + Reset + "\n"
+		traceErrStr = Red + "[ERR] " + MagentaBold + "%s" + Yellow + "[%.3fms] " + BlueBold + "[rows:%v]" + Reset + " %s\n"
 	}
 
-	return &dblogger{
-		Writer:       writer,
-		Config:       config,
+	return &dbLogger{
+		Writer:       GetLogger(),
+		Config:       cfg,
 		infoStr:      infoStr,
 		warnStr:      warnStr,
 		errStr:       errStr,
@@ -58,57 +57,57 @@ func NewGormLogger(writer logger2.Writer, config logger2.Config) logger2.Interfa
 	}
 }
 
-type dblogger struct {
-	logger2.Writer
-	logger2.Config
+type dbLogger struct {
+	gormlogger.Writer
+	gormlogger.Config
 	infoStr, warnStr, errStr            string
 	traceStr, traceErrStr, traceWarnStr string
 }
 
 // LogMode log mode
-func (l *dblogger) LogMode(level logger2.LogLevel) logger2.Interface {
+func (l *dbLogger) LogMode(level gormlogger.LogLevel) gormlogger.Interface {
 	newlogger := *l
 	newlogger.LogLevel = level
 	return &newlogger
 }
 
 // Info print info
-func (l dblogger) Info(ctx context.Context, msg string, data ...interface{}) {
-	if l.LogLevel >= logger2.Info {
-		l.Printf(l.infoStr+msg, append([]interface{}{utils.FileWithLineNum()}, data...)...)
+func (l dbLogger) Info(ctx context.Context, msg string, data ...interface{}) {
+	if l.LogLevel >= gormlogger.Info {
+		l.Printf(l.infoStr, msg, fmt.Sprintln(data...))
 	}
 }
 
 // Warn print warn messages
-func (l dblogger) Warn(ctx context.Context, msg string, data ...interface{}) {
-	if l.LogLevel >= logger2.Warn {
-		l.Printf(l.warnStr+msg, append([]interface{}{utils.FileWithLineNum()}, data...)...)
+func (l dbLogger) Warn(ctx context.Context, msg string, data ...interface{}) {
+	if l.LogLevel >= gormlogger.Warn {
+		l.Printf(l.warnStr, msg, fmt.Sprintln(data...))
 	}
 }
 
 // Error print error messages
-func (l dblogger) Error(ctx context.Context, msg string, data ...interface{}) {
-	if l.LogLevel >= logger2.Error {
-		l.Printf(l.errStr+msg, append([]interface{}{utils.FileWithLineNum()}, data...)...)
+func (l dbLogger) Error(ctx context.Context, msg string, data ...interface{}) {
+	if l.LogLevel >= gormlogger.Error {
+		l.Printf(l.errStr, msg, fmt.Sprintln(data...))
 	}
 }
 
 // Trace print sql message
-func (l dblogger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
-	if l.LogLevel <= logger2.Silent {
+func (l dbLogger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
+	if l.LogLevel <= gormlogger.Silent {
 		return
 	}
 
 	elapsed := time.Since(begin)
 	switch {
-	case err != nil && l.LogLevel >= logger2.Error && (!errors.Is(err, gorm.ErrRecordNotFound) || !l.IgnoreRecordNotFoundError):
+	case err != nil && l.LogLevel >= gormlogger.Error && (!errors.Is(err, gorm.ErrRecordNotFound) || !l.IgnoreRecordNotFoundError):
 		sql, rows := fc()
 		if rows == -1 {
 			l.Printf(l.traceErrStr, err, float64(elapsed.Nanoseconds())/1e6, "-", sql)
 		} else {
 			l.Printf(l.traceErrStr, err, float64(elapsed.Nanoseconds())/1e6, rows, sql)
 		}
-	case elapsed > l.SlowThreshold && l.SlowThreshold != 0 && l.LogLevel >= logger2.Warn:
+	case elapsed > l.SlowThreshold && l.SlowThreshold != 0 && l.LogLevel >= gormlogger.Warn:
 		sql, rows := fc()
 		slowLog := fmt.Sprintf("SLOW SQL >= %v", l.SlowThreshold)
 		if rows == -1 {
@@ -116,7 +115,7 @@ func (l dblogger) Trace(ctx context.Context, begin time.Time, fc func() (string,
 		} else {
 			l.Printf(l.traceWarnStr, slowLog, float64(elapsed.Nanoseconds())/1e6, rows, sql)
 		}
-	case l.LogLevel == logger2.Info:
+	case l.LogLevel == gormlogger.Info:
 		sql, rows := fc()
 		if rows == -1 {
 			l.Printf(l.traceStr, float64(elapsed.Nanoseconds())/1e6, "-", sql)
@@ -127,8 +126,8 @@ func (l dblogger) Trace(ctx context.Context, begin time.Time, fc func() (string,
 }
 
 // ParamsFilter Trace print sql message
-func (l dblogger) ParamsFilter(ctx context.Context, sql string, params ...interface{}) (string, []interface{}) {
-	if l.Config.ParameterizedQueries {
+func (l dbLogger) ParamsFilter(ctx context.Context, sql string, params ...interface{}) (string, []interface{}) {
+	if l.ParameterizedQueries {
 		return sql, nil
 	}
 	return sql, params

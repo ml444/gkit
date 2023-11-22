@@ -88,7 +88,8 @@ func (l *DefaultLogger) Fatal(values ...interface{}) {
 }
 
 func (l *DefaultLogger) Printf(template string, values ...interface{}) {
-	l.Log(DebugLevel, fmt.Sprintf(template, values...))
+	_, err := l.writer.WriteString(fmt.Sprintf(template, values...))
+	println(err)
 }
 func (l *DefaultLogger) Debugf(template string, values ...interface{}) {
 	l.Log(DebugLevel, fmt.Sprintf(template, values...))

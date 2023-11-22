@@ -8,14 +8,18 @@ import (
 	"github.com/ml444/gkit/middleware"
 )
 
-func PrintInfo() middleware.Middleware {
+func PrintInfo(printRspBody bool) middleware.Middleware {
 	return func(handler middleware.ServiceHandler) middleware.ServiceHandler {
 		return func(ctx context.Context, req interface{}) (rsp interface{}, err error) {
-			log.Infof("req: %+v", req)
+			log.Infof("req: %+v \n", req)
 			startTime := time.Now()
 			rsp, err = handler(ctx, req)
 			end := time.Since(startTime).Milliseconds()
-			log.Infof("[%dms] rsp: %+v", end, rsp)
+			if printRspBody {
+				log.Infof("[%dms] rsp: %+v \n", end, rsp)
+			} else {
+				log.Infof("[%dms] \n", end)
+			}
 			return
 		}
 	}

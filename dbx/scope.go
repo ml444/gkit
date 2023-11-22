@@ -2,8 +2,12 @@ package dbx
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"gorm.io/gorm/clause"
+	"gorm.io/gorm/utils"
 	"net/http"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -145,7 +149,7 @@ func (s *Scope) Delete(conds ...interface{}) error {
 
 func (s *Scope) First(dest interface{}, conds ...interface{}) error {
 	err := s.Tx.First(dest, conds).Error
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		if s.NotFoundErr != nil {
 			return s.NotFoundErr
 		}
@@ -237,10 +241,23 @@ func (s *Scope) Order(value string) *Scope {
 	return s
 }
 
-func (s *Scope) Group(query string) *Scope {
-	s.Tx.Group(query)
+func (s *Scope) Group(name string) *Scope {
+	s.Tx.Group(name)
 	return s
 }
+
+func (s *Scope) Groups(names ...string) *Scope {
+	var columns []clause.Column
+	for _, name := range names {
+		fields := strings.FieldsFunc(name, utils.IsValidDBNameChar)
+		columns = append(columns, clause.Column{Name: name, Raw: len(fields) != 1})
+	}
+	s.Tx.Statement.AddClause(clause.GroupBy{
+		Columns: columns,
+	})
+	return s
+}
+
 func (s *Scope) Having(query interface{}, args ...interface{}) *Scope {
 	s.Tx.Having(query, args...)
 	return s
@@ -270,9 +287,9 @@ func (s *Scope) PaginateQuery(opt *listoption.Paginate, list interface{}) (*list
 		if opt.Offset == 0 && opt.Page > 1 {
 			opt.Offset = (opt.Page - 1) * opt.Size
 		}
-		if opt.Offset == 0 && !opt.SkipCount {
+		if opt.Offset == 0 || !opt.SkipCount {
 			err := s.Tx.Count(&total).Error
-			if err != nil && err != gorm.ErrRecordNotFound {
+			if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil, err
 			}
 		}
@@ -286,6 +303,7 @@ func (s *Scope) PaginateQuery(opt *listoption.Paginate, list interface{}) (*list
 	}
 	p := listoption.Paginate{
 		Offset: opt.Offset,
+		Page:   opt.Page,
 		Size:   opt.Size,
 		Total:  total,
 	}

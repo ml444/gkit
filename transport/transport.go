@@ -5,6 +5,8 @@ import (
 	"net/http"
 
 	"google.golang.org/grpc"
+
+	"github.com/ml444/gkit/pkg/header"
 )
 
 // Type defines the type of Transport
@@ -36,12 +38,12 @@ type ITransport interface {
 	// GetReqHeader return transport request header
 	// http: http.Header
 	// grpc: metadata.MD
-	GetReqHeader() IMeta
+	GetReqHeader() header.IHeader
 	// GetRspHeader return transport reply/response header
 	// only valid for server transport
 	// http: http.Header
 	// grpc: metadata.MD
-	GetRspHeader() IMeta
+	GetRspHeader() header.IHeader
 }
 
 var _ ITransport = (*Transport)(nil)
@@ -51,8 +53,8 @@ type Transport struct {
 	Type      Type
 	Endpoint  string
 	Operation string
-	InHeader  IMeta
-	OutHeader IMeta
+	InHeader  header.IHeader
+	OutHeader header.IHeader
 	Request   *http.Request
 }
 
@@ -72,12 +74,12 @@ func (tr *Transport) GetOperation() string {
 }
 
 // GetReqHeader returns the request header.
-func (tr *Transport) GetReqHeader() IMeta {
+func (tr *Transport) GetReqHeader() header.IHeader {
 	return tr.InHeader
 }
 
 // GetRspHeader returns the reply header.
-func (tr *Transport) GetRspHeader() IMeta {
+func (tr *Transport) GetRspHeader() header.IHeader {
 	return tr.OutHeader
 }
 
@@ -110,11 +112,11 @@ func GetTransportFromHTTP(r *http.Request) ITransport {
 		Type:      TypeHTTP,
 		Endpoint:  r.URL.String(),
 		Operation: r.URL.Path,
-		InHeader:  (Metadata)(r.Header),
+		InHeader:  (header.Header)(r.Header),
 	}
 }
 
-func GetTransportFromGrpcClient(ctx context.Context, method string, cc *grpc.ClientConn, header IMeta) ITransport {
+func GetTransportFromGrpcClient(ctx context.Context, method string, cc *grpc.ClientConn, header header.IHeader) ITransport {
 	return &Transport{
 		Type:      TypeGRPC,
 		Endpoint:  cc.Target(),
@@ -123,7 +125,7 @@ func GetTransportFromGrpcClient(ctx context.Context, method string, cc *grpc.Cli
 	}
 }
 
-func GetTransportFromGrpcServer(ctx context.Context, info *grpc.UnaryServerInfo, header IMeta) ITransport {
+func GetTransportFromGrpcServer(ctx context.Context, info *grpc.UnaryServerInfo, header header.IHeader) ITransport {
 	return &Transport{
 		Type:      TypeGRPC,
 		Endpoint:  GrpcHostAddress,

@@ -11,8 +11,6 @@ import (
 	"github.com/ml444/gkit/errorx"
 )
 
-type Header map[string]interface{}
-
 var NotFoundHeaders = errorx.CreateError(
 	http.StatusForbidden,
 	errorx.ErrCodeInvalidHeaderSys,

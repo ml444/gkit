@@ -13,6 +13,7 @@ import (
 
 	"github.com/ml444/gkit/log"
 	"github.com/ml444/gkit/middleware"
+	"github.com/ml444/gkit/pkg/header"
 	"github.com/ml444/gkit/transport"
 	"github.com/ml444/gkit/transport/httpx/host"
 )
@@ -56,6 +57,9 @@ func NewServer(opts ...ServerOption) *Server {
 }
 func (s *Server) Middlewares() []middleware.Middleware {
 	return s.middlewares
+}
+func (s *Server) SetMiddlewares(mws ...middleware.Middleware) {
+	s.middlewares = append(s.middlewares, mws...)
 }
 
 // WalkRoute walks the router and all its sub-routers, calling walkFn for each route in the tree.
@@ -139,8 +143,8 @@ func (s *Server) globalMiddleware() mux.MiddlewareFunc {
 			tr := &transport.Transport{
 				Operation: pathTemplate,
 				//pathTemplate: pathTemplate,
-				InHeader:  (transport.Metadata)(req.Header),
-				OutHeader: (transport.Metadata)(w.Header()),
+				InHeader:  header.New(req.Header),
+				OutHeader: header.New(w.Header()),
 				//request:      req,
 			}
 			if s.endpoint != nil {

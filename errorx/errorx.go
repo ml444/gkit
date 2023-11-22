@@ -119,8 +119,8 @@ func NewWithMsg(errCode int32, msg string) *Error {
 	if !ok {
 		detail = &ErrCodeDetail{}
 		detail.StatusCode = UnknownStatusCode
-		detail.Message = msg
 	}
+	detail.Message = msg
 	return &Error{
 		ErrorInfo: ErrorInfo{
 			ErrorCode:  errCode,
