@@ -4,8 +4,10 @@ import (
 	"fmt"
 )
 
+type LogLevel int
+
 const (
-	DebugLevel = iota + 1
+	DebugLevel LogLevel = iota + 1
 	PrintLevel
 	InfoLevel
 	WarnLevel
@@ -31,7 +33,7 @@ var (
 	//colorEnd = "\x1b[0m"
 )
 
-func ColorLevel(lvl int) string {
+func ColorLevel(lvl LogLevel) string {
 	switch lvl {
 	case DebugLevel:
 		return fmt.Sprintf("%s[DEG]\x1b[0m ", blue)

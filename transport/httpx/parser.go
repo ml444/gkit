@@ -154,7 +154,7 @@ func (p *EndpointParser) handleWithReflect(req reflect.Value, callFunc ReflectCa
 				rspResult = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeInvalidReqSys, err.Error())
 				goto RETURN
 			}
-			log.Debugf("req[%s]: %+v", req.Type().Elem().Name(), r)
+			log.Debugf("req[%s]: %+v \n", req.Type().Elem().Name(), r)
 			// processing before handler
 			for _, h := range p.beforeHandlerList {
 				ctx, r, err = h(ctx, r)

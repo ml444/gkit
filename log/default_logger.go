@@ -13,7 +13,7 @@ func init() {
 }
 
 var logger Logger
-var level int
+var level LogLevel
 
 type Logger interface {
 	GetLoggerName() string
@@ -58,7 +58,7 @@ type DefaultLogger struct {
 	writer Writer
 }
 
-func (l *DefaultLogger) Log(lvl int, value string) {
+func (l *DefaultLogger) Log(lvl LogLevel, value string) {
 	if lvl < level {
 		return
 	}
@@ -107,7 +107,7 @@ func (l *DefaultLogger) Fatalf(template string, values ...interface{}) {
 	l.Log(FatalLevel, fmt.Sprintf(template, values...))
 }
 
-func SetLogLevel(lvl int) {
+func SetLogLevel(lvl LogLevel) {
 	level = lvl
 }
 
