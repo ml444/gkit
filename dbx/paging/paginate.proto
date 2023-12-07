@@ -1,0 +1,34 @@
+syntax = "proto3";
+// protoc --proto_path=. --go_out=paths=source_relative:. ./dbx/paging/paginate.proto
+package paginate;
+
+option go_package = "github.com/ml444/gkit/dbx/paging;paging";
+
+// There are two modes of paging:
+//1. Classic paging mode. Use "Page", "Size" and "Total" for paging.
+//2. Database preferred mode. Directly use "Offset" and "Size" for paging,
+//   similar to SQL's "offset" and "limit ".
+//   Of course, the total number is still "Total".
+message Paginate {
+    // @desc: current page
+    uint32 page = 1;
+    // @desc: page size
+    uint32 size = 2;
+    // @desc: offset is the starting point of the table index.
+    uint32 offset = 3;
+    // @desc: total number of data
+    int64 total = 5;
+    // @desc: When SkipCount is true,
+    // even if CurrentPage is equal to 1, don't count the total.
+    bool skip_count = 6;
+}
+
+// Scroll: mode. Do not count the total, Use "Size" and "NextToken" for paging.
+//      through the "NextToken" keep getting the next page until the data is finished.
+message Scroll {
+    // @desc: page size
+    uint32 size = 1;
+    // @desc: next page token
+    string next_token = 2;
+}
+

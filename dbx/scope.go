@@ -14,7 +14,6 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/ml444/gkit/errorx"
-	"github.com/ml444/gkit/listoption"
 	"github.com/ml444/gkit/log"
 )
 
@@ -46,13 +45,21 @@ type ProtoDeletedAt interface {
 
 type GenerateIDFunc func(ctx context.Context, cnt int) []uint64
 
+type OrderColumn struct {
+	Field   string
+	Desc    bool
+	Reorder bool
+}
+
 type Scope struct {
-	Tx           *gorm.DB
-	model        interface{}
-	NotFoundErr  error
-	RowsAffected int64
-	idFunc       GenerateIDFunc
-	resetTime    bool
+	*gorm.DB
+	model       interface{}
+	NotFoundErr error
+	//RowsAffected int64
+	idFunc GenerateIDFunc
+
+	resetTime        bool
+	blockNotFoundErr bool
 }
 
 func NewScope(db *gorm.DB, model interface{}) *Scope {
@@ -61,14 +68,14 @@ func NewScope(db *gorm.DB, model interface{}) *Scope {
 		tx = tx.Where("deleted_at = 0")
 	}
 	return &Scope{
-		Tx:    tx,
+		DB:    tx,
 		model: model,
 	}
 }
 
 func NewScopeOfPure(db *gorm.DB, model interface{}) *Scope {
 	return &Scope{
-		Tx:    db.Model(model),
+		DB:    db.Model(model),
 		model: model,
 	}
 }
@@ -81,8 +88,9 @@ func (s *Scope) SetNotFoundErr(notFoundErrCode int32) *Scope {
 	return s
 }
 
-func (s *Scope) fillResult() {
-	s.RowsAffected = s.Tx.RowsAffected
+func (s *Scope) BlockNotFoundErr() *Scope {
+	s.blockNotFoundErr = true
+	return s
 }
 
 // ResetSysDateTimeField To prevent someone from passing in these three fields by mistake, this method is provided to reset
@@ -108,13 +116,12 @@ func (s *Scope) Create(v interface{}) error {
 	// 	}
 	// }
 
-	return s.Tx.Create(v).Error
+	return s.DB.Create(v).Error
 }
 
 // CreateInBatches Insert data in batches after splitting data according to batchSize
 func (s *Scope) CreateInBatches(values interface{}, batchSize int) error {
-	defer s.fillResult()
-	return s.Tx.CreateInBatches(values, batchSize).Error
+	return s.DB.CreateInBatches(values, batchSize).Error
 }
 
 // Update updates attributes using callbacks. values must be a struct or map.
@@ -123,33 +130,34 @@ func (s *Scope) Update(v interface{}, conds ...interface{}) error {
 		s.ResetSysDateTimeField(v)
 	}
 	if len(conds) > 0 {
-		s.Tx.Where(conds[0], conds[1:])
+		s.DB.Where(conds[0], conds[1:])
 	}
-	s.Tx.Updates(v)
-	if s.Tx.Error != nil {
-		return s.Tx.Error
+	s.DB.Updates(v)
+	if s.DB.Error != nil {
+		return s.DB.Error
 	}
-	s.fillResult()
-	if s.Tx.RowsAffected == 0 {
+	if s.RowsAffected == 0 {
 		log.Warnf("model: %v, RowsAffected: 0", v)
 	}
 	return nil
 }
 
 func (s *Scope) Delete(conds ...interface{}) error {
-	defer s.fillResult()
 	if _, ok := s.model.(ProtoDeletedAt); ok {
 		if len(conds) > 1 {
-			s.Tx.Where(conds[0], conds[1:])
+			s.DB.Where(conds[0], conds[1:])
 		}
-		return s.Tx.UpdateColumn(ProtoMessageFieldDeletedAt, time.Now().Unix()).Error
+		return s.DB.UpdateColumn(ProtoMessageFieldDeletedAt, time.Now().Unix()).Error
 	}
-	return s.Tx.Delete(s.model, conds).Error
+	return s.DB.Delete(s.model, conds).Error
 }
 
 func (s *Scope) First(dest interface{}, conds ...interface{}) error {
-	err := s.Tx.First(dest, conds).Error
+	err := s.DB.First(dest, conds).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
+		if s.blockNotFoundErr {
+			return nil
+		}
 		if s.NotFoundErr != nil {
 			return s.NotFoundErr
 		}
@@ -162,87 +170,205 @@ func (s *Scope) First(dest interface{}, conds ...interface{}) error {
 	return err
 }
 
+func (s *Scope) Exist(conds ...interface{}) (bool, error) {
+	if len(conds) > 0 {
+		s.Where(conds[0], conds[1:])
+	}
+	count, err := s.Count()
+	if err != nil {
+		return false, err
+	}
+	if count <= 0 {
+		return false, nil
+	}
+	return true, nil
+}
+
 func (s *Scope) Find(dest interface{}, conds ...interface{}) error {
-	return s.Tx.Find(dest, conds).Error
+	return s.DB.Find(dest, conds).Error
 }
 
 func (s *Scope) Select(fields ...string) *Scope {
-	s.Tx.Select(fields)
+	s.DB.Select(fields)
 	return s
 }
 
 func (s *Scope) Like(field string, value string) *Scope {
-	s.Tx.Where(fmt.Sprintf("%s LIKE ?", field), "%"+value+"%")
+	s.DB.Where(fmt.Sprintf("%s LIKE ?", field), "%"+value+"%")
 	return s
 }
 
 func (s *Scope) LikePrefix(field string, value string) *Scope {
-	s.Tx.Where(fmt.Sprintf("%s LIKE ?", field), value+"%")
+	s.DB.Where(fmt.Sprintf("%s LIKE ?", field), value+"%")
 	return s
 }
 
 func (s *Scope) Where(query interface{}, args ...interface{}) *Scope {
-	s.Tx.Where(query, args...)
+	s.DB.Where(query, args...)
+	return s
+}
+
+type QueryOpts struct {
+	Selects        []string
+	Where          map[string]interface{}
+	Between        map[string][2]interface{}
+	Like           map[string]string
+	Or             map[string]interface{}
+	OrLike         map[string]string
+	OrBetween      map[string][2]interface{}
+	isLikePrefix   bool
+	isOrLikePrefix bool
+	GroupBys       []string
+	OrderBys       []OrderColumn
+}
+
+func (s *Scope) Query(opts *QueryOpts) *Scope {
+	if len(opts.Selects) > 0 {
+		s.Select(opts.Selects...)
+	}
+	if len(opts.Where) > 0 {
+		s.Where(opts.Where)
+	}
+	if len(opts.Between) > 0 {
+		for field, value := range opts.Between {
+			s.Between(field, value[0], value[1])
+		}
+	}
+	if len(opts.Like) > 0 {
+		for field, value := range opts.Like {
+			if opts.isLikePrefix {
+				s.LikePrefix(field, value)
+			} else {
+				s.Like(field, value)
+			}
+		}
+	}
+	if len(opts.Or) > 0 {
+		s.MultiOr(opts.Or)
+	}
+	if len(opts.OrLike) > 0 {
+		s.MultiOrLike(opts.OrLike, opts.isOrLikePrefix)
+	}
+	if len(opts.OrBetween) > 0 {
+		var queryList []string
+		var valueList []interface{}
+		for field, values := range opts.OrBetween {
+			queryList = append(queryList, fmt.Sprintf("(%s BETWEEN ? AND ?)", field))
+			valueList = append(valueList, values[0], values[1])
+		}
+		query := strings.Join(queryList, " OR ")
+		s.Where(query, valueList...)
+	}
+	if len(opts.GroupBys) > 0 {
+		s.Groups(opts.GroupBys...)
+	}
+	if len(opts.OrderBys) > 0 {
+		s.Orders(opts.OrderBys...)
+	}
 	return s
 }
 
 func (s *Scope) In(field string, values interface{}) *Scope {
-	s.Tx.Where(fmt.Sprintf("%s IN ?", field), values)
+	s.DB.Where(fmt.Sprintf("%s IN ?", field), values)
 	return s
 }
 
 func (s *Scope) NotIn(field string, values interface{}) *Scope {
-	s.Tx.Where(fmt.Sprintf("%s NOT IN ?", field), values)
+	s.DB.Where(fmt.Sprintf("%s NOT IN ?", field), values)
 	return s
 }
 
 // Ne :Where("field != ?", arg)
 func (s *Scope) Ne(field string, arg interface{}) *Scope {
-	s.Tx.Where(fmt.Sprintf("%s != ?", field), arg)
+	s.DB.Where(fmt.Sprintf("%s != ?", field), arg)
 	return s
 }
 func (s *Scope) Eq(field string, arg interface{}) *Scope {
-	s.Tx.Where(fmt.Sprintf("%s = ?", field), arg)
+	s.DB.Where(fmt.Sprintf("%s = ?", field), arg)
 	return s
 }
 func (s *Scope) Gt(field string, arg interface{}) *Scope {
-	s.Tx.Where(fmt.Sprintf("%s > ?", field), arg)
+	s.DB.Where(fmt.Sprintf("%s > ?", field), arg)
 	return s
 }
 func (s *Scope) Gte(field string, arg interface{}) *Scope {
-	s.Tx.Where(fmt.Sprintf("%s >= ?", field), arg)
+	s.DB.Where(fmt.Sprintf("%s >= ?", field), arg)
 	return s
 }
 func (s *Scope) Lt(field string, arg interface{}) *Scope {
-	s.Tx.Where(fmt.Sprintf("%s < ?", field), arg)
+	s.DB.Where(fmt.Sprintf("%s < ?", field), arg)
 	return s
 }
 func (s *Scope) Lte(field string, arg interface{}) *Scope {
-	s.Tx.Where(fmt.Sprintf("%s <= ?", field), arg)
+	s.DB.Where(fmt.Sprintf("%s <= ?", field), arg)
 	return s
 }
 
 func (s *Scope) Between(field string, arg1, arg2 interface{}) *Scope {
-	s.Tx.Where(fmt.Sprintf("%s BETWEEN ? AND ?", field), arg1, arg2)
+	s.DB.Where(fmt.Sprintf("%s BETWEEN ? AND ?", field), arg1, arg2)
 	return s
 }
 func (s *Scope) NotBetween(field string, arg1, arg2 interface{}) *Scope {
-	s.Tx.Where(fmt.Sprintf("%s NOT BETWEEN ? AND ?", field), arg1, arg2)
+	s.DB.Where(fmt.Sprintf("%s NOT BETWEEN ? AND ?", field), arg1, arg2)
 	return s
 }
 func (s *Scope) Or(query interface{}, args ...interface{}) *Scope {
-	s.Tx.Or(query, args...)
+	s.DB.Or(query, args...)
+	return s
+}
+func (s *Scope) MultiOr(opts map[string]interface{}) *Scope {
+	var values []interface{}
+	var orQueryList []string
+	for field, value := range opts {
+		orQueryList = append(orQueryList, fmt.Sprintf("(%s = ?)", field))
+		values = append(values, value)
+	}
+
+	s.DB.Where(strings.Join(orQueryList, " OR "), values...)
+	return s
+}
+func (s *Scope) MultiOrLike(opts map[string]string, isPrefix bool) *Scope {
+	var values []interface{}
+	var orQueryList []string
+	for field, value := range opts {
+		orQueryList = append(orQueryList, fmt.Sprintf("(%s LIKE ?)", field))
+		if isPrefix {
+			values = append(values, value+"%")
+		} else {
+			values = append(values, "%"+value+"%")
+		}
+	}
+
+	s.DB.Where(strings.Join(orQueryList, " OR "), values...)
 	return s
 }
 
 // Order db.Order("name DESC")
 func (s *Scope) Order(value string) *Scope {
-	s.Tx = s.Tx.Order(value)
+	s.DB = s.DB.Order(value)
+	return s
+}
+
+func (s *Scope) Orders(values ...OrderColumn) *Scope {
+	if len(values) == 0 {
+		return s
+	}
+	var columns []clause.OrderByColumn
+	for _, value := range values {
+		columns = append(columns, clause.OrderByColumn{
+			Column:  clause.Column{Name: value.Field},
+			Desc:    value.Desc,
+			Reorder: value.Reorder,
+		})
+	}
+	s.DB.Statement.AddClause(clause.OrderBy{
+		Columns: columns,
+	})
 	return s
 }
 
 func (s *Scope) Group(name string) *Scope {
-	s.Tx.Group(name)
+	s.DB.Group(name)
 	return s
 }
 
@@ -252,99 +378,52 @@ func (s *Scope) Groups(names ...string) *Scope {
 		fields := strings.FieldsFunc(name, utils.IsValidDBNameChar)
 		columns = append(columns, clause.Column{Name: name, Raw: len(fields) != 1})
 	}
-	s.Tx.Statement.AddClause(clause.GroupBy{
+	s.DB.Statement.AddClause(clause.GroupBy{
 		Columns: columns,
 	})
 	return s
 }
 
 func (s *Scope) Having(query interface{}, args ...interface{}) *Scope {
-	s.Tx.Having(query, args...)
+	s.DB.Having(query, args...)
 	return s
 }
 func (s *Scope) Joins(query string, args ...interface{}) *Scope {
-	s.Tx.Joins(query, args...)
+	s.DB.Joins(query, args...)
 	return s
 }
 
 func (s *Scope) Count() (total int64, err error) {
-	err = s.Tx.Count(&total).Error
+	err = s.DB.Count(&total).Error
 	return total, err
 }
 
 func (s *Scope) Offset(offset int) *Scope {
-	s.Tx = s.Tx.Offset(offset)
+	s.DB = s.DB.Offset(offset)
 	return s
 }
 
 func (s *Scope) Limit(limit int) *Scope {
-	s.Tx = s.Tx.Limit(limit)
+	s.DB = s.DB.Limit(limit)
 	return s
-}
-func (s *Scope) PaginateQuery(opt *listoption.Paginate, list interface{}) (*listoption.Paginate, error) {
-	var total int64
-	if opt != nil {
-		if opt.Offset == 0 && opt.Page > 1 {
-			opt.Offset = (opt.Page - 1) * opt.Size
-		}
-		if opt.Offset == 0 || !opt.SkipCount {
-			err := s.Tx.Count(&total).Error
-			if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, err
-			}
-		}
-	}
-
-	opt = s.SetOffsetAndLimitByPaginate(opt)
-	err := s.Find(list)
-	if err != nil {
-		log.Error(err.Error())
-		return nil, err
-	}
-	p := listoption.Paginate{
-		Offset: opt.Offset,
-		Page:   opt.Page,
-		Size:   opt.Size,
-		Total:  total,
-	}
-	return &p, nil
-}
-
-func (s *Scope) SetOffsetAndLimitByPaginate(opt *listoption.Paginate) *listoption.Paginate {
-	if opt != nil {
-		if opt.Size == 0 {
-			opt.Size = DefaultLimit
-		} else if opt.Size > MaxLimit {
-			opt.Size = MaxLimit
-		}
-		if opt.Offset == 0 && opt.Page > 1 {
-			opt.Offset = (opt.Page - 1) * opt.Size
-		}
-	} else {
-		opt = &listoption.Paginate{}
-		opt.Size = DefaultLimit
-		opt.Offset = DefaultOffset
-	}
-	s.Tx = s.Tx.Limit(int(opt.Size)).Offset(int(opt.Offset))
-	return opt
 }
 
 func (s *Scope) Omit(value ...string) *Scope {
-	s.Tx.Omit(value...)
+	s.DB.Omit(value...)
 	return s
 }
 
 func (s *Scope) Unscoped() *Scope {
-	s.Tx.Unscoped()
+	s.DB.Unscoped()
 	return s
 }
 
 func (s *Scope) Preload(query string, args ...interface{}) *Scope {
-	s.Tx.Preload(query, args...)
+	s.DB.Preload(query, args...)
 	return s
 }
 
 func (s *Scope) Association(value string) *Scope {
-	s.Tx.Association(value)
+	s.DB.Association(value)
 	return s
 }

@@ -5,7 +5,8 @@ import "gorm.io/gorm"
 type TxHandler func(tx *gorm.DB) error
 type TxCallback func() (model interface{}, execute func(scope *Scope) error)
 
-func TxGo(tx *gorm.DB, executes ...TxHandler) error {
+func TxGo(db *gorm.DB, executes ...TxHandler) error {
+	tx := db
 	if _, ok := tx.Statement.ConnPool.(gorm.Tx); !ok {
 		tx = tx.Begin()
 	}
@@ -23,7 +24,8 @@ func TxGo(tx *gorm.DB, executes ...TxHandler) error {
 	}
 	return tx.Commit().Error
 }
-func ScopeTxGo(tx *gorm.DB, callbacks ...TxCallback) error {
+func ScopeTxGo(db *gorm.DB, callbacks ...TxCallback) error {
+	tx := db
 	if _, ok := tx.Statement.ConnPool.(gorm.Tx); !ok {
 		tx = tx.Begin()
 	}
