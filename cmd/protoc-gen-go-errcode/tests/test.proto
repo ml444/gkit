@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package sms;
+
+option go_package = "github.com/base/sms";
+
+import "errcode/errcode.proto";
+
+enum ErrCode {
+    Success = 0;
+    ErrInvalidParam = 12000 [(errcode.detail).status=400,(errcode.detail).message="非法参数"];
+    ErrParamRequired = 12001 [(errcode.detail).message="缺失参数"];
+    ErrNotFoundSendRecord = 12002 [(errcode.detail)={status: 404, message: "未找到相关短信记录"}];
+    ErrLimitControl = 12003 [(errcode.detail)={status: 403, message: "超过了短信发送频率"}];
+    ErrNotFoundTemplate = 12004 [(errcode.detail)={status: 404, message: "模板不存在", polyglot: ["zh=模板不存在", "en=not found template"]}];    // 模板不存在
+}
+
+enum ErrMessage {
+    SuccessMsg = 0;
+    //@status_code: 403
+    ErrWrongVerifyCode = 12005 [(errcode.detail).status=403,(errcode.detail).message="验证码错误或已过期"];     // 验证码错误或已过期
+    //@status_code: 403
+    ErrSendDailyLimit = 12006;      // 验证码发送次数超限
+    //@status_code: 403
+    ErrSendInterval = 12007;        // 验证码发送频繁，请稍后再试
+    //@status_code: 403
+    ErrInvalidPhone = 12008;        // 非法的手机号码
+    //@status_code: 400
+    ErrSendFailed = 12009;          // 短信发送失败
+    //@status_code: 400
+    ErrInvalidTemplateParam = 12010;    // 短信模版参数错误
+}

@@ -1,0 +1,31 @@
+{{ if gt (len .Fields) 0 }}
+const (
+{{- range $i, $f := .Fields -}}
+    {{ $f.Name }} int32	=	{{ $f.Value }}
+{{ end }}
+)
+
+var {{ .EnumName }}Map = map[int32]string{
+{{- range $i, $f := .Fields }}
+    {{ $f.Name }}: "{{ $f.Message }}",
+{{- end }}
+}
+
+var {{ .EnumName }}PolyglotMap = map[string]map[string]string{
+{{- range $i, $f := .Fields }}
+	"{{ $f.Name }}": {
+		{{- range $key, $value := $f.Polyglot }}
+		"{{ $key }}": "{{ $value }}",
+		{{- end }}
+	},
+{{- end }}
+}
+
+
+var {{ .EnumName }}4StatusCodeMap = map[int32]int32{
+{{- range $i, $f := .Fields }}
+    {{ $f.Name }}: {{ $f.Status }},
+{{- end }}
+}
+
+{{ end }}
