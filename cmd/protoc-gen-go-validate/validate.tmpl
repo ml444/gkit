@@ -1,0 +1,185 @@
+{{ if not .Ignored -}}
+{{ if .Disabled -}}
+	{{ cmt "Validate is disabled for " .TypeName ". This method will always return nil." }}
+{{- else -}}
+	{{ cmt "Validate checks the field values on " .TypeName " with the rules defined in the proto definition for this message. If any rules are violated, the first error encountered is returned, or nil if there are no violations." }}
+{{- end -}}
+func (m *{{ .TypeName }}) Validate() error {
+	return m.validate(false)
+}
+
+{{ if .Disabled -}}
+	{{ cmt "ValidateAll is disabled for " .TypeName ". This method will always return nil." }}
+{{- else -}}
+	{{ cmt "ValidateAll checks the field values on " .TypeName " with the rules defined in the proto definition for this message. If any rules are violated, the result is a list of violation errors wrapped in " .TypeName "MultiError, or nil if none found." }}
+{{- end -}}
+func (m *{{ .TypeName }}) ValidateAll() error {
+	return m.validate(true)
+}
+
+{{/* Unexported function to handle validation. If the need arises to add more exported functions, please consider the functional option approach outlined in protoc-gen-validate#47. */}}
+func (m *{{ .TypeName }}) validate(all bool) error {
+	{{ if .Disabled -}}
+		return nil
+	{{ else -}}
+		if m == nil { return nil }
+
+		var errors []error
+
+		{{ range .NonOneOfFields }}
+			{{/* - $field := . */}}
+			{{ render .TmplName . }}
+		{{ end }}
+
+		{{ range $fieldName, $oneof := .RealOneOfs }}
+			{{- if $oneof.Required }}
+			oneof{{ $oneof.Name }}Present := false
+			{{- end }}
+			switch v := m.{{ $oneof.Name }}.(type) {
+				{{- range $oneof.Fields }}
+					case *{{ oneOfType .Field }}:
+						if v == nil {
+							err := ValidationError{
+								field: "{{ $oneof.Name }}",
+								reason: "oneof value cannot be a typed-nil",
+							}
+							if !all { return err }
+							errors = append(errors, err)
+						}
+						{{- if $oneof.Required }}
+						oneof{{ $oneof.Name }}Present = true
+						{{- end }}
+						{{ render .TmplName . }}
+				{{- end }}
+					default:
+						_ = v // ensures v is used
+			}
+			{{- if $oneof.Required }}
+			if !oneof{{ $oneof.Name }}Present {
+				err := ValidationError{
+					field: "{{ $oneof.Name }}",
+					reason: "value is required",
+				}
+				if !all { return err }
+				errors = append(errors, err)
+			}
+			{{- end }}
+		{{- end }}
+
+		{{ range .OptionalFields }}
+			if m.{{ .Name }} != nil {
+				{{ render .TmplName . }}
+			}
+		{{ end }}
+
+		if len(errors) > 0 {
+			return  MultiError(errors)
+		}
+
+		return nil
+	{{ end -}}
+}
+
+{{ range .Fields }}{{ $f := .Field }}
+	{{ if has .Rules "In" }}{{ if .Rules.In }}
+		var {{ lookup .Field "InLookup" }} = map[{{ inType .Field .Rules.In }}]struct{}{
+			{{- range .Rules.In }}
+				{{ inKey $f . }}: {},
+			{{- end }}
+		}
+	{{ end }}{{ end }}
+
+	{{ if has .Rules "NotIn" }}{{ if .Rules.NotIn }}
+		var {{ lookup .Field "NotInLookup" }} = map[{{ inType .Field .Rules.NotIn }}]struct{}{
+			{{- range .Rules.NotIn }}
+				{{ inKey $f . }}: {},
+			{{- end }}
+		}
+	{{ end }}{{ end }}
+
+	{{ if has .Rules "Pattern"}}{{ if .Rules.Pattern }}
+		var {{ lookup .Field "Pattern" }} = regexp.MustCompile({{ lit .Rules.GetPattern }})
+	{{ end }}{{ end }}
+
+	{{ if has .Rules "Items"}}{{ if .Rules.Items }}
+	{{ if has .Rules.Items.GetString_ "Pattern" }} {{ if .Rules.Items.GetString_.Pattern }}
+		var {{ lookup .Field "Pattern" }} = regexp.MustCompile({{ lit .Rules.Items.GetString_.GetPattern }})
+	{{ end }}{{ end }}
+	{{ end }}{{ end }}
+
+	{{ if has .Rules "Items"}}{{ if .Rules.Items }}
+	{{ if has .Rules.Items.GetString_ "In" }} {{ if .Rules.Items.GetString_.In }}
+		var {{ lookup .Field "InLookup" }} = map[string]struct{}{
+			{{- range .Rules.Items.GetString_.In }}
+				{{ inKey $f . }}: {},
+			{{- end }}
+		}
+	{{ end }}{{ end }}
+	{{ if has .Rules.Items.GetEnum "In" }} {{ if .Rules.Items.GetEnum.In }}
+		var {{ lookup .Field "InLookup" }} = map[{{ inType .Field .Rules.Items.GetEnum.In }}]struct{}{
+			{{- range .Rules.Items.GetEnum.In }}
+				{{ inKey $f . }}: {},
+			{{- end }}
+		}
+	{{ end }}{{ end }}
+	{{ if has .Rules.Items.GetAny "In" }} {{ if .Rules.Items.GetAny.In }}
+		var {{ lookup .Field "InLookup" }} = map[string]struct{}{
+			{{- range .Rules.Items.GetAny.In }}
+				{{ inKey $f . }}: {},
+			{{- end }}
+		}
+	{{ end }}{{ end }}
+	{{ end }}{{ end }}
+
+	{{ if has .Rules "Items"}}{{ if .Rules.Items }}
+	{{ if has .Rules.Items.GetString_ "NotIn" }} {{ if .Rules.Items.GetString_.NotIn }}
+		var {{ lookup .Field "NotInLookup" }} = map[string]struct{}{
+			{{- range .Rules.Items.GetString_.NotIn }}
+				{{ inKey $f . }}: {},
+			{{- end }}
+		}
+	{{ end }}{{ end }}
+	{{ if has .Rules.Items.GetEnum "NotIn" }} {{ if .Rules.Items.GetEnum.NotIn }}
+		var {{ lookup .Field "NotInLookup" }} = map[{{ inType .Field .Rules.Items.GetEnum.NotIn }}]struct{}{
+			{{- range .Rules.Items.GetEnum.NotIn }}
+				{{ inKey $f . }}: {},
+			{{- end }}
+		}
+	{{ end }}{{ end }}
+	{{ if has .Rules.Items.GetAny "NotIn" }} {{ if .Rules.Items.GetAny.NotIn }}
+		var {{ lookup .Field "NotInLookup" }} = map[string]struct{}{
+			{{- range .Rules.Items.GetAny.NotIn }}
+				{{ inKey $f . }}: {},
+			{{- end }}
+		}
+	{{ end }}{{ end }}
+	{{ end }}{{ end }}
+
+	{{ if has .Rules "Keys"}}{{ if .Rules.Keys }}
+	{{ if has .Rules.Keys.GetString_ "In" }} {{ if .Rules.Keys.GetString_.In }}
+		var {{ lookup .Field "InLookup" }} = map[{{ inType .Field .Rules.Keys.GetString_.In }}]struct{}{
+			{{- range .Rules.Keys.GetString_.In }}
+				{{ inKey $f . }}: {},
+			{{- end }}
+		}
+	{{ end }}{{ end }}
+	{{ if has .Rules.Keys.GetString_ "NotIn" }} {{ if .Rules.Keys.GetString_.NotIn }}
+		var {{ lookup .Field "NotInLookup" }} = map[{{ inType .Field .Rules.Keys.GetString_.NotIn }}]struct{}{
+			{{- range .Rules.Keys.GetString_.NotIn }}
+				{{ inKey $f . }}: {},
+			{{- end }}
+		}
+	{{ end }}{{ end }}
+	{{ if has .Rules.Keys.GetString_ "Pattern" }} {{ if .Rules.Keys.GetString_.Pattern }}
+		var {{ lookup .Field "Pattern" }} = regexp.MustCompile({{ lit .Rules.Keys.GetString_.GetPattern }})
+	{{ end }}{{ end }}
+	{{ end }}{{ end }}
+
+	{{ if has .Rules "Values"}}{{ if .Rules.Values }}
+	{{ if has .Rules.Values.GetString_ "Pattern" }} {{ if .Rules.Values.GetString_.Pattern }}
+		var {{ lookup .Field "Pattern" }} = regexp.MustCompile({{ lit .Rules.Values.GetString_.GetPattern }})
+	{{ end }}{{ end }}
+	{{ end }}{{ end }}
+
+{{ end }}
+{{- end -}}

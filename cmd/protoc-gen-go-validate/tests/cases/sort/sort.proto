@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package tests.cases.sort;
+option go_package = "github.com/ml444/gkit/cmd/protoc-gen-go-validate/tests/cases/sort;sort";
+
+enum Direction {
+    UNKNOWN_DIRECTION = 0;
+    ASC = 1;
+    DESC = 2;
+}
