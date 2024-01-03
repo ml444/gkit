@@ -95,7 +95,7 @@ func (s *UserService) GetUser(ctx context.Context, req *pb.GetUserReq) (*pb.GetU
 
 ```protobuf
 syntax = "proto3";
-import "listoption/listoption.proto";
+import "optx/optx.proto";
 message ListUserReq {
     enum ListOpt {
         ListOptNil = 0;
@@ -118,7 +118,7 @@ message ListUserRsp {
 
 ```protobuf
 syntax = "proto3";
-import "listoption/listoption.proto";
+import "optx/optx.proto";
 message ListUserReq {
     repeated uint64 id_list = 1;
     optional string like_name = 2;
@@ -133,7 +133,7 @@ message ListUserRsp {
 
 ```protobuf
 syntax = "proto3";
-import "listoption/listoption.proto";
+import "optx/optx.proto";
 message ListUserReq1 {
     listoption.Paginate paginate = 1;   // 指定页数和每页数量 或 指定偏移量和每页数量
 }
@@ -279,7 +279,7 @@ package user;
 option go_package = "gitlab.xxx.com/group1/project1/pkg/user";
 
 import "validate/validate.proto";
-import "listoption/listoption.proto";
+import "optx/optx.proto";
 import "google/api/annotations.proto";
 
 service user {

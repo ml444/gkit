@@ -1,4 +1,4 @@
-package listoption
+package optx
 
 import (
 	"fmt"
