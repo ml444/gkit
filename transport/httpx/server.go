@@ -96,23 +96,23 @@ func (s *Server) Route(prefix string, httpMiddlewares ...middleware.HttpMiddlewa
 }
 
 // Handle registers a new route with a matcher for the URL path.
-func (s *Server) Handle(path string, h http.Handler) {
-	s.router.Handle(path, h)
+func (s *Server) Handle(method, path string, h http.Handler) {
+	s.router.Handle(path, h).Methods(method)
 }
 
 // HandlePrefix registers a new route with a matcher for the URL path prefix.
-func (s *Server) HandlePrefix(prefix string, h http.Handler) {
-	s.router.PathPrefix(prefix).Handler(h)
+func (s *Server) HandlePrefix(method, prefix string, h http.Handler) {
+	s.router.PathPrefix(prefix).Handler(h).Methods(method)
 }
 
 // HandleFunc registers a new route with a matcher for the URL path.
-func (s *Server) HandleFunc(path string, h http.HandlerFunc) {
-	s.router.HandleFunc(path, h)
+func (s *Server) HandleFunc(method, path string, h http.HandlerFunc) {
+	s.router.HandleFunc(path, h).Methods(method)
 }
 
 // HandleHeader registers a new route with a matcher for the header.
-func (s *Server) HandleHeader(key, val string, h http.HandlerFunc) {
-	s.router.Headers(key, val).Handler(h)
+func (s *Server) HandleHeader(method string, h http.HandlerFunc, headerPairs ...string) {
+	s.router.Headers(headerPairs...).Handler(h).Methods(method)
 }
 
 // ServeHTTP should write reply headers and data to the ResponseWriter and then return.
