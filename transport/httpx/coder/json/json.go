@@ -6,11 +6,9 @@ import (
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
-
-	"github.com/ml444/gkit/transport/httpx/encoding"
 )
 
-// Name is the name registered for the json codec.
+// Name is the name registered for the json Coder.
 const Name = "json"
 
 var (
@@ -24,14 +22,14 @@ var (
 	}
 )
 
-func Init() {
-	encoding.RegisterCodec(codec{})
+func GetCoder() Coder {
+	return Coder{}
 }
 
-// codec is a Coder implementation with json.
-type codec struct{}
+// Coder is a Coder implementation with json.
+type Coder struct{}
 
-func (codec) Marshal(v interface{}) ([]byte, error) {
+func (Coder) Marshal(v interface{}) ([]byte, error) {
 	switch m := v.(type) {
 	case json.Marshaler:
 		return m.MarshalJSON()
@@ -42,7 +40,7 @@ func (codec) Marshal(v interface{}) ([]byte, error) {
 	}
 }
 
-func (codec) Unmarshal(data []byte, v interface{}) error {
+func (Coder) Unmarshal(data []byte, v interface{}) error {
 	switch m := v.(type) {
 	case json.Unmarshaler:
 		return m.UnmarshalJSON(data)
@@ -63,6 +61,6 @@ func (codec) Unmarshal(data []byte, v interface{}) error {
 	}
 }
 
-func (codec) Name() string {
+func (Coder) Name() string {
 	return Name
 }

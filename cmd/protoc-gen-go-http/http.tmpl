@@ -15,7 +15,7 @@ type {{.ServiceType}}HTTPServer interface {
 }
 
 func Register{{.ServiceType}}HTTPServer(s *httpx.Server, srv {{.ServiceType}}HTTPServer) {
-	r := s.Route("/")
+	r := s.GetRouter()
 	{{- range .Methods}}
 	r.{{.Method}}("{{.Path}}", {{$svrType}}_{{.Name}}{{.Num}}_HTTP_Handler(srv, s.Middlewares()...))
 	{{- end}}
@@ -42,11 +42,7 @@ func {{$svrType}}_{{.Name}}{{.Num}}_HTTP_Handler(srv {{$svrType}}HTTPServer, mws
 		handler := middleware.Chain(mws...)(func(ctx context.Context, req interface{}) (interface{}, error) {
             return srv.{{.Name}}(ctx, req.(*{{.Request}}))
         })
-        reply, err := handler(ctx, &in)
-		if err != nil {
-			return err
-		}
-		return ctx.Result(200, reply{{.ResponseBody}})
+        return ctx.Returns(handler(ctx, &in))
 	}
 }
 {{end}}

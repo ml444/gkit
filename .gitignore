@@ -26,5 +26,6 @@ __*.go
 issue.md
 test/
 account/
+misc/
 
 

@@ -7,12 +7,10 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/go-playground/form"
-
-	"github.com/ml444/gkit/transport/httpx/encoding"
 )
 
 const (
-	// Name is form codec name
+	// Name is form Coder name
 	Name = "x-www-form-urlencoded"
 	// Null value string
 	nullStr = "null"
@@ -23,18 +21,18 @@ var (
 	decoder = form.NewDecoder()
 )
 
-func Init() {
+func GetCoder() Coder {
 	decoder.SetTagName("json")
 	encoder.SetTagName("json")
-	encoding.RegisterCodec(codec{encoder: encoder, decoder: decoder})
+	return Coder{encoder: encoder, decoder: decoder}
 }
 
-type codec struct {
+type Coder struct {
 	encoder *form.Encoder
 	decoder *form.Decoder
 }
 
-func (c codec) Marshal(v interface{}) ([]byte, error) {
+func (c Coder) Marshal(v interface{}) ([]byte, error) {
 	var vs url.Values
 	var err error
 	if m, ok := v.(proto.Message); ok {
@@ -56,7 +54,7 @@ func (c codec) Marshal(v interface{}) ([]byte, error) {
 	return []byte(vs.Encode()), nil
 }
 
-func (c codec) Unmarshal(data []byte, v interface{}) error {
+func (c Coder) Unmarshal(data []byte, v interface{}) error {
 	vs, err := url.ParseQuery(string(data))
 	if err != nil {
 		return err
@@ -79,6 +77,6 @@ func (c codec) Unmarshal(data []byte, v interface{}) error {
 	return c.decoder.Decode(v, vs)
 }
 
-func (codec) Name() string {
+func (Coder) Name() string {
 	return Name
 }

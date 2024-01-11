@@ -1,5 +1,5 @@
-// Package proto defines the protobuf codec. Importing this package will
-// register the codec.
+// Package proto defines the protobuf Coder. Importing this package will
+// register the Coder.
 package proto
 
 import (
@@ -7,25 +7,23 @@ import (
 	"reflect"
 
 	"google.golang.org/protobuf/proto"
-
-	"github.com/ml444/gkit/transport/httpx/encoding"
 )
 
 // Name is the name registered for the proto compressor.
 const Name = "proto"
 
-func Init() {
-	encoding.RegisterCodec(codec{})
+func GetCoder() Coder {
+	return Coder{}
 }
 
-// codec is a Coder implementation with protobuf. It is the default codec for Transport.
-type codec struct{}
+// Coder is a Coder implementation with protobuf. It is the default Coder for Transport.
+type Coder struct{}
 
-func (codec) Marshal(v interface{}) ([]byte, error) {
+func (Coder) Marshal(v interface{}) ([]byte, error) {
 	return proto.Marshal(v.(proto.Message))
 }
 
-func (codec) Unmarshal(data []byte, v interface{}) error {
+func (Coder) Unmarshal(data []byte, v interface{}) error {
 	pm, err := getProtoMessage(v)
 	if err != nil {
 		return err
@@ -33,7 +31,7 @@ func (codec) Unmarshal(data []byte, v interface{}) error {
 	return proto.Unmarshal(data, pm)
 }
 
-func (codec) Name() string {
+func (Coder) Name() string {
 	return Name
 }
 

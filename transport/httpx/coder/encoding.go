@@ -1,6 +1,11 @@
-package encoding
+package coder
 
 import (
+	"errors"
+	"github.com/ml444/gkit/transport/httpx/coder/form"
+	"github.com/ml444/gkit/transport/httpx/coder/json"
+	eproto "github.com/ml444/gkit/transport/httpx/coder/proto"
+	"github.com/ml444/gkit/transport/httpx/coder/xml"
 	"strings"
 )
 
@@ -18,25 +23,28 @@ type Coder interface {
 	Name() string
 }
 
-var registeredCodecs = make(map[string]Coder)
-
-// RegisterCodec registers the provided Coder for use with all Transport clients and
-// servers.
-func RegisterCodec(codec Coder) {
-	if codec == nil {
-		panic("cannot register a nil Coder")
-	}
-	if codec.Name() == "" {
-		panic("cannot register Coder with empty string result for Name()")
-	}
-	contentSubtype := strings.ToLower(codec.Name())
-	registeredCodecs[contentSubtype] = codec
+var registeredCoders = map[string]Coder{
+	form.Name:   form.GetCoder(),
+	json.Name:   json.GetCoder(),
+	eproto.Name: eproto.GetCoder(),
+	xml.Name:    xml.GetCoder(),
 }
 
-// GetCoder gets a registered Coder by content-subtype, or nil if no Coder is
-// registered for the content-subtype.
-//
+// RegisterCoder registers the provided Coder for use with all Transport clients and servers.
+func RegisterCoder(codec Coder) error {
+	if codec == nil {
+		return errors.New("cannot register a nil Coder")
+	}
+	if codec.Name() == "" {
+		return errors.New("cannot register Coder with empty string result for Name()")
+	}
+	contentSubtype := strings.ToLower(codec.Name())
+	registeredCoders[contentSubtype] = codec
+	return nil
+}
+
+// GetCoder gets a registered Coder by content-subtype
 // The content-subtype is expected to be lowercase.
 func GetCoder(contentSubtype string) Coder {
-	return registeredCodecs[contentSubtype]
+	return registeredCoders[contentSubtype]
 }

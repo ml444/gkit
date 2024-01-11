@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/ml444/gkit/middleware"
-	"github.com/ml444/gkit/pkg/auth/jwt"
 )
 
 // ServerOption is an HTTP server option.
@@ -52,7 +51,7 @@ func TLSConfig(c *tls.Config) ServerOption {
 // Listener with server listener.
 func Listener(lis net.Listener) ServerOption {
 	return func(s *Server) {
-		s.lis = lis
+		s.listener = lis
 	}
 }
 
@@ -63,10 +62,10 @@ func SetMiddlewares(mws ...middleware.Middleware) ServerOption {
 	}
 }
 
-// RouterPathPrefix with mux's PathPrefix, router will replace by a subrouter that start with prefix.
+// RouterPathPrefix with mux's PathPrefix, coder will replace by a subrouter that start with RootPrefix.
 func RouterPathPrefix(prefix string) ServerOption {
 	return func(s *Server) {
-		s.router = s.router.PathPrefix(prefix).Subrouter()
+		s.routerCfg.RootPrefix = prefix
 	}
 }
 
@@ -75,21 +74,42 @@ func RouterPathPrefix(prefix string) ServerOption {
 // redirect to the former and vice versa.
 func RouterStrictSlash(strictSlash bool) ServerOption {
 	return func(s *Server) {
-		s.router = s.router.StrictSlash(strictSlash)
+		s.routerCfg.StrictSlash = strictSlash
 	}
 }
 
 // RouterSkipClean with mux's SkipClean
 func RouterSkipClean(skipClean bool) ServerOption {
 	return func(s *Server) {
-		s.router = s.router.SkipClean(skipClean)
+		s.routerCfg.SkipClean = skipClean
 	}
 }
 
 // RouterUseEncodedPath with mux's SkipClean
 func RouterUseEncodedPath() ServerOption {
 	return func(s *Server) {
-		s.router = s.router.UseEncodedPath()
+		s.routerCfg.UseEncodedPath = true
+	}
+}
+
+// RouterNotFoundHandler
+func RouterNotFoundHandler(handler http.Handler) ServerOption {
+	return func(s *Server) {
+		s.routerCfg.NotFoundHandler = handler
+	}
+}
+
+// RouterMethodNotAllowedHandler
+func RouterMethodNotAllowedHandler(handler http.Handler) ServerOption {
+	return func(s *Server) {
+		s.routerCfg.MethodNotAllowedHandler = handler
+	}
+}
+
+// RouterCoder
+func RouterCoder(coder IRouterCoder) ServerOption {
+	return func(s *Server) {
+		s.routerCfg.Coder = coder
 	}
 }
 
@@ -187,39 +207,5 @@ func Operation(operation string) CallOption {
 func PathTemplate(pattern string) CallOption {
 	return func(info *callInfo) {
 		info.pathTemplate = pattern
-	}
-}
-
-// Deprecated: use ServerOption instead
-
-type OptionFunc func(parser *EndpointParser)
-
-func SetTimeoutMap(timeoutMap map[string]time.Duration) OptionFunc {
-	return func(parser *EndpointParser) {
-		parser.timeoutMap = timeoutMap
-	}
-}
-
-func SetJwtHook(hook jwt.HookFunc) OptionFunc {
-	return func(parser *EndpointParser) {
-		parser.jwtHook = hook
-	}
-}
-
-func SetTransmitToken() OptionFunc {
-	return func(parser *EndpointParser) {
-		parser.isTransmitToken = true
-	}
-}
-
-func AddBeforeHandler(handlers ...middleware.BeforeHandler) OptionFunc {
-	return func(parser *EndpointParser) {
-		parser.beforeHandlerList = append(parser.beforeHandlerList, handlers...)
-	}
-}
-
-func AddAfterHandler(handlers ...middleware.AfterHandler) OptionFunc {
-	return func(parser *EndpointParser) {
-		parser.afterHandlerList = append(parser.afterHandlerList, handlers...)
 	}
 }
