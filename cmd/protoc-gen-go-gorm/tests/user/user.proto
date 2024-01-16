@@ -1,0 +1,88 @@
+//go:generate protoc --go_out=. --go-gorm_out=. -I=$HOME/github.com/ml444/gkit/cmd/protoc-gen-go-gorm -I=$HOME/github.com/ml444/gctl-templates/protos user.proto
+syntax = "proto3";
+
+package user;
+
+
+option go_package = "./user;user";
+
+import "orm/orm.proto";
+
+message UserInfo {
+    option (orm.enable) = true;
+
+    uint32 login_count = 1 [(orm.tags) = {type: "int", comment: "登录次数"}];
+    string last_login_ip = 2 [(orm.tags) = {type: "varchar(255)", comment: "最后登录IP"}];
+    uint32 last_login_at = 3 [(orm.tags) = {type: "timestamp", comment: "最后登录时间"}];
+    repeated uint64 group_ids = 4 [(orm.tags) = {type: "json", comment: "分组ID"}];
+}
+message User {
+    option (orm.enable) = true;
+    option (orm.table_name) = "my_user";
+    option (orm.index_clauses) = {indexs: ["idx_name"]};
+    option (orm.index_clauses) = {indexs: ["idx_age_name"], op: USE, for: JOIN};
+    option (orm.index_clauses) = {indexs: ["idx_name","idx_age_name"], op: FORCE, for: GROUP_BY};
+    option (orm.index_clauses) = {indexs: ["idx_name","idx_age_name"], op: IGNORE, for: ORDER_BY};
+
+
+    enum State {
+        StateNil = 0;
+        StateLogin = 1; // 登录
+        StateLogout = 2; // 登出
+        StateDeleted = 3; // 删除
+    }
+
+    message DetailBlob {
+        uint32 login_count = 1 [(orm.tags) = {type: "int", comment: "登录次数"}];
+        string last_login_ip = 2 [(orm.tags) = {type: "varchar(255)", comment: "最后登录IP"}];
+        uint32 last_login_at = 3 [(orm.tags) = {type: "timestamp", comment: "最后登录时间"}];
+        repeated sint64 group_ids = 4 [(orm.tags) = {type: "json", comment: "分组ID"}];
+    }
+    uint64 id = 1 [(orm.tags) = {primary_key: true, comment: "主键"}];
+    bool is_validated = 2 [(orm.tags) = {type: "bool", comment: "是否验证"}];
+    string name = 3 [(orm.tags) = {type: "varchar(255)", indexs: ["idx_name,class:FULLTEXT", "idx_age_name,priority:2"], comment: "名称"}];
+    optional uint32 age = 4 [(orm.tags) = {type: "int", indexs: ["idx_age_name,priority:1"], comment: "年龄"}];
+    uint32 created_at = 5 [(orm.tags) = {type: "date", comment: "创建时间"}];
+    uint32 updated_at = 6 [(orm.tags) = {type: "time", comment: "更新时间"}];
+    uint32 deleted_at = 7 [(orm.tags) = {type: "datetime", comment: "删除时间"}];
+    UserInfo detail1 = 9 [(orm.tags) = {type: "json", comment: "详情"}];
+    DetailBlob detail_blob1 = 10 [(orm.tags) = {type: "blob", comment: "详情"}];
+    bytes avatar = 11 [(orm.tags) = {type: "blob", comment: "头像"}];
+    repeated string tags = 12 [(orm.tags) = {ignore_all: true, comment: "标签列表"}];
+    map<string, uint64> group_tags = 13 [(orm.tags) = {type: "json", comment: "标签名称"}];
+    map<int32, UserInfo> client_login_info = 14 [(orm.tags) = {type: "json", comment: "多端登陆详情"}];
+    map<uint64, UserInfo> ignore_data = 15 [(orm.tags) = {ignore_all: true, comment: "标签"}];
+    State state = 16 [(orm.tags) = {type: "int", comment: "状态"}];
+    optional string phone = 17 [(orm.tags) = {type: "varchar(25)", unique_indexs: "uidx_phone", default: "", comment: "名称"}];
+}
+
+message Record {
+    option (orm.enable) = true;
+    option (orm.table_name) = "my_record";
+    //    option (orm.force_index) = "ForJoin(idx_name,idx_name2)";
+    //    option (orm.ignore_index) = "ForJoin(idx_name,idx_name2)";
+
+    enum Status {
+        StatusNil = 0;
+        StatusUndo = 1; // 未处理
+        StatusDoing = 2; // 处理中
+        StatusDone = 3; // 已处理
+        StatusIgnored = 4; // 已忽略
+    }
+    message Rule{
+        uint64 rule_id = 6      [(orm.tags) = {comment: "规则ID"}];
+        uint64 equipment_id = 7 [(orm.tags) = {comment: "设备ID"}];
+        uint64 project_id = 8   [(orm.tags) = {comment: "项目ID"}];
+
+    }
+
+    uint64 id = 1           [(orm.tags) = {primary_key:true, comment: "主键"}];
+    uint64 corp_id = 2      [(orm.tags) = {comment: "企业ID"}];
+    uint32 created_at = 3   [(orm.tags) = {comment: "创建时间"}];
+    uint32 updated_at = 4   [(orm.tags) = {comment: "更新时间"}];
+    uint32 deleted_at = 5   [(orm.tags) = {comment: "删除时间"}];
+    Status status1 = 10     [(orm.tags) = {comment: "状态"}];
+    string content = 11     [(orm.tags) = {comment: "内容"}];
+    repeated Rule rules = 12[(orm.tags) = {comment: "规则详情", type: "json"}];
+    optional Status status2 = 13 [ (orm.tags) = {comment: "状态"}];
+}

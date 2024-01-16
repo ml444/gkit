@@ -1,0 +1,51 @@
+package {{ .PackageName }}
+
+import (
+	{{ range .Imports -}}
+	"{{ . }}"
+	{{ end }}
+)
+
+{{ range .Commons -}}
+{{ . }}
+{{ end -}}
+
+{{ range .Messages }}
+	{{ if .Opts.TableName }}
+func (x *{{ .Name }}) TableName() string {
+	return "{{ .Opts.TableName }}"
+}
+	{{ end }}
+
+type Model{{ .Name }} struct {
+	{{ range .Fields }}
+	{{ .FieldName }} {{ .NewType }} {{ .ORMTag -}}
+	{{ end }}
+}
+
+func (x *Model{{ .Name }}) ToSource() *{{ .Name }} {
+	return &{{ .Name }}{
+	    {{ range .Fields -}}
+	    {{ if eq .NewType .OldType -}}
+        {{ .FieldName }}: x.{{ .FieldName -}},
+        {{ else -}}
+        {{ .FieldName }}: {{ .OldType }}(x.{{ .FieldName -}}),
+        {{ end -}}
+        {{ end }}
+	}
+}
+{{ $modelName := .Name }}
+{{ if gt (len .Opts.IndexClauses) 0 }}
+{{ range .Opts.IndexClauses -}}
+func (x *Model{{ $modelName }}) {{ .ToFuncName }}() clause.Expression {
+	return {{ .ToString }}
+}
+{{ end -}}
+{{ end }}
+
+	{{ range .SerializeFields -}}
+		{{ if .SerializerName }}
+			{{ render .SerializerName . }}
+		{{ end }}
+	{{ end }}
+{{ end }}

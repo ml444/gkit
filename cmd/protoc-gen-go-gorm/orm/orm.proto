@@ -1,0 +1,190 @@
+//go:generate protoc --proto_path=. --go_out=paths=source_relative:. -I=$HOME/github.com/ml444/gctl-templates/protos ./orm/orm.proto
+syntax = "proto3";
+package orm;
+
+option go_package = "github.com/ml444/gkit/cmd/protoc-gen-go-gorm/orm";
+
+import "google/protobuf/descriptor.proto";
+
+extend google.protobuf.MessageOptions {
+    // option (orm.enable) = true;
+    optional bool enable = 1171;
+
+    // option (orm.table_name) = "my_table_name";
+    optional string table_name = 1172;
+
+    repeated IndexClause index_clauses = 1173;
+
+    // option (orm.use_index) = "idx_name";
+//    // option (orm.use_index) = "idx_age";
+//    repeated string use_index = 1173;
+//    // option (orm.force_index) = "ForJoin(idx_name,idx_name2)";
+//    // option (orm.force_index) = "ForGroupBy(idx_name,idx_name2)";
+//    // option (orm.force_index) = "ForOrderBy(idx_name,idx_name2)";
+//    optional string force_index = 1174;
+//    // option (orm.ignore_index) = "ForJoin(idx_name,idx_name2)";
+//    // option (orm.ignore_index) = "ForGroupBy(idx_name,idx_name2)";
+//    // option (orm.ignore_index) = "ForOrderBy(idx_name,idx_name2)";
+//    optional string ignore_index = 1175;
+}
+
+enum IndexOpKind {
+    USE = 0;
+    FORCE = 1;
+    IGNORE = 2;
+}
+enum IndexForKind {
+    FOR_OBJ_NIL = 0;
+    JOIN = 1;
+    GROUP_BY = 2;
+    ORDER_BY = 3;
+}
+
+message IndexClause {
+    IndexOpKind op = 1;
+    IndexForKind for = 2;
+    repeated string indexs = 3;
+}
+
+extend google.protobuf.FieldOptions {
+    optional ORMTags tags = 1171;
+}
+
+enum TimestampKind {
+    UNSPECIFIED = 0;
+    SECOND = 1;
+    MILLI = 2;
+    NANO = 3;
+}
+
+message ORMTags {
+    // 指定 db 列名
+    optional string column = 1;
+
+    // 列数据类型，推荐使用兼容性好的通用类型，
+    // 例如：所有数据库都支持 bool、int、uint、float、string、time、bytes
+    // 并且可以和其他标签一起使用，例如：not null、size, autoIncrement…
+    // 像 varbinary(8) 这样指定数据库数据类型也是支持的。
+    // 在使用指定数据库数据类型时，它需要是完整的数据库数据类型，
+    // 如：MEDIUMINT UNSIGNED not NULL AUTO_INCREMENT
+    optional string type = 2;
+
+    // 定义列的默认值
+    optional string default = 3;
+    // 指定列为 NOT NULL
+    optional bool not_null = 4;
+
+    // 迁移时为字段添加注释
+    optional string comment = 5;
+
+    // 将列定义为主键
+    optional bool primary_key = 6;
+
+    // 将列定义为唯一键
+    // optional bool unique = 7;
+
+    // 根据参数创建索引，多个字段使用相同的名称则创建复合索引
+    // type User struct {
+    //    Name  string `gorm:"index"`
+    //    Name2 string `gorm:"index:idx_name,unique"`
+    //    Name3 string `gorm:"index:,sort:desc,collate:utf8,type:btree,length:10,where:name3 != 'jinzhu'"`
+    //    Name4 string `gorm:"uniqueIndex"`
+    //    Age   int64  `gorm:"index:,class:FULLTEXT,comment:hello \\, world,where:age > 10"`
+    //    Age2  int64  `gorm:"index:,expression:ABS(age)"`
+    // }
+    //
+    // 您可以使用 priority 指定顺序，默认优先级值是 10，如果优先级值相同，则顺序取决于模型结构体字段的顺序。
+    // type User struct {
+    //    Name   string `gorm:"index:idx_member,priority:2"`
+    //    Number string `gorm:"index:idx_member,priority:1"`
+    // }
+    //
+    // 多索引
+    // type User struct {
+    //    Name   string `gorm:"index:idx_member;uniqueIndex:idx_member2"`
+    //    Number string `gorm:"index:idx_member;index:idx_member2,unique"`
+    // }
+    //
+    // // MySQL 选项
+    // type User struct {
+    //     Name string `gorm:"index:,class:FULLTEXT,option:WITH PARSER ngram INVISIBLE"`
+    // }
+    //
+    // // PostgreSQL 选项
+    // type User struct {
+    //     Name string `gorm:"index:,option:CONCURRENTLY"`
+    // }
+    repeated string indexs = 8;
+    // uniqueIndex 标签的作用与 index 类似，它等效于 index:,unique
+    // type User struct {
+    //    Name  string `gorm:"uniqueIndex"`
+    //    Name2 string `gorm:"uniqueIndex:idx_name"`
+    // }
+    repeated string unique_indexs = 9;
+
+    // 定义列数据类型的大小或长度，例如 size: 256
+    optional int64 size = 10;
+
+    // 指定列的精度
+    optional int64 precision = 11;
+
+    // 指定列大小
+    optional int64 scale = 12;
+
+    // 嵌套字段
+    optional bool embedded = 13;
+
+    // 嵌入字段的列名前缀
+    optional string embedded_prefix = 14;
+
+    // 指定列为自动增长
+    optional bool auto_increment = 15;
+
+    // 指定自动增长的步长，控制连续记录之间的间隔
+    optional int64 auto_increment_increment = 16;
+
+    // 创建时追踪当前时间，对于 int 字段，它会追踪时间戳秒数，
+    // 您可以使用 nano/milli 来追踪纳秒、毫秒时间戳，
+    // 例如：autoCreateTime:nano
+    optional TimestampKind auto_create_time = 17;
+    // 创建/更新时追踪当前时间，对于 int 字段，它会追踪时间戳秒数，
+    // 您可以使用 nano/milli 来追踪纳秒、毫秒时间戳，
+    // 例如：autoUpdateTime:milli
+    optional TimestampKind auto_update_time = 18;
+
+    // 创建检查约束，例如 check:age > 13，或者 check:age > 13 and age < 18
+    // 请注意，如果您使用的是 MySQL 5.7 或更低版本，则不支持检查约束。
+    // type UserIndex struct {
+    //    Name  string `gorm:"check:name_checker,name <> 'jinzhu'"`
+    //    Name2 string `gorm:"check:name <> 'jinzhu'"`
+    //    Name3 string `gorm:"check:,name <> 'jinzhu'"`
+    // }
+    optional string check = 19;
+    // constraint 标签的 OnDelete、OnUpdate 选项设置外键约束，例如：
+    // `gorm:"constraint:OnDelete:CASCADE;OnUpdate:SET NULL;"`
+    optional string constraint = 20;
+
+    // 忽略该字段
+    // - 表示无读写
+    optional bool ignore_rw = 21;
+    // -:migration 表示无迁移权限，
+    optional bool ignore_migration = 22;
+    // -:all 表示无读写迁移权限
+    optional bool ignore_all = 23;
+
+    // 设置字段写入的权限， <-:create 只创建
+    optional bool only_create = 24;
+
+    // 设置字段写入的权限， <-:update 只更新
+    optional bool only_update = 25;
+
+    // <-:false 无写入权限
+    optional bool disable_write = 26;
+    // ->:false 无读取权限
+    optional bool disable_read = 27;
+
+    // 指定将数据序列化或反序列化到数据库中的序列化器,
+    // 例如: serializer:json/gob/unixtime
+    optional string serializer = 28;
+
+}
