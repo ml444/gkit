@@ -1,6 +1,6 @@
 syntax = "proto3";
-// protoc --proto_path=. --go_out=paths=source_relative:. ./dbx/paging/paginate.proto
-package paginate;
+
+package paging;
 
 option go_package = "github.com/ml444/gkit/dbx/paging;paging";
 

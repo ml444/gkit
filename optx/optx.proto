@@ -1,11 +1,11 @@
 syntax = "proto3";
-// protoc --proto_path=. --go_out=paths=source_relative:. ./optx/optx.proto
-package listoption;
+
+package optx;
 
 option go_package = "github.com/ml444/gkit/optx;optx";
 option java_multiple_files = true;
 option java_package = "com.github.gkit.optx";
-option objc_class_prefix = "GkitListOption";
+option objc_class_prefix = "GkitOptx";
 
 // Options for list queries
 message Options {
