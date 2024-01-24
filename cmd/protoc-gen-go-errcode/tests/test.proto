@@ -4,29 +4,29 @@ package sms;
 
 option go_package = "github.com/base/sms";
 
-import "errcode/errcode.proto";
+import "err/err.proto";
 
 enum ErrCode {
+    option (err.default_status) = 200;
+    option (err.default_errcode) = 12000;
+    option (err.default_message) = "success";
+    option (err.default_polyglot) = "zh=成功";
+    option (err.default_polyglot) = "en=success";
+
     Success = 0;
-    ErrInvalidParam = 12000 [(errcode.detail).status=400,(errcode.detail).message="非法参数"];
-    ErrParamRequired = 12001 [(errcode.detail).message="缺失参数"];
-    ErrNotFoundSendRecord = 12002 [(errcode.detail)={status: 404, message: "未找到相关短信记录"}];
-    ErrLimitControl = 12003 [(errcode.detail)={status: 403, message: "超过了短信发送频率"}];
-    ErrNotFoundTemplate = 12004 [(errcode.detail)={status: 404, message: "模板不存在", polyglot: ["zh=模板不存在", "en=not found template"]}];    // 模板不存在
+    ErrInvalidParam = 12000 [(err.detail).status=400,(err.detail).message="非法参数"];
+    ErrParamRequired = 12001 [(err.detail).message="缺失参数"];
+    ErrNotFoundSendRecord = 12002 [(err.detail)={status: 404, message: "未找到相关短信记录"}];
+    ErrLimitControl = 12003 [(err.detail)={status: 403, message: "超过了短信发送频率"}];
+    ErrNotFoundTemplate = 12004 [(err.detail)={status: 404, message: "模板不存在", polyglot: ["zh=模板不存在", "en=not found template"]}];
 }
 
-enum ErrMessage {
+enum ErrCode2 {
     SuccessMsg = 0;
-    //@status_code: 403
-    ErrWrongVerifyCode = 12005 [(errcode.detail).status=403,(errcode.detail).message="验证码错误或已过期"];     // 验证码错误或已过期
-    //@status_code: 403
-    ErrSendDailyLimit = 12006;      // 验证码发送次数超限
-    //@status_code: 403
-    ErrSendInterval = 12007;        // 验证码发送频繁，请稍后再试
-    //@status_code: 403
-    ErrInvalidPhone = 12008;        // 非法的手机号码
-    //@status_code: 400
-    ErrSendFailed = 12009;          // 短信发送失败
-    //@status_code: 400
-    ErrInvalidTemplateParam = 12010;    // 短信模版参数错误
+    ErrWrongVerifyCode = 12005  [(err.detail)={status:403, message:"验证码错误或已过期", polyglot: ["en=the verification code is wrong or expired"]}];
+    ErrSendDailyLimit = 12006   [(err.detail)={status: 403, message: "验证码发送次数超限", polyglot: ["en=The number of times the verification code has been sent exceeds the limit"]}];
+    ErrSendInterval = 12007     [(err.detail)={status: 403, message: "验证码发送频繁，请稍后再试", polyglot: ["en=verification codes are sent frequently, please try again later."]}];
+    ErrInvalidPhone = 12008     [(err.detail)={status: 403, message: "非法的手机号码", polyglot: ["en=illegal mobile phone number"]}];
+    ErrSendFailed = 12009       [(err.detail)={status: 400, message: "短信发送失败", polyglot: ["en=message failed to send"]}];
+    ErrInvalidTemplateParam = 12010 [(err.detail)={status: 400, message: "短信模版参数错误", polyglot: ["en=sms template parameter error"]}];
 }

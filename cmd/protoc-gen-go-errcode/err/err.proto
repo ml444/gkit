@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package err;
+
+option go_package = "github.com/ml444/gkit/cmd/protoc-gen-go-errcode/err;err";
+
+import "google/protobuf/descriptor.proto";
+
+
+extend google.protobuf.EnumOptions {
+    int32 default_status = 1200;
+    int32 default_errcode = 1201;
+    string default_message = 1202;
+    repeated string default_polyglot = 1203;
+}
+
+extend google.protobuf.EnumValueOptions {
+    optional ErrDetail detail = 1244;
+}
+
+message ErrDetail {
+    optional int32 status = 1;
+    optional string message = 2;
+    repeated string polyglot = 3;
+}

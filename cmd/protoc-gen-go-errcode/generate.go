@@ -11,7 +11,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
 
-	"github.com/ml444/gkit/cmd/protoc-gen-go-errcode/errcode"
+	"github.com/ml444/gkit/cmd/protoc-gen-go-errcode/err"
 )
 
 const release = "v1.0.0"
@@ -50,14 +50,15 @@ func genFile(gen *protogen.Plugin, file *protogen.File) *protogen.GeneratedFile 
 	g.P()
 	g.P("package ", file.GoPackageName)
 	g.P()
+	g.P(`import "github.com/ml444/gkit/errorx"`)
 	genContent(file, g)
 	return g
 }
 
 func genContent(file *protogen.File, g *protogen.GeneratedFile) {
-	tmpl, err := template.New("errcode").Parse(strings.TrimSpace(errcodeTemplate))
-	if err != nil {
-		panic(err.Error())
+	tmpl, e := template.New("errcode").Parse(strings.TrimSpace(errcodeTemplate))
+	if e != nil {
+		panic(e.Error())
 	}
 	for _, enum := range file.Enums {
 		genErrcode(tmpl, g, enum)
@@ -65,13 +66,20 @@ func genContent(file *protogen.File, g *protogen.GeneratedFile) {
 }
 
 type ErrDesc struct {
-	EnumName string
-	Fields   []ErrField
+	EnumName   string
+	Fields     []ErrField
+	DefaultOpt *DefaultOpt
 }
 type ErrField struct {
 	Name     string
-	Value    int32
+	ErrCode  int32
 	Status   int32
+	Message  string
+	Polyglot map[string]string
+}
+type DefaultOpt struct {
+	Status   int32
+	ErrCode  int32
 	Message  string
 	Polyglot map[string]string
 }
@@ -85,8 +93,36 @@ func genErrcode(tmpl *template.Template, g *protogen.GeneratedFile, enum *protog
 		EnumName: enum.GoIdent.GoName,
 		Fields:   make([]ErrField, 0),
 	}
+	defaultOpt := DefaultOpt{}
+	hasDefault := false
+	if errDefaultStatus, ok := proto.GetExtension(enum.Desc.Options(), err.E_DefaultStatus).(int32); ok && errDefaultStatus != 0 {
+		hasDefault = true
+		defaultOpt.Status = errDefaultStatus
+	}
+	if errDefaultCode, ok := proto.GetExtension(enum.Desc.Options(), err.E_DefaultErrcode).(int32); ok && errDefaultCode != 0 {
+		hasDefault = true
+		defaultOpt.ErrCode = errDefaultCode
+	}
+	if errDefaultMessage, ok := proto.GetExtension(enum.Desc.Options(), err.E_DefaultMessage).(string); ok && errDefaultMessage != "" {
+		hasDefault = true
+		defaultOpt.Message = errDefaultMessage
+	}
+	if errDefaultPolyglot, ok := proto.GetExtension(enum.Desc.Options(), err.E_DefaultPolyglot).([]string); ok && len(errDefaultPolyglot) != 0 {
+		hasDefault = true
+		defaultOpt.Polyglot = make(map[string]string)
+		for _, polyglot := range errDefaultPolyglot {
+			kv := strings.SplitN(polyglot, "=", 2)
+			if len(kv) == 2 {
+				defaultOpt.Polyglot[kv[0]] = kv[1]
+			}
+		}
+	}
+	if hasDefault {
+		ed.DefaultOpt = &defaultOpt
+	}
+
 	for _, enumValue := range enum.Values {
-		errDetail, ok := proto.GetExtension(enumValue.Desc.Options(), errcode.E_Detail).(*errcode.ErrDetail)
+		errDetail, ok := proto.GetExtension(enumValue.Desc.Options(), err.E_Detail).(*err.ErrDetail)
 		if ok && errDetail != nil {
 			fieldName := enumValue.GoIdent.GoName
 			fieldName = strings.TrimPrefix(fieldName, enum.GoIdent.GoName+"_")
@@ -99,7 +135,7 @@ func genErrcode(tmpl *template.Template, g *protogen.GeneratedFile, enum *protog
 			}
 			ed.Fields = append(ed.Fields, ErrField{
 				Name:     fieldName,
-				Value:    int32(enumValue.Desc.Number()),
+				ErrCode:  int32(enumValue.Desc.Number()),
 				Status:   statusValue(errDetail.Status),
 				Message:  messageValue(errDetail.Message, fieldName),
 				Polyglot: m,
@@ -108,13 +144,13 @@ func genErrcode(tmpl *template.Template, g *protogen.GeneratedFile, enum *protog
 	}
 	if len(ed.Fields) != 0 {
 		buf := new(bytes.Buffer)
-		err := tmpl.Execute(buf, ed)
-		if err != nil {
-			panic(err.Error())
+		e := tmpl.Execute(buf, ed)
+		if e != nil {
+			panic(e.Error())
 		}
-		_, err = g.Write(buf.Bytes())
-		if err != nil {
-			panic(err.Error())
+		_, e = g.Write(buf.Bytes())
+		if e != nil {
+			panic(e.Error())
 		}
 	}
 }

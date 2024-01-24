@@ -1,30 +1,36 @@
+
+{{ if .DefaultOpt }}
+var Default{{ .EnumName }} = errorx.ErrCodeDetail{
+	StatusCode: {{ .DefaultOpt.Status }},
+    ErrorCode:  {{ .DefaultOpt.ErrCode }},
+    Message:    "{{ .DefaultOpt.Message }}",
+    Polyglot:   map[string]string{
+		{{- range $key, $value := .DefaultOpt.Polyglot }}
+		"{{ $key }}": "{{ $value }}",
+		{{- end }}
+    },
+}
+{{ end -}}
+
 {{ if gt (len .Fields) 0 }}
 const (
 {{- range $i, $f := .Fields -}}
-    {{ $f.Name }} int32	=	{{ $f.Value }}
+    {{ $f.Name }} int32	=	{{ $f.ErrCode }}
 {{ end }}
 )
 
-var {{ .EnumName }}Map = map[int32]string{
+var {{ .EnumName }}Map = map[int32]*errorx.ErrCodeDetail{
 {{- range $i, $f := .Fields }}
-    {{ $f.Name }}: "{{ $f.Message }}",
-{{- end }}
-}
-
-var {{ .EnumName }}PolyglotMap = map[string]map[string]string{
-{{- range $i, $f := .Fields }}
-	"{{ $f.Name }}": {
-		{{- range $key, $value := $f.Polyglot }}
-		"{{ $key }}": "{{ $value }}",
-		{{- end }}
+	{{ $f.Name }}: &errorx.ErrCodeDetail{
+		StatusCode: {{ $f.Status }},
+		ErrorCode:  {{ $f.ErrCode }},
+		Message:    "{{ $f.Message }}",
+		Polyglot:   map[string]string{
+			{{- range $key, $value := $f.Polyglot }}
+			"{{ $key }}": "{{ $value }}",
+			{{- end }}
+		},
 	},
-{{- end }}
-}
-
-
-var {{ .EnumName }}4StatusCodeMap = map[int32]int32{
-{{- range $i, $f := .Fields }}
-    {{ $f.Name }}: {{ $f.Status }},
 {{- end }}
 }
 
