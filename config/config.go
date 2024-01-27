@@ -127,15 +127,17 @@ func (c *Config) buildMap(key string, v reflect.Value) (err error) {
 			}
 		}
 
+		isPtrField := false
 		fieldT := rtField.Type
 		if fieldT.Kind() == reflect.Ptr {
 			fieldT = fieldT.Elem()
+			isPtrField = true
 		}
 
 		// If the field type is a struct, the function calls itself recursively
 		// with the updated key and field value.
 		if fieldT.Kind() == reflect.Struct {
-			if vv.IsNil() {
+			if isPtrField && vv.IsNil() {
 				vvT := vv.Type()
 				if vvT.Kind() == reflect.Ptr {
 					vvT = vvT.Elem()
@@ -261,6 +263,9 @@ func (c *Config) SetAndChangeEnv(key string, v string) error {
 }
 
 func (c *Config) Walk(fn func(k string, v *Value) error) error {
+	if c.m == nil {
+		return nil
+	}
 	for k, v := range c.m {
 		err := fn(k, v)
 		if err != nil {

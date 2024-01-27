@@ -58,6 +58,7 @@ func parseFieldTagWithEnv(field reflect.StructField, v reflect.Value, mValue *Va
 				return err
 			}
 			if val != nil {
+				mValue.value = val
 				v.Set(reflect.ValueOf(val))
 			}
 		} else if reflect.ValueOf(mValue.value).IsZero() && defaultStr != "" {
