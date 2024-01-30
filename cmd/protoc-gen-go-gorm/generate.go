@@ -52,6 +52,7 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) *protogen.Generated
 		g.P("// source: ", file.Desc.Path())
 	}
 	g.P()
+	g.P("package ", file.GoPackageName)
 	err := genContent(file, g)
 	if err != nil {
 		gen.Error(err)
@@ -199,6 +200,10 @@ func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, resu
 			var needGenSerializer = true
 			switch strings.ToLower(typ) {
 			case "json", "text", "mediumtext", "longtext":
+				if field.Desc.Kind() == protoreflect.StringKind {
+					needGenSerializer = false
+					break
+				}
 				if field.Desc.Cardinality() == protoreflect.Repeated || field.Desc.IsMap() {
 					sd.SerializerName = "special_json"
 					imports = templates.SpecialJsonImports

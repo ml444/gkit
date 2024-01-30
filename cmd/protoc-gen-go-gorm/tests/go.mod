@@ -5,7 +5,7 @@ go 1.21
 replace github.com/ml444/gkit/cmd/protoc-gen-go-gorm => ../../protoc-gen-go-gorm
 
 require (
-	github.com/ml444/gkit/cmd/protoc-gen-go-gorm v0.0.0-20240116211017-a6243892876f
+	github.com/ml444/gkit/cmd/protoc-gen-go-gorm v0.0.0-00010101000000-000000000000
 	google.golang.org/protobuf v1.32.0
 	gorm.io/driver/mysql v1.5.2
 	gorm.io/gorm v1.25.5
