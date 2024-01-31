@@ -58,8 +58,8 @@ type Scope struct {
 	//RowsAffected int64
 	idFunc GenerateIDFunc
 
-	resetTime        bool
-	blockNotFoundErr bool
+	resetTime         bool
+	ignoreNotFoundErr bool
 }
 
 func NewScope(db *gorm.DB, model interface{}) *Scope {
@@ -84,12 +84,12 @@ func (s *Scope) SetGenerateIDFunc(idFunc GenerateIDFunc) *Scope {
 	return s
 }
 func (s *Scope) SetNotFoundErr(notFoundErrCode int32) *Scope {
-	s.NotFoundErr = errorx.New(notFoundErrCode)
+	s.NotFoundErr = errorx.NewWithStatus(http.StatusNotFound, notFoundErrCode)
 	return s
 }
 
-func (s *Scope) BlockNotFoundErr() *Scope {
-	s.blockNotFoundErr = true
+func (s *Scope) IgnoreNotFoundErr() *Scope {
+	s.ignoreNotFoundErr = true
 	return s
 }
 
@@ -155,17 +155,13 @@ func (s *Scope) Delete(conds ...interface{}) error {
 func (s *Scope) First(dest interface{}, conds ...interface{}) error {
 	err := s.DB.First(dest, conds).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		if s.blockNotFoundErr {
+		if s.ignoreNotFoundErr {
 			return nil
 		}
 		if s.NotFoundErr != nil {
 			return s.NotFoundErr
 		}
-		return errorx.CreateError(
-			http.StatusNotFound,
-			errorx.ErrCodeRecordNotFoundSys,
-			err.Error(),
-		)
+		return GetNotFoundErr(err)
 	}
 	return err
 }

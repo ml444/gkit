@@ -4,9 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
-
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/status"
 )
@@ -113,6 +110,23 @@ func New(errCode int32) *Error {
 	}
 }
 
+// NewWithStatus new error from errcode and message
+func NewWithStatus(statusCode int32, errCode int32) *Error {
+	detail, ok := errCodeMap[errCode]
+	if !ok {
+		detail = &ErrCodeDetail{}
+		detail.StatusCode = statusCode
+		detail.Message = ""
+	}
+	return &Error{
+		ErrorInfo: ErrorInfo{
+			ErrorCode:  errCode,
+			StatusCode: statusCode,
+			Message:    detail.Message,
+		},
+	}
+}
+
 // NewWithMsg new error from errcode and message
 func NewWithMsg(errCode int32, msg string) *Error {
 	detail, ok := errCodeMap[errCode]
@@ -141,12 +155,10 @@ func CreateError(statusCode int32, errCode int32, message string) *Error {
 	}
 }
 
-// CreateErrorf CreateError(code fmt.Sprintf(format, a...))
 func CreateErrorf(statusCode int32, errCode int32, format string, a ...interface{}) *Error {
 	return CreateError(statusCode, errCode, fmt.Sprintf(format, a...))
 }
 
-// Errorf CreateError(code fmt.Sprintf(format, a...))
 func Errorf(statusCode int32, errCode int32, format string, a ...interface{}) error {
 	return CreateError(statusCode, errCode, fmt.Sprintf(format, a...))
 }
@@ -194,7 +206,8 @@ func FromError(err error) *Error {
 	if err == nil {
 		return nil
 	}
-	if Err, ok := err.(*Error); ok {
+	var Err *Error
+	if errors.As(err, &Err) {
 		return Err
 	}
 	// wrapped error
@@ -230,21 +243,6 @@ func ErrorAs(err error, errCode int32) bool {
 		if eCode == errCode {
 			return true
 		}
-	}
-	return false
-}
-
-// IsNotFoundErr returns true if err is an *Error and its ErrorCode matches ErrCodeRecordNotFoundSys or errCode.
-func IsNotFoundErr(err error, errCode int32) bool {
-	e, ok := err.(*Error)
-	if ok {
-		eCode := e.GetErrorCode()
-		if eCode == ErrCodeRecordNotFoundSys || eCode == errCode {
-			return true
-		}
-	}
-	if strings.Contains(err.Error(), strconv.FormatInt(int64(errCode), 10)) {
-		return true
 	}
 	return false
 }
