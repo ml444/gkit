@@ -16,7 +16,7 @@ const FileTmpl = `import (
 	//"google.golang.org/protobuf/types/known/anypb"
 
 	{{ range $pkg, $pkgPath := GetImports . }}
-		{{ $pkg }} "{{ $pkgPath }}"
+	_ "{{ $pkgPath }}"
 	{{ end }}
 )
 
@@ -36,7 +36,7 @@ var (
 	_ = sort.Sort
 
 	{{ range $pkg, $enum := enumPackages (externalEnums .Desc) }}
-	_ = {{ $pkg }}.{{ $enum.Name }}(0)
+	//_ = {{ $pkg }}.{{ $enum.Name }}(0)
 	{{ end }}
 )
 
@@ -75,16 +75,12 @@ type ValidationError struct {
 // Field function returns field value.
 func (e  ValidationError) Field() string { return e.field }
 
-// Reason function returns reason value.
 func (e  ValidationError) Reason() string { return e.reason }
 
-// Cause function returns cause value.
 func (e  ValidationError) Cause() error { return e.cause }
 
-// Key function returns key value.
 func (e  ValidationError) Key() bool { return e.key }
 
-// ErrorName returns error name.
 func (e  ValidationError) ErrorName() string { return "ValidationError" }
 
 // Error satisfies the builtin error interface

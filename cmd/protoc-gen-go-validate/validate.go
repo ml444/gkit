@@ -7,16 +7,15 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+	"unicode"
 
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/descriptorpb"
 
 	"github.com/ml444/gkit/cmd/protoc-gen-go-validate/ctx"
-	"github.com/ml444/gkit/cmd/protoc-gen-go-validate/templates"
-	"github.com/ml444/gkit/cmd/protoc-gen-go-validate/validate"
+	"github.com/ml444/gkit/cmd/protoc-gen-go-validate/v"
 )
 
 //go:embed validate.tmpl
@@ -43,20 +42,17 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) *protogen.Generated
 	g.P("package ", file.GoPackageName)
 	g.P()
 
-	tmpl := template.New("file")
-	Register(tmpl)
-
 	var err error
-	buf := new(bytes.Buffer)
-	tmpl, err = tmpl.Parse(templates.FileTmpl)
-	if err != nil {
-		panic(err.Error())
-	}
-	err = tmpl.Execute(buf, file)
-	if err != nil {
-		panic(err.Error())
-	}
-	g.P(buf.String())
+	//buf := new(bytes.Buffer)
+	//tmpl, err = tmpl.Parse(templates.FileTmpl)
+	//if err != nil {
+	//	panic(err.Error())
+	//}
+	//err = tmpl.Execute(buf, file)
+	//if err != nil {
+	//	panic(err.Error())
+	//}
+	//g.P(buf.String())
 	g.P()
 	fileDir := string(file.GoImportPath)
 	isRelative := isRelativePath(gen.Request.GetParameter())
@@ -64,56 +60,98 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) *protogen.Generated
 		// TODO: --go-validate_out=paths=source_relative:./go
 		fileDir, _ = filepath.Split(file.GeneratedFilenamePrefix)
 	}
-	exist, err := existValidationErrorInPackage(fileDir, file.GeneratedFilenamePrefix)
+	redeclaredList, err := FindRedeclaredInPkg(fileDir, file.GeneratedFilenamePrefix)
 	if err != nil {
 		panic(err.Error())
 	}
-	if !exist {
-		g.P(templates.CommonDefTmpl)
-	}
-	generateFileContent(tmpl, file, g)
+	//if !redeclaredList {
+	//	g.P(templates.CommonDefTmpl)
+	//}
+	generateFileContent(file, g, redeclaredList)
 	return g
 }
 
-func generateFileContent(tmpl *template.Template, file *protogen.File, g *protogen.GeneratedFile) {
+func generateFileContent(file *protogen.File, g *protogen.GeneratedFile, redeclaredList []string) {
+	var err error
 	if len(file.Messages) == 0 {
 		return
 	}
-	var err error
+	tmpl := template.New("file")
+	Register(tmpl)
 	tmpl, err = tmpl.New("validate").Parse(strings.TrimSpace(validateTemplate))
 	if err != nil {
 		panic(err.Error())
 	}
+
+	validateCtx := &ctx.ValidateCtx{}
+	needWKn := &ctx.NeedWellKnown{}
+	importMap := make(map[string]string)
 	for _, message := range file.Messages {
-		genMessage(tmpl, file, g, message)
+		need, msgCtx, imports := genMessage(message, needWKn)
+		if !need {
+			continue
+		}
+		validateCtx.Messages = append(validateCtx.Messages, msgCtx)
+		for _, imp := range imports {
+			importMap[imp.Path] = imp.Alias
+		}
+	}
+	// TODO sort import
+	for path, alias := range importMap {
+		validateCtx.Imports = append(validateCtx.Imports, &ctx.ImportCtx{Alias: alias, Path: path})
+	}
+	redeclaredMap := make(map[string]bool)
+	for _, redeclared := range redeclaredList {
+		redeclaredMap[redeclared] = true
+	}
+	if needWKn.Email && redeclaredMap["_validateEmail"] {
+		needWKn.Email = false
+	}
+	if needWKn.Hostname && redeclaredMap["_validateHostname"] {
+		needWKn.Hostname = false
+	}
+	if needWKn.UUID && redeclaredMap["_validateUuid"] {
+		needWKn.UUID = false
+	}
+	validateCtx.NeedWellKnow = needWKn
+	if !redeclaredMap["ValidationError"] {
+		validateCtx.Imports = append(validateCtx.Imports, &ctx.ImportCtx{Alias: "", Path: "github.com/ml444/gkit/errorx"})
+		validateCtx.NeedCommon = true
+	}
+
+	buf := new(bytes.Buffer)
+	err = tmpl.Lookup("validate").Execute(buf, validateCtx)
+	if err != nil {
+		panic(err.Error())
+	}
+	_, err = g.Write(buf.Bytes())
+	if err != nil {
+		panic(err.Error())
 	}
 }
 
-func genMessage(tmpl *template.Template, file *protogen.File, g *protogen.GeneratedFile, message *protogen.Message) {
-	if message.Desc.Options().(*descriptorpb.MessageOptions).GetDeprecated() {
-		g.P("//")
-		g.P(deprecationComment)
-	}
-
-	msgData := &ctx.MessageCtx{
+func genMessage(message *protogen.Message, needWKn *ctx.NeedWellKnown) (bool, *ctx.MessageCtx, []*ctx.ImportCtx) {
+	var imports []*ctx.ImportCtx
+	msgCtx := &ctx.MessageCtx{
 		Desc:           message.Desc,
 		TypeName:       message.GoIdent.GoName,
 		NonOneOfFields: []*ctx.FieldCtx{},
 		RealOneOfs:     map[string]*ctx.OneOfField{},
 		OptionalFields: []*ctx.FieldCtx{},
 	}
-	disabled, ok := proto.GetExtension(message.Desc.Options(), validate.E_Disabled).(bool)
+	disabled, ok := proto.GetExtension(message.Desc.Options(), v.E_Disabled).(bool)
 	if ok {
-		msgData.Disabled = disabled
+		msgCtx.Disabled = disabled
 	}
-	ignored, ok := proto.GetExtension(message.Desc.Options(), validate.E_Ignored).(bool)
+	ignored, ok := proto.GetExtension(message.Desc.Options(), v.E_Ignored).(bool)
 	if ok {
-		msgData.Ignored = ignored
+		msgCtx.Ignored = ignored
 	}
 	var needGen bool
 	for _, field := range message.Fields {
-		rule, ok := proto.GetExtension(field.Desc.Options(), validate.E_Rules).(*validate.FieldRules)
+		rule, ok := proto.GetExtension(field.Desc.Options(), v.E_Rules).(*v.FieldRules)
 		if ok && rule != nil {
+			needWellKnown(field.Desc, rule, needWKn)
 			needGen = true
 			ruleType, ruleIns, messageRule, wrapped := ctx.ResolveRules(field.Desc, rule)
 			fieldCtx := ctx.FieldCtx{
@@ -124,6 +162,13 @@ func genMessage(tmpl *template.Template, file *protogen.File, g *protogen.Genera
 				Type:     field.Desc.Kind().String(),
 				TmplName: ruleType,
 				Err:      nil,
+			}
+			importCtx := fieldCtx.ImpCtx()
+			if importCtx != nil {
+				imports = append(imports, importCtx)
+			}
+			if rule.Errcode != nil {
+				fieldCtx.ErrCode = *rule.Errcode
 			}
 			if wrapped {
 				fieldCtx.Wrap = ruleType
@@ -143,18 +188,21 @@ func genMessage(tmpl *template.Template, file *protogen.File, g *protogen.Genera
 					fieldCtx.Skip = *messageRule.Skip
 				}
 			}
-			msgData.Fields = append(msgData.Fields, &fieldCtx)
+			msgCtx.Fields = append(msgCtx.Fields, &fieldCtx)
 			if field.Oneof != nil {
-				if field.Desc.Cardinality() == protoreflect.Optional && "_"+field.Desc.JSONName() == string(field.Oneof.Desc.Name()) {
-					msgData.OptionalFields = append(msgData.OptionalFields, &fieldCtx)
+				if isOptional(field) {
+					msgCtx.OptionalFields = append(msgCtx.OptionalFields, &fieldCtx)
 				} else {
-					handleOneOfs(field, &fieldCtx, msgData)
+					handleOneOfs(field, &fieldCtx, msgCtx)
 				}
 			} else {
-				msgData.NonOneOfFields = append(msgData.NonOneOfFields, &fieldCtx)
+				msgCtx.NonOneOfFields = append(msgCtx.NonOneOfFields, &fieldCtx)
 			}
 		} else {
 			if field.Oneof != nil {
+				if isOptional(field) {
+					continue
+				}
 				fieldCtx := ctx.FieldCtx{
 					Desc:     field.Desc,
 					Field:    field,
@@ -164,38 +212,89 @@ func genMessage(tmpl *template.Template, file *protogen.File, g *protogen.Genera
 					TmplName: "none",
 					Err:      nil,
 				}
-				handleOneOfs(field, &fieldCtx, msgData)
+				handleOneOfs(field, &fieldCtx, msgCtx)
 			}
 
-			if field.Desc.Kind() == protoreflect.MessageKind {
-				fieldCtx := ctx.FieldCtx{
-					Desc:  field.Desc,
-					Rules: &validate.MessageRules{},
-					Field: field,
-					Name:  field.GoName,
-					Type:  field.Desc.Kind().String(),
-					//Required: *messageRule.Required,
-					//Skip:     *messageRule.Skip,
-					TmplName: "message",
-					Err:      nil,
-				}
-				msgData.NonOneOfFields = append(msgData.NonOneOfFields, &fieldCtx)
-			}
+			//if field.Desc.Kind() == protoreflect.MessageKind {
+			//	fieldCtx := ctx.FieldCtx{
+			//		Desc:  field.Desc,
+			//		Rules: &v.MessageRules{},
+			//		Field: field,
+			//		Name:  field.GoName,
+			//		Type:  field.Desc.Kind().String(),
+			//		//Required: *messageRule.Required,
+			//		//Skip:     *messageRule.Skip,
+			//		TmplName: "message",
+			//		Err:      nil,
+			//	}
+			//	msgCtx.NonOneOfFields = append(msgCtx.NonOneOfFields, &fieldCtx)
+			//}
 		}
 	}
 
-	if needGen {
-		buf := new(bytes.Buffer)
-		err := tmpl.Lookup("validate").Execute(buf, msgData)
-		if err != nil {
-			panic(err.Error())
+	for _, msg := range message.Messages {
+		need, subMsgCtx, subImports := genMessage(msg, needWKn)
+		if !need {
+			continue
 		}
-		_, err = g.Write(buf.Bytes())
-		if err != nil {
-			panic(err.Error())
+		msgCtx.SubMessageCtxs = append(msgCtx.SubMessageCtxs, subMsgCtx)
+		imports = append(imports, subImports...)
+	}
+	return needGen, msgCtx, imports
+	//if needGen {
+	//	buf := new(bytes.Buffer)
+	//	err := tmpl.Lookup("validate").Execute(buf, msgCtx)
+	//	if err != nil {
+	//		panic(err.Error())
+	//	}
+	//	_, err = g.Write(buf.Bytes())
+	//	if err != nil {
+	//		panic(err.Error())
+	//	}
+	//	for _, msg := range message.Messages {
+	//		genMessage(tmpl, file, g, msg)
+	//	}
+	//}
+}
+
+func isOptional(field *protogen.Field) bool {
+	if field.Desc.Cardinality() != protoreflect.Optional {
+		return false
+	}
+	if fieldName := field.Desc.JSONName(); unicode.IsUpper(rune(fieldName[0])) {
+		if strings.HasPrefix(string(field.Oneof.Desc.Name()), "X_") {
+			return true
 		}
-		for _, msg := range message.Messages {
-			genMessage(tmpl, file, g, msg)
+	} else if strings.HasPrefix(string(field.Oneof.Desc.Name()), "_") {
+		return true
+	}
+	return false
+}
+
+func needWellKnown(f protoreflect.FieldDescriptor, rules *v.FieldRules, wk *ctx.NeedWellKnown) {
+	var strRules *v.StringRules
+	switch {
+	case f.IsList() && f.Kind() == protoreflect.StringKind:
+		strRules = rules.GetRepeated().GetItems().GetString_()
+	case f.IsMap():
+		if f.MapKey().Kind() == protoreflect.StringKind {
+			strRules = rules.GetMap().GetKeys().GetString_()
+		}
+		if f.MapValue().Kind() == protoreflect.StringKind {
+			strRules = rules.GetMap().GetValues().GetString_()
+		}
+	case f.Kind() == protoreflect.StringKind:
+		strRules = rules.GetString_()
+	}
+	if strRules != nil {
+		if strRules.GetEmail() {
+			wk.Email = true
+		}
+		if strRules.GetHostname() || strRules.GetAddress() {
+			wk.Hostname = true
+		}
+		if strRules.GetUuid() {
+			wk.UUID = true
 		}
 	}
 }
@@ -213,7 +312,7 @@ func handleOneOfs(field *protogen.Field, fieldCtx *ctx.FieldCtx, msgData *ctx.Me
 			//TmplName: ruleType,
 		}
 	}
-	required, ok := proto.GetExtension(field.Oneof.Desc.Options(), validate.E_Required).(bool)
+	required, ok := proto.GetExtension(field.Oneof.Desc.Options(), v.E_Required).(bool)
 	if ok {
 		oneOf.Required = required
 	}
@@ -222,13 +321,13 @@ func handleOneOfs(field *protogen.Field, fieldCtx *ctx.FieldCtx, msgData *ctx.Me
 }
 
 func protocVersion(gen *protogen.Plugin) string {
-	v := gen.Request.GetCompilerVersion()
-	if v == nil {
+	ver := gen.Request.GetCompilerVersion()
+	if ver == nil {
 		return "(unknown)"
 	}
 	var suffix string
-	if s := v.GetSuffix(); s != "" {
+	if s := ver.GetSuffix(); s != "" {
 		suffix = "-" + s
 	}
-	return fmt.Sprintf("v%d.%d.%d%s", v.GetMajor(), v.GetMinor(), v.GetPatch(), suffix)
+	return fmt.Sprintf("v%d.%d.%d%s", ver.GetMajor(), ver.GetMinor(), ver.GetPatch(), suffix)
 }

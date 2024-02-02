@@ -2,4 +2,4 @@ syntax = "proto3";
 
 package tests.cases;
 option go_package = "github.com/ml444/gkit/cmd/protoc-gen-go-validate/tests/cases/go;cases";
-import "validate/validate.proto";
+import "v/v.proto";

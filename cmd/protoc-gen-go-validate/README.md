@@ -7,13 +7,17 @@
 
 **NOTE**: This is a fork of [bufbuild/protoc-gen-validate](https://github.com/bufbuild/protoc-gen-validate) with some modifications to only support Go.
 
-> Change 1: Only the Go validation code is generated.
+> **Change 1**: Only the Go validation code is generated.
 > 
-> Change 2: Validate code is not generated for messages that do not contain validation rules.
+> **Change 2**: Validate code is not generated for messages that do not contain validation rules.
 > 
-> Change 3: Common variables (uuid Pattern|email Pattern...) and types (Validation Error|Multi Error) 
+> **Change 3**: Common variables (uuid Pattern|email Pattern...) and types (Validation Error|Multi Error) 
 > are separated into public parts, and each message is no longer maintained by itself, simplifying the code.
-> Change 4: Only reference `google.golang.org/protobuf` to reduce dependencies on other packages.
+> 
+> **Change 4**: Only reference `google.golang.org/protobuf` to reduce dependencies on other packages.
+>
+> **Change 5**: Add the customization function of error codes to support custom error codes and error messages.
+
 
 `protoc-gen-go-validate` is a protocol plugin for generating go message validators. 
 While protocol buffers guarantee the type of structured data, they cannot enforce 
@@ -28,7 +32,7 @@ syntax = "proto3";
 
 package examplepb;
 
-import "validate/validate.proto";
+import "validate/v.proto";
 
 message Person {
   uint64 id = 1 [(validate.rules).uint64.gt = 999];

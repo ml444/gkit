@@ -3,16 +3,16 @@ syntax = "proto3";
 package tests.cases;
 option go_package = "github.com/ml444/gkit/cmd/protoc-gen-go-validate/tests/cases/go;cases";
 
-import "validate/validate.proto";
+import "v/v.proto";
 
 message WktLevelOne {
     message WktLevelTwo {
         message WktLevelThree {
-            string uuid = 1 [(validate.rules).string.uuid = true];
+            string uuid = 1 [(v.rules).string.uuid = true];
         }
 
-        WktLevelThree three = 1 [(validate.rules).message.required = true];
+        WktLevelThree three = 1 [(v.rules).message.required = true];
     }
 
-    WktLevelTwo two = 1 [(validate.rules).message.required = true];
+    WktLevelTwo two = 1 [(v.rules).message.required = true];
 }

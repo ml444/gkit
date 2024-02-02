@@ -2,10 +2,10 @@ syntax = "proto3";
 
 package tests.cases;
 option go_package = "github.com/ml444/gkit/cmd/protoc-gen-go-validate/tests/cases/go;cases";
-import "validate/validate.proto";
+import "v/v.proto";
 
 message TestOneOfMsg {
-    bool val = 1 [(validate.rules).bool.const = true];
+    bool val = 1 [(v.rules).bool.const = true];
 }
 
 message OneOfNone {
@@ -17,15 +17,15 @@ message OneOfNone {
 
 message OneOf {
     oneof o {
-        string       x = 1 [(validate.rules).string.prefix = "foo"];
-        int32        y = 2 [(validate.rules).int32.gt = 0];
+        string       x = 1 [(v.rules).string.prefix = "foo"];
+        int32        y = 2 [(v.rules).int32.gt = 0];
         TestOneOfMsg z = 3;
     }
 }
 
 message OneOfRequired {
     oneof o {
-        option (validate.required) = true;
+        option (v.required) = true;
 
         string       x = 1;
         int32        y = 2;
@@ -36,8 +36,8 @@ message OneOfRequired {
 
 message OneOfIgnoreEmpty {
     oneof o {
-        string       x = 1 [(validate.rules).string = {ignore_empty: true, min_len: 3, max_len: 5}];
-        bytes        y = 2 [(validate.rules).bytes = {ignore_empty: true, min_len: 3, max_len: 5}];
-        int32        z = 3 [(validate.rules).int32 = {lte: 128, gte: 256, ignore_empty: true}];
+        string       x = 1 [(v.rules).string = {ignore_empty: true, min_len: 3, max_len: 5}];
+        bytes        y = 2 [(v.rules).bytes = {ignore_empty: true, min_len: 3, max_len: 5}];
+        int32        z = 3 [(v.rules).int32 = {lte: 128, gte: 256, ignore_empty: true}];
     }
 }

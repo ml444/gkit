@@ -10,7 +10,7 @@ import (
 	reflect "reflect"
 	sync "sync"
 
-	_ "github.com/ml444/gkit/cmd/protoc-gen-go-validate/validate"
+	_ "github.com/ml444/gkit/cmd/protoc-gen-go-validate/v"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )

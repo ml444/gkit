@@ -2,7 +2,7 @@ package templates
 
 const NumTpl = `
 	{{ if .Rules.GetIgnoreEmpty }}
-		if {{ accessor . }} != 0 {
+		if {{ .GetAccessor }} != 0 {
 	{{ end }}
 
 	{{ template "const" . }}

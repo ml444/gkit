@@ -9,22 +9,19 @@ import (
 	"strings"
 )
 
-func existValidationErrorInPackage(packagePath string, exclude string) (exist bool, err error) {
+func FindRedeclaredInPkg(packagePath string, exclude string) (result []string, err error) {
 	if _, err = os.Stat(packagePath); os.IsNotExist(err) {
 		err = os.MkdirAll(packagePath, 0755)
 		if err != nil {
-			return false, err
+			return nil, err
 		}
 	}
 	// Get all '*_validate.pb.go' files under the package
 	filePaths, err := getGoFilesInPackage(packagePath)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	for _, filePath := range filePaths {
-		if exist {
-			return exist, nil
-		}
 		if strings.Contains(filePath, exclude) {
 			continue
 		}
@@ -33,26 +30,53 @@ func existValidationErrorInPackage(packagePath string, exclude string) (exist bo
 		f, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
 		if err != nil {
 			println("err", err.Error())
-			return false, err
+			return nil, err
 		}
 
 		ast.Inspect(f, func(n ast.Node) bool {
-			// Check if it is a structure declaration
-			if typeSpec, ok := n.(*ast.TypeSpec); ok {
-				if _, ok := typeSpec.Type.(*ast.StructType); ok {
+			switch decl := n.(type) {
+			case *ast.GenDecl:
+				// process declaration statements (variables or constants)
+				for _, spec := range decl.Specs {
+					if vSpec, ok := spec.(*ast.ValueSpec); ok {
+						for _, ident := range vSpec.Names {
+							name := ident.Name
+							switch name {
+							case "_uuidPattern":
+								result = append(result, "_uuidPattern")
+							}
+						}
+					}
+				}
+			case *ast.FuncDecl:
+				// process function declaration
+				name := decl.Name.Name
+				switch name {
+				case "_validateUuid":
+					result = append(result, "_validateUuid")
+				case "_validateHostname":
+					result = append(result, "_validateHostname")
+				case "_validateEmail":
+					result = append(result, "_validateEmail")
+				}
+			case *ast.TypeSpec:
+				// process type declaration
+				// check if it is a structure declaration
+				if _, ok := decl.Type.(*ast.StructType); ok {
 					// Get the name of the structure
-					structName := typeSpec.Name.Name
+					structName := decl.Name.Name
 					if structName == "ValidationError" {
-						exist = true
+						result = append(result, "ValidationError")
 						return false
 					}
 				}
+
 			}
 			return true
 		})
 	}
 
-	return exist, nil
+	return result, nil
 }
 
 func getGoFilesInPackage(packagePath string) ([]string, error) {

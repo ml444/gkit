@@ -2,7 +2,7 @@ package templates
 
 const InTpl = `{{ $f := .Field }}{{ $r := .Rules }}
 	{{ if $r.In }}
-		if _, ok := {{ lookup $f "InLookup" }}[{{ accessor . }}]; !ok {
+		if _, ok := {{ lookup $f "InLookup" }}[{{ .GetAccessor }}]; !ok {
 			{{- if isEnum $f }}
 			err := {{ err .Field "value must be in list " (enumList $f $r.In) }}
 			{{- else }}
@@ -12,7 +12,7 @@ const InTpl = `{{ $f := .Field }}{{ $r := .Rules }}
 			errors = append(errors, err)
 		}
 	{{ else if $r.NotIn }}
-		if _, ok := {{ lookup $f "NotInLookup" }}[{{ accessor . }}]; ok {
+		if _, ok := {{ lookup $f "NotInLookup" }}[{{ .GetAccessor }}]; ok {
 			{{- if isEnum $f }}
 			err := {{ err .Field "value must not be in list " (enumList $f $r.NotIn) }}
 			{{- else }}

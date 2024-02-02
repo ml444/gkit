@@ -3,11 +3,12 @@ syntax = "proto3";
 package tests.cases;
 option go_package = "github.com/ml444/gkit/cmd/protoc-gen-go-validate/tests/cases/go;cases";
 import "cases/other_package/embed.proto";
+import "cases/sort/sort.proto";
 
-import "validate/validate.proto";
+import "v/v.proto";
 
 message TestMsg {
-    string  const  = 1 [(validate.rules).string.const = "foo"];
+    string  const = 1 [(v.rules).string.const = "foo"];
     TestMsg nested = 2;
 }
 
@@ -17,25 +18,28 @@ message MessageNone {
 }
 
 message MessageDisabled {
-    option (validate.disabled) = true;
-    uint64 val = 1 [(validate.rules).uint64.gt = 123];
+    option (v.disabled) = true;
+    uint64 val = 1 [(v.rules).uint64.gt = 123];
 }
 
 message MessageIgnored {
-    option (validate.ignored) = true;
-    uint64 val = 1 [(validate.rules).uint64.gt = 123];
+    option (v.ignored) = true;
+    uint64 val = 1 [(v.rules).uint64.gt = 123];
 }
 
-message Message { TestMsg val = 1; }
-message MessageCrossPackage { tests.cases.other_package.Embed val = 1; }
-message MessageSkip { TestMsg val = 1 [(validate.rules).message.skip = true];}
-message MessageRequired { TestMsg val = 1 [(validate.rules).message.required = true]; }
-message MessageRequiredButOptional { optional TestMsg val = 1 [(validate.rules).message.required = true]; }
+message Message {TestMsg val = 1;}
+message MessageCrossPackage {
+    tests.cases.other_package.Embed val = 1 [(v.rules).message.required = true];
+    tests.cases.sort.Direction direction = 2 [(v.rules).enum = {in: [1, 2]}];
+}
+message MessageSkip {TestMsg val = 1 [(v.rules).message.skip = true];}
+message MessageRequired {TestMsg val = 1 [(v.rules).message.required = true];}
+message MessageRequiredButOptional {optional TestMsg val = 1 [(v.rules).message.required = true];}
 
 message MessageRequiredOneof {
     oneof one {
-        option (validate.required) = true;
-        TestMsg val = 1 [(validate.rules).message.required = true];
+        option (v.required) = true;
+        TestMsg val = 1 [(v.rules).message.required = true];
     }
 }
 

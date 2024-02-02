@@ -11,7 +11,6 @@ var FuncMap = map[string]interface{}{
 	"enumList":  enumList,
 	"enumVal":   enumVal,
 
-	"accessor":      accessor,
 	"byteStr":       byteStr,
 	"cmt":           C80,
 	"durGt":         durGt,
@@ -26,17 +25,15 @@ var FuncMap = map[string]interface{}{
 	"lit":           lit,
 	"lookup":        lookup,
 	"oneOfType":     oneOfTypeName,
-	"ruleType":      MapTypeName,
 	"tsGt":          tsGt,
 	"tsLit":         tsLit,
 	"tsStr":         tsStr,
 	"externalEnums": externalEnums,
-	"enumName":      enumName,
-	"enumPackages":  enumPackages,
+	"enumName":      EnumName,
+	//"enumPackages":  enumPackages,
 
-	"GetImports":  GetImports,
+	//"GetImports":  GetImports,
 	"OnType":      OnType,
 	"GetElemRule": GetElemRule,
 	"inKind":      inKind,
-	"SetAccessor": SetAccessor,
 }

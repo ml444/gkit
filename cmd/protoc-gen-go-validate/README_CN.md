@@ -19,3 +19,5 @@
 > **修改3**: 通用的变量(uuidPattern|emailPattern...)、和类型(ValidationError｜MultiError)抽离成公共部分，不再每个message自己维护，精简代码。
 > 
 > **修改4**: 只引用`google.golang.org/protobuf`，减少对其他包的依赖。
+>
+> **修改5**: 增加错误码的自定义功能，支持自定义错误码和错误信息。

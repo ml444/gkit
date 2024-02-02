@@ -5,7 +5,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
-	"github.com/ml444/gkit/cmd/protoc-gen-go-validate/validate"
+	"github.com/ml444/gkit/cmd/protoc-gen-go-validate/v"
 )
 
 type WellKnown string
@@ -33,8 +33,8 @@ func Needs(m protoreflect.MessageDescriptor, wk WellKnown) bool {
 	fields := m.Fields()
 	for i := 0; i < fields.Len(); i++ {
 		f := fields.Get(i)
-		//var rules validate.FieldRules
-		rules, ok := proto.GetExtension(f.Options(), validate.E_Rules).(*validate.FieldRules)
+		//var rules v.FieldRules
+		rules, ok := proto.GetExtension(f.Options(), v.E_Rules).(*v.FieldRules)
 		if !ok {
 			continue
 		}
@@ -66,7 +66,7 @@ func Needs(m protoreflect.MessageDescriptor, wk WellKnown) bool {
 	return false
 }
 
-func strRulesNeeds(rules *validate.StringRules, wk WellKnown) bool {
+func strRulesNeeds(rules *v.StringRules, wk WellKnown) bool {
 	switch wk {
 	case Email:
 		if rules.GetEmail() {

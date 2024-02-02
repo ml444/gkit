@@ -3,7 +3,7 @@ package templates
 const WrapperTpl = `
 	{{ $f := .Field }}{{ $r := .Rules }}
 
-	if wrapper := {{ accessor . }}; wrapper != nil {
+	if wrapper := {{ .GetAccessor }}; wrapper != nil {
 		{{ $ctx := .Unwrap "wrapper" -}}
 		{{ render $ctx.TmplName $ctx }}
 	} {{ if .Required }} else {

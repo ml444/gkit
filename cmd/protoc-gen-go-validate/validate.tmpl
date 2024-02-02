@@ -1,3 +1,126 @@
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"net"
+	"net/mail"
+	"net/url"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	// "google.golang.org/protobuf/types/known/anypb"
+
+	{{ range .Imports -}}
+	{{- if .Alias -}}
+	{{ .Alias }} "{{ .Path }}"
+	{{ else }}
+	"{{ .Path }}"
+	{{- end }}
+	{{- end }}
+)
+
+// ensure the imports are used
+var (
+	_ = bytes.MinRead
+	_ = errors.New("")
+	_ = fmt.Print
+	_ = utf8.UTFMax
+	_ = (*regexp.Regexp)(nil)
+	_ = (*strings.Reader)(nil)
+	_ = net.IPv4len
+	_ = time.Duration(0)
+	_ = (*url.URL)(nil)
+	_ = (*mail.Address)(nil)
+	//_ = anypb.Any{}
+	_ = sort.Sort
+)
+
+{{- if .NeedWellKnow.UUID }}
+// define the regex for a UUID once up-front
+var _uuidPattern = regexp.MustCompile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+{{ template "uuid" . }}
+{{ end }}
+
+{{- $notExistValidateHost := true }}
+{{- if .NeedWellKnow.Hostname }}
+{{- $notExistValidateHost = false }}
+{{ template "hostname" . }}
+{{ end }}
+
+
+{{- if .NeedWellKnow.Email }}
+{{ template "email" . }}
+{{- if $notExistValidateHost }}
+{{ template "hostname" . }}
+{{ end }}
+{{ end }}
+
+{{ if .NeedCommon }}
+// ValidationError is the validation error
+// returned by .Validate if the designated constraints aren't met.
+type ValidationError struct {
+	field   string
+	reason  string
+	errCode int32
+	cause   error
+	key     bool
+}
+
+// Field function returns field value.
+func (e  ValidationError) Field() string { return e.field }
+
+func (e  ValidationError) Reason() string { return e.reason }
+
+func (e  ValidationError) Cause() error { return e.cause }
+
+func (e  ValidationError) Key() bool { return e.key }
+
+func (e  ValidationError) ErrorName() string { return "ValidationError" }
+
+// Error satisfies the builtin error interface
+func (e  ValidationError) Error() string {
+	if e.errCode != 0 {
+		return errorx.New(e.errCode).Error()
+	} else {
+		cause := ""
+		if e.cause != nil {
+			cause = fmt.Sprintf(" | caused by: %v", e.cause)
+		}
+
+		key := ""
+		if e.key {
+			key = "key for "
+		}
+
+		msg := fmt.Sprintf("invalid %s .%s: %s%s", key, e.field, e.reason, cause)
+		return errorx.NewDefaultError(400, msg).Error()
+	}
+}
+
+// ValidationError is an error wrapping multiple validation errors
+// returned by .ValidateAll() if the designated constraints aren't met.
+type  MultiError []error
+
+// Error returns a concatenation of all the error messages it wraps.
+func (m MultiError) Error() string {
+	var msgs []string
+	for _, err := range m {
+		msgs = append(msgs, err.Error())
+	}
+	return strings.Join(msgs, "; ")
+}
+
+// AllErrors returns a list of validation violation errors.
+func (m MultiError) AllErrors() []error { return m }
+{{ end }}
+
+{{ range .Messages }}
+
 {{ if not .Ignored -}}
 {{ if .Disabled -}}
 	{{ cmt "Validate is disabled for " .TypeName ". This method will always return nil." }}
@@ -27,7 +150,6 @@ func (m *{{ .TypeName }}) validate(all bool) error {
 		var errors []error
 
 		{{ range .NonOneOfFields }}
-			{{/* - $field := . */}}
 			{{ render .TmplName . }}
 		{{ end }}
 
@@ -182,4 +304,5 @@ func (m *{{ .TypeName }}) validate(all bool) error {
 	{{ end }}{{ end }}
 
 {{ end }}
+{{- end -}}
 {{- end -}}

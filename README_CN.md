@@ -155,7 +155,7 @@ package main
 
 import (
 	"github.com/ml444/gkit/dbx"
-	"github.com/ml444/gkit/listoption"
+	"github.com/ml444/gkit/dbx/paging"
 )
 
 type ModelUser struct {
@@ -194,7 +194,7 @@ func main() {
 	var users []*ModelUser
 	err = scope.LikePrefix("name", "test").Lte("age", 25).Limit(10).Offset(0).Find(&users)
 	// Or
-	paginate, err := scope.LikePrefix("name", "test").Lte("age", 25).PaginateQuery(&listoption.Paginate{Page: 1, Size: 10}, &users)
+	paginate, err := scope.LikePrefix("name", "test").Lte("age", 25).PaginateQuery(&paging.Paginate{Page: 1, Size: 10}, &users)
 	// return paginate: Paginate{Total: 100, Page: 1, Size: 10} 
 
 	// GroupBy and Having
@@ -278,7 +278,7 @@ package user;
 
 option go_package = "gitlab.xxx.com/group1/project1/pkg/user";
 
-import "validate/validate.proto";
+import "validate/v.proto";
 import "optx/optx.proto";
 import "google/api/annotations.proto";
 

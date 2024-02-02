@@ -8,7 +8,7 @@ do
    --go-validate_out=paths=source_relative:. \
    --proto_path=${HOME}/github.com/ml444/gkit/cmd/protoc-gen-go-validate \
    --proto_path=${HOME}/github.com/ml444/gkit/cmd/protoc-gen-go-validate/tests \
-   --proto_path=${HOME}/github.com/bryce4651/gctl/cmd/protos \
+   --proto_path=${HOME}/github.com/ml444/gctl-templates/protos \
    $file
    # protoc —go-validate_out=gocases/ $file
 done

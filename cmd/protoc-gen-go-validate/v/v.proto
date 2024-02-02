@@ -1,7 +1,7 @@
 syntax = "proto3";
-package validate;
+package v;
 
-option go_package = "github.com/ml444/gkit/cmd/protoc-gen-go-validate/validate";
+option go_package = "github.com/ml444/gkit/cmd/protoc-gen-go-validate/v";
 
 import "google/protobuf/descriptor.proto";
 import "google/protobuf/duration.proto";
@@ -11,28 +11,29 @@ import "google/protobuf/timestamp.proto";
 extend google.protobuf.MessageOptions {
     // Disabled nullifies any validation rules for this message, including any
     // message fields associated with it that do support validation.
-    optional bool disabled = 1071;
+    optional bool disabled = 1444;
     // Ignore skips generation of validation methods for this message.
-    optional bool ignored = 1072;
+    optional bool ignored = 1445;
 }
 
 // Validation rules applied at the oneof level
 extend google.protobuf.OneofOptions {
     // Required ensures that exactly one the field options in a oneof is set;
     // validation fails if no fields in the oneof are set.
-    optional bool required = 1071;
+    optional bool required = 1444;
 }
 
 // Validation rules applied at the field level
 extend google.protobuf.FieldOptions {
     // Rules specify the validations to be performed on this field. By default,
     // no validation is performed against a field.
-    optional FieldRules rules = 1071;
+    optional FieldRules rules = 1444;
 }
 
 // FieldRules encapsulates the rules for each type of field. Depending on the
 // field, the correct set should be used to ensure proper validations.
 message FieldRules {
+    optional int32 errcode = 44;
     optional MessageRules message = 17;
     oneof type {
         // Scalar Field Types

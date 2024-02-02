@@ -3,11 +3,11 @@ syntax = "proto3";
 package tests.cases.yet_another_package;
 option go_package = "github.com/ml444/gkit/cmd/protoc-gen-go-validate/tests/cases/yet_another_package;yet_another_package";
 
-import "validate/validate.proto";
+import "v/v.proto";
 
 // Validate message embedding across packages.
 message Embed {
-    int64 val = 1 [(validate.rules).int64.gt = 0];
+    int64 val = 1 [(v.rules).int64.gt = 0];
 
     enum Enumerated { VALUE = 0; }
 

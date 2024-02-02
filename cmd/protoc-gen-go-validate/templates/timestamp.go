@@ -4,7 +4,7 @@ const TimestampTpl = `{{ $f := .Field }}{{ $r := .Rules }}
 	{{ template "required" . }}
 
 	{{ if or $r.Lt $r.Lte $r.Gt $r.Gte $r.LtNow $r.GtNow $r.Within $r.Const }}
-		if t := {{ accessor . }}; t != nil {
+		if t := {{ .GetAccessor }}; t != nil {
 			ts, err := t.AsTime(), t.CheckValid()
 			if err != nil {
 				err = {{ errCause .Field "err" "value is not a valid timestamp" }}

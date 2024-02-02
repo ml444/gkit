@@ -10,7 +10,7 @@ const MessageTpl = `
 		// skipping validation for {{ .Field.GoName }}
 	{{ else }}
 		if all {
-			switch v := interface{}({{ accessor . }}).(type) {
+			switch v := interface{}({{ .GetAccessor }}).(type) {
 				case interface{ ValidateAll() error }:
 					if err := v.ValidateAll(); err != nil {
 						errors = append(errors, {{ errCause .Field "err" "embedded message failed validation" }})
@@ -21,7 +21,7 @@ const MessageTpl = `
 						errors = append(errors, {{ errCause .Field "err" "embedded message failed validation" }})
 					}
 			}
-		} else if v, ok := interface{}({{ accessor . }}).(interface{ Validate() error }); ok {
+		} else if v, ok := interface{}({{ .GetAccessor }}).(interface{ Validate() error }); ok {
 			if err := v.Validate(); err != nil {
 				return {{ errCause .Field "err" "embedded message failed validation" }}
 			}

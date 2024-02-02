@@ -3,7 +3,7 @@ package templates
 const AnyTpl = `{{ $f := .Field }}{{ $r := .Rules }}
 	{{ template "required" . }}
 
-	if a := {{ accessor . }}; a != nil {
+	if a := {{ .GetAccessor }}; a != nil {
 		{{ if $r.In }}
 			if _, ok := {{ lookup $f "InLookup" }}[a.GetTypeUrl()]; !ok {
 				err := {{ err .Field "type URL must be in list " $r.In }}
