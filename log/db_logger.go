@@ -40,9 +40,9 @@ func NewGormLogger(cfg gormlogger.Config) gormlogger.Interface {
 		infoStr = Green + "[INF] " + Reset + "%s %s"
 		warnStr = Magenta + "[WAR] " + Reset + "%s %s"
 		errStr = Red + "[ERR] " + Reset + "%s %s"
-		traceStr = Green + "[INF] " + Yellow + "[%.3fms] " + BlueBold + "[rows:%v]" + Reset + " %s\n"
-		traceWarnStr = Magenta + "[WAR] " + Yellow + "%s" + Reset + RedBold + "[%.3fms] " + Yellow + "[rows:%v]" + Magenta + " %s" + Reset + "\n"
-		traceErrStr = Red + "[ERR] " + MagentaBold + "%s" + Yellow + "[%.3fms] " + BlueBold + "[rows:%v]" + Reset + " %s\n"
+		traceStr = Green + "[INF] " + Yellow + " [%.3fms]" + BlueBold + " [rows:%v]" + Reset + " %s\n"
+		traceWarnStr = Magenta + "[WAR] " + Yellow + "%s" + Reset + RedBold + " [%.3fms]" + Yellow + " [rows:%v]" + Magenta + " %s" + Reset + "\n"
+		traceErrStr = Red + "[ERR] " + MagentaBold + "%s" + Yellow + " [%.3fms]" + BlueBold + " [rows:%v]" + Reset + " %s\n"
 	}
 
 	return &dbLogger{
