@@ -1,0 +1,12 @@
+
+const (
+{{- range $GoName, $snakeName := . }}
+	Field{{ $GoName }} = "{{ $GoName }}"
+{{- end }}
+)
+
+const (
+{{- range $GoName, $snakeName := . }}
+	DbField{{ $GoName }} = "{{ $snakeName }}"
+{{- end }}
+)
