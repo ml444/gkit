@@ -18,7 +18,7 @@ type ErrCodeDetail struct {
 
 var lang string
 var errCodeMap = map[int32]*ErrCodeDetail{}
-var defaultError *ErrCodeDetail
+var defaultError = &ErrCodeDetail{}
 
 func SetLang(l string) {
 	lang = l
@@ -34,7 +34,9 @@ func RegisterError(codeMap map[int32]*ErrCodeDetail, defaultErr *ErrCodeDetail) 
 	if defaultErr.StatusCode == 0 {
 		defaultErr.StatusCode = DefaultStatusCode
 	}
-	defaultError = defaultErr
+	if defaultError != nil {
+		defaultError = defaultErr
+	}
 }
 
 // Error is a status error.
@@ -155,7 +157,7 @@ func NewDefaultError(statusCode int32, message string) *Error {
 	if message == "" {
 		message = defaultError.Message
 	}
-	return CreateError(statusCode, defaultError.StatusCode, message)
+	return CreateError(statusCode, defaultError.ErrorCode, message)
 }
 
 // CreateError returns an error object for the status code, error code, message.
