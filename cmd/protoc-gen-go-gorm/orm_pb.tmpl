@@ -3,6 +3,8 @@ import (
 	{{ range .Imports -}}
 	"{{ . }}"
 	{{ end }}
+
+	model "github.com/ml444/gkit/cmd/protoc-gen-go-gorm/model"
 )
 
 {{ range .Commons -}}
@@ -14,6 +16,10 @@ import (
 func (x *{{ .Name }}) TableName() string {
 	return "{{ .Opts.TableName }}"
 }
+
+func (x *T{{ .Name }}) TableName() string {
+	return "{{ .Opts.TableName }}"
+}
 	{{ end }}
 
 type T{{ .Name }} struct {
@@ -22,7 +28,7 @@ type T{{ .Name }} struct {
 	{{ end }}
 }
 
-func (x *T{{ .Name }}) ToSource() *{{ .Name }} {
+func (x *T{{ .Name }}) ToSource() model.IModel {
 	return &{{ .Name }}{
 	    {{ range .Fields -}}
 	    {{ if eq .NewType .OldType -}}
@@ -34,7 +40,7 @@ func (x *T{{ .Name }}) ToSource() *{{ .Name }} {
 	}
 }
 
-func (x *{{ .Name }}) ToORM() *T{{ .Name }} {
+func (x *{{ .Name }}) ToORM() model.ITModel {
 	return &T{{ .Name }}{
 	    {{ range .Fields -}}
 	    {{ if eq .NewType .OldType -}}
