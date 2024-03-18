@@ -8,10 +8,8 @@ import "google/protobuf/descriptor.proto";
 
 
 extend google.protobuf.EnumOptions {
-    int32 default_status = 1200;
-    int32 default_errcode = 1201;
-    string default_message = 1202;
-    repeated string default_polyglot = 1203;
+    int32 lower_bound = 1200;
+    int32 upper_bound = 1201;
 }
 
 extend google.protobuf.EnumValueOptions {

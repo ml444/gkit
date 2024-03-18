@@ -1,17 +1,4 @@
 
-{{ if .DefaultOpt }}
-var Default{{ .EnumName }} = errorx.ErrCodeDetail{
-	StatusCode: {{ .DefaultOpt.Status }},
-    ErrorCode:  {{ .DefaultOpt.ErrCode }},
-    Message:    "{{ .DefaultOpt.Message }}",
-    Polyglot:   map[string]string{
-		{{- range $key, $value := .DefaultOpt.Polyglot }}
-		"{{ $key }}": "{{ $value }}",
-		{{- end }}
-    },
-}
-{{ end -}}
-
 {{ if gt (len .Fields) 0 }}
 const (
 {{- range $i, $f := .Fields -}}

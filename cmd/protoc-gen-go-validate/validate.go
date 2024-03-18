@@ -84,6 +84,8 @@ func generateFileContent(file *protogen.File, g *protogen.GeneratedFile, redecla
 	}
 
 	validateCtx := &ctx.ValidateCtx{}
+	validateCtx.ErrCodeBegin = getErrCodeBegin(file)
+
 	needWKn := &ctx.NeedWellKnown{}
 	importMap := make(map[string]string)
 	for _, message := range file.Messages {
@@ -128,6 +130,22 @@ func generateFileContent(file *protogen.File, g *protogen.GeneratedFile, redecla
 	if err != nil {
 		panic(err.Error())
 	}
+}
+
+func getErrCodeBegin(file *protogen.File) int32 {
+	var errCodeBegin int32
+	for _, enum := range file.Enums {
+		if errcode, ok := proto.GetExtension(enum.Desc.Options(), v.E_LowerBound).(int32); ok && errcode != 0 {
+			errCodeBegin = errcode
+		} else {
+			if len(enum.Values) > 0 {
+				firstValue := enum.Values[0]
+				errCodeBegin = int32(firstValue.Desc.Number())
+			}
+		}
+	}
+
+	return errCodeBegin
 }
 
 func genMessage(message *protogen.Message, needWKn *ctx.NeedWellKnown) (bool, *ctx.MessageCtx, []*ctx.ImportCtx) {

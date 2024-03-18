@@ -66,9 +66,9 @@ func genContent(file *protogen.File, g *protogen.GeneratedFile) {
 }
 
 type ErrDesc struct {
-	EnumName   string
-	Fields     []ErrField
-	DefaultOpt *DefaultOpt
+	EnumName string
+	Fields   []ErrField
+	Options  *Opts
 }
 type ErrField struct {
 	Name     string
@@ -77,11 +77,9 @@ type ErrField struct {
 	Message  string
 	Polyglot map[string]string
 }
-type DefaultOpt struct {
-	Status   int32
-	ErrCode  int32
-	Message  string
-	Polyglot map[string]string
+type Opts struct {
+	ErrcodeBegin int32
+	ErrCodeEnd   int32
 }
 
 func genErrcode(tmpl *template.Template, g *protogen.GeneratedFile, enum *protogen.Enum) {
@@ -93,35 +91,31 @@ func genErrcode(tmpl *template.Template, g *protogen.GeneratedFile, enum *protog
 		EnumName: enum.GoIdent.GoName,
 		Fields:   make([]ErrField, 0),
 	}
-	defaultOpt := DefaultOpt{}
-	hasDefault := false
-	if errDefaultStatus, ok := proto.GetExtension(enum.Desc.Options(), err.E_DefaultStatus).(int32); ok && errDefaultStatus != 0 {
-		hasDefault = true
-		defaultOpt.Status = errDefaultStatus
+	opts := Opts{
+		ErrcodeBegin: 1,
+		ErrCodeEnd:   1<<31 - 1,
 	}
-	if errDefaultCode, ok := proto.GetExtension(enum.Desc.Options(), err.E_DefaultErrcode).(int32); ok && errDefaultCode != 0 {
-		hasDefault = true
-		defaultOpt.ErrCode = errDefaultCode
+	if errcodeBegin, ok := proto.GetExtension(enum.Desc.Options(), err.E_LowerBound).(int32); ok && errcodeBegin != 0 {
+		opts.ErrcodeBegin = errcodeBegin
 	}
-	if errDefaultMessage, ok := proto.GetExtension(enum.Desc.Options(), err.E_DefaultMessage).(string); ok && errDefaultMessage != "" {
-		hasDefault = true
-		defaultOpt.Message = errDefaultMessage
+	if errcodeEnd, ok := proto.GetExtension(enum.Desc.Options(), err.E_UpperBound).(int32); ok && errcodeEnd != 0 {
+		opts.ErrCodeEnd = errcodeEnd
 	}
-	if errDefaultPolyglot, ok := proto.GetExtension(enum.Desc.Options(), err.E_DefaultPolyglot).([]string); ok && len(errDefaultPolyglot) != 0 {
-		hasDefault = true
-		defaultOpt.Polyglot = make(map[string]string)
-		for _, polyglot := range errDefaultPolyglot {
-			kv := strings.SplitN(polyglot, "=", 2)
-			if len(kv) == 2 {
-				defaultOpt.Polyglot[kv[0]] = kv[1]
+	ed.Options = &opts
+
+	for i, enumValue := range enum.Values {
+		vInt32 := int32(enumValue.Desc.Number())
+		if vInt32 == 0 {
+			if i == 0 {
+				continue
+			} else {
+				println(enumValue.GoIdent.GoName, " errcode must not be 0")
 			}
 		}
-	}
-	if hasDefault {
-		ed.DefaultOpt = &defaultOpt
-	}
+		if vInt32 < opts.ErrcodeBegin || vInt32 > opts.ErrCodeEnd {
+			println(fmt.Sprintf("errcode [%d] out of range", vInt32))
+		}
 
-	for _, enumValue := range enum.Values {
 		errDetail, ok := proto.GetExtension(enumValue.Desc.Options(), err.E_Detail).(*err.ErrDetail)
 		if ok && errDetail != nil {
 			fieldName := enumValue.GoIdent.GoName

@@ -98,7 +98,7 @@ func (e  ValidationError) Error() string {
 		}
 
 		msg := fmt.Sprintf("invalid %s .%s: %s%s", key, e.field, e.reason, cause)
-		return errorx.NewDefaultError(400, msg).Error()
+		return errorx.CreateError(400, {{ .ErrCodeBegin }}, msg).Error()
 	}
 }
 

@@ -16,6 +16,7 @@ type ValidateCtx struct {
 	Messages     []*MessageCtx
 	NeedWellKnow *NeedWellKnown
 	NeedCommon   bool
+	ErrCodeBegin int32
 }
 
 type NeedWellKnown struct {
