@@ -24,18 +24,12 @@ func SetLang(l string) {
 	lang = l
 }
 
-func RegisterError(codeMap map[int32]*ErrCodeDetail, defaultErr *ErrCodeDetail) {
+func RegisterError(codeMap map[int32]*ErrCodeDetail) {
 	for k, detail := range codeMap {
 		if detail.StatusCode == 0 {
 			detail.StatusCode = DefaultStatusCode
 		}
 		errCodeMap[k] = detail
-	}
-	if defaultErr.StatusCode == 0 {
-		defaultErr.StatusCode = DefaultStatusCode
-	}
-	if defaultError != nil {
-		defaultError = defaultErr
 	}
 }
 
