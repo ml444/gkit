@@ -5,51 +5,22 @@ import (
 	"reflect"
 )
 
+type handleFunc = func(val interface{}) error
+
 type PtrProcessor struct {
-	isPtrOptions  bool
-	ptrOptions    interface{}
-	ptrHandlerMap map[string]handler
+	ptrHandlerMap map[string]handleFunc
 }
 
-func NewPtrProcessor(opts interface{}) *PtrProcessor {
+func NewPtrProcessor() *PtrProcessor {
 	return &PtrProcessor{
-		isPtrOptions:  true,
-		ptrOptions:    opts,
-		ptrHandlerMap: make(map[string]handler),
+		ptrHandlerMap: make(map[string]handleFunc),
 	}
 }
-func (p *PtrProcessor) Add(key interface{}, h handler) *PtrProcessor {
+func (p *PtrProcessor) AddHandle(key interface{}, h handleFunc) *PtrProcessor {
 	p.ptrHandlerMap[toString(key)] = h
 	return p
 }
-func (p *PtrProcessor) ProcessPtrOpts() error {
-	if !p.isPtrOptions || len(p.ptrHandlerMap) == 0 {
-		return nil
-	}
 
-	var err error
-	optsV := reflect.ValueOf(p.ptrOptions)
-	if optsV.Kind() == reflect.Ptr {
-		optsV = optsV.Elem()
-	}
-	for i := 0; i < optsV.NumField(); i++ {
-		fieldV := optsV.Field(i)
-		if fieldV.Kind() == reflect.Ptr {
-			fieldV = fieldV.Elem()
-		}
-		fieldT := optsV.Type().Field(i)
-		h := p.ptrHandlerMap[fieldT.Name]
-		if h == nil {
-			continue
-		}
-		h.setValue(fieldV.Interface())
-		err = h.apply()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
 func toString(key interface{}) string {
 	switch x := key.(type) {
 	case string:
@@ -59,4 +30,36 @@ func toString(key interface{}) string {
 	default:
 		return fmt.Sprintf("%v", x)
 	}
+}
+
+func (p *PtrProcessor) Process(opts interface{}) error {
+	if len(p.ptrHandlerMap) == 0 {
+		return nil
+	}
+
+	var err error
+	optsV := reflect.ValueOf(opts)
+	if optsV.Kind() == reflect.Ptr {
+		optsV = optsV.Elem()
+	}
+	for i := 0; i < optsV.NumField(); i++ {
+		fieldV := optsV.Field(i)
+		if fieldV.Kind() == reflect.Ptr {
+			if fieldV.IsNil() {
+				continue
+			}
+			fieldV = fieldV.Elem()
+		}
+
+		fieldT := optsV.Type().Field(i)
+		h := p.ptrHandlerMap[fieldT.Name]
+		if h == nil {
+			continue
+		}
+		err = h(fieldV.Interface())
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
