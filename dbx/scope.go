@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"gorm.io/gorm/clause"
-	"gorm.io/gorm/utils"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
+
+	"gorm.io/gorm/clause"
+	"gorm.io/gorm/utils"
 
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"gorm.io/gorm"
@@ -264,12 +266,23 @@ func (s *Scope) Query(opts *QueryOpts) *Scope {
 	return s
 }
 
+func isNonEmptySlice(v interface{}) bool {
+	_v := reflect.ValueOf(v)
+	return _v.Kind() == reflect.Slice && _v.Len() > 0
+}
+
 func (s *Scope) In(field string, values interface{}) *Scope {
+	if !isNonEmptySlice(values) {
+		return s
+	}
 	s.DB.Where(fmt.Sprintf("%s IN ?", field), values)
 	return s
 }
 
 func (s *Scope) NotIn(field string, values interface{}) *Scope {
+	if !isNonEmptySlice(values) {
+		return s
+	}
 	s.DB.Where(fmt.Sprintf("%s NOT IN ?", field), values)
 	return s
 }
