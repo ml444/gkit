@@ -20,7 +20,6 @@
 go.sum
 
 __*.go
-*_test.go
 *_test.gobak
 
 issue.md
