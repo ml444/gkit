@@ -1,9 +1,10 @@
 package httpx
 
 import (
-	"github.com/gorilla/mux"
 	"net/http"
 	"path"
+
+	"github.com/gorilla/mux"
 
 	"github.com/ml444/gkit/middleware"
 )
@@ -17,10 +18,10 @@ type IHttpRouter interface {
 	ServeHTTP(res http.ResponseWriter, req *http.Request)
 	Use(mws ...middleware.HttpMiddleware)
 	Group(prefix string, middlewares ...middleware.HttpMiddleware) *Router
-	Handle(method, path string, h http.Handler)
-	HandlePrefix(method, prefix string, h http.Handler)
-	HandleFunc(method, path string, h http.HandlerFunc)
-	HandleHeader(method string, h http.HandlerFunc, headerPairs ...string)
+	Handle(path string, h http.Handler)
+	HandlePrefix(prefix string, h http.Handler)
+	HandleFunc(path string, h http.HandlerFunc)
+	HandleHeader(h http.HandlerFunc, headerPairs ...string)
 }
 
 type IRouteMethod interface {
@@ -52,6 +53,8 @@ type IRouterSetting interface {
 
 // HandleFunc defines a function to serve HTTP requests.
 type HandleFunc func(Context) error
+
+//type HandleFunc func(ctx context.Context, req interface{}) (interface{}, error)
 
 var _ = IRouter(&Router{})
 
@@ -142,20 +145,20 @@ func (r *Router) Use(mws ...middleware.HttpMiddleware) {
 	r.router.Use(mwList...)
 }
 
-func (r *Router) Handle(method, path string, h http.Handler) {
-	r.router.Handle(path, h).Methods(method)
+func (r *Router) Handle(path string, h http.Handler) {
+	r.router.Handle(path, h)
 }
 
-func (r *Router) HandlePrefix(method, prefix string, h http.Handler) {
-	r.router.PathPrefix(prefix).Handler(h).Methods(method)
+func (r *Router) HandlePrefix(prefix string, h http.Handler) {
+	r.router.PathPrefix(prefix).Handler(h)
 }
 
-func (r *Router) HandleFunc(method, path string, h http.HandlerFunc) {
-	r.router.HandleFunc(path, h).Methods(method)
+func (r *Router) HandleFunc(path string, h http.HandlerFunc) {
+	r.router.HandleFunc(path, h)
 }
 
-func (r *Router) HandleHeader(method string, h http.HandlerFunc, headerPairs ...string) {
-	r.router.Headers(headerPairs...).Handler(h).Methods(method)
+func (r *Router) HandleHeader(h http.HandlerFunc, headerPairs ...string) {
+	r.router.Headers(headerPairs...).Handler(h)
 }
 func (r *Router) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	r.router.ServeHTTP(res, req)

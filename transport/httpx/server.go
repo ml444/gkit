@@ -95,13 +95,13 @@ func (s *Server) globalMiddleware() middleware.HttpMiddleware {
 				// /path/123 -> /path/{id}
 				pathTemplate, _ = route.GetPathTemplate()
 			}
-			log.Debugf("%s %s\n", req.Method, pathTemplate)
-			tr := &transport.Transport{
-				Operation: pathTemplate,
-				//pathTemplate: pathTemplate,
-				InHeader:  header.New(req.Header),
-				OutHeader: header.New(w.Header()),
-				//request:      req,
+			//log.Debugf("%s %s\n", req.Method, pathTemplate)
+			tr := &Transport{
+				BaseTransport: transport.BaseTransport{
+					Operation: pathTemplate,
+					InHeader:  header.New(req.Header),
+					OutHeader: header.New(w.Header()),
+				},
 			}
 			if s.endpoint != nil {
 				tr.Endpoint = s.endpoint.String()
@@ -127,7 +127,7 @@ func (s *Server) Start(ctx context.Context) error {
 	s.BaseContext = func(net.Listener) context.Context {
 		return ctx
 	}
-	log.Infof("[HTTP] server listening on: %s", s.listener.Addr().String())
+	log.Infof("[HTTP] server listening on: %s \n", s.listener.Addr().String())
 	var err error
 	if s.tlsConf != nil {
 		err = s.ServeTLS(s.listener, "", "")

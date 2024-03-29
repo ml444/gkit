@@ -100,11 +100,13 @@ func (client *Client) Invoke(ctx context.Context, method, path string, args inte
 	if client.userAgent != "" {
 		req.Header.Set("User-Agent", client.userAgent)
 	}
-	ctx = transport.ToContext(ctx, &transport.Transport{
-		Endpoint:  client.endpoint,
-		InHeader:  (header.Header)(req.Header),
-		Operation: c.operation,
-		Request:   req,
+	ctx = transport.ToContext(ctx, &Transport{
+		BaseTransport: transport.BaseTransport{
+			Endpoint:  client.endpoint,
+			Operation: c.operation,
+			InHeader:  header.Header(req.Header),
+		},
+		Request: req,
 		//pathTemplate: c.pathTemplate,
 	})
 	return client.invoke(ctx, req, args, reply, c, opts...)
@@ -138,10 +140,17 @@ func (client *Client) Do(req *http.Request) (*http.Response, error) {
 	if client.endpoint != "" {
 		req.URL.Host = client.endpoint
 		req.Host = client.endpoint
-		return client.cc.Do(req)
 	}
 
-	return client.cc.Do(req)
+	resp, err := client.cc.Do(req)
+	if err == nil {
+		err = client.decoder(req.Context(), resp, nil)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
 }
 
 // Close tears down the Transport and all underlying connections.

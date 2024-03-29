@@ -61,14 +61,14 @@ func TLSConfig(c *tls.Config) ServerOption {
 // UnaryInterceptor returns a ServerOption that sets the UnaryServerInterceptor for the server.
 func UnaryInterceptor(in ...grpc.UnaryServerInterceptor) ServerOption {
 	return func(s *Server) {
-		s.grpcOpts = append(s.grpcOpts, grpc.ChainUnaryInterceptor(in...))
+		s.unaryInterceptors = append(s.unaryInterceptors, in...)
 	}
 }
 
 // StreamInterceptor returns a ServerOption that sets the StreamServerInterceptor for the server.
 func StreamInterceptor(in ...grpc.StreamServerInterceptor) ServerOption {
 	return func(s *Server) {
-		s.grpcOpts = append(s.grpcOpts, grpc.ChainStreamInterceptor(in...))
+		s.streamInterceptors = append(s.streamInterceptors, in...)
 	}
 }
 

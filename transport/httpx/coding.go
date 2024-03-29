@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/gorilla/mux"
+
 	"github.com/ml444/gkit/errorx"
 	"github.com/ml444/gkit/transport/httpx/coder"
 	"github.com/ml444/gkit/transport/httpx/coder/form"
@@ -152,6 +153,9 @@ func DefaultRequestEncoder(_ context.Context, contentType string, in interface{}
 
 // DefaultResponseDecoder is an HTTP response decoder.
 func DefaultResponseDecoder(_ context.Context, rsp *http.Response, v interface{}) error {
+	if rsp.StatusCode < 400 && v == nil {
+		return nil
+	}
 	defer rsp.Body.Close()
 	data, err := io.ReadAll(rsp.Body)
 	if err != nil {
@@ -161,6 +165,11 @@ func DefaultResponseDecoder(_ context.Context, rsp *http.Response, v interface{}
 		e := new(errorx.Error)
 		if err = coderByContentType(rsp.Header.Get("Content-Type")).Unmarshal(data, e); err == nil {
 			e.StatusCode = int32(rsp.StatusCode)
+			return e
+		} else {
+			e.StatusCode = int32(rsp.StatusCode)
+			e.ErrorCode = errorx.ErrCodeInvalidReqSys
+			e.Message = string(data)
 			return e
 		}
 	}

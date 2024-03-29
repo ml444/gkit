@@ -3,6 +3,7 @@ package grpcx
 import (
 	"crypto/tls"
 	"net"
+	"time"
 
 	"github.com/ml444/gutil/netx"
 	"google.golang.org/grpc"
@@ -14,20 +15,25 @@ import (
 	"google.golang.org/grpc/xds"
 
 	"github.com/ml444/gkit/log"
-	"github.com/ml444/gkit/transport"
+	"github.com/ml444/gkit/middleware"
 )
 
 type Server struct {
 	*xds.GRPCServer
-	name         string
-	network      string
-	address      string
-	creds        credentials.TransportCredentials
-	tlsConf      *tls.Config
-	grpcOpts     []grpc.ServerOption
-	health       *health.Server
-	enableHealth bool
-	debug        bool
+	name               string
+	network            string
+	address            string
+	endpoint           string
+	middlewares        []middleware.Middleware
+	grpcOpts           []grpc.ServerOption
+	unaryInterceptors  []grpc.UnaryServerInterceptor
+	streamInterceptors []grpc.StreamServerInterceptor
+	creds              credentials.TransportCredentials
+	tlsConf            *tls.Config
+	health             *health.Server
+	timeout            time.Duration
+	enableHealth       bool
+	debug              bool
 }
 
 func NewServer(registerFunc func(s grpc.ServiceRegistrar), opts ...ServerOption) *Server {
@@ -37,9 +43,15 @@ func NewServer(registerFunc func(s grpc.ServiceRegistrar), opts ...ServerOption)
 		address: ":5040",
 		health:  health.NewServer(),
 	}
+	s.unaryInterceptors = append(s.unaryInterceptors, s.unaryServerInterceptor())
+	s.streamInterceptors = append(s.streamInterceptors, s.streamServerInterceptor())
 	for _, o := range opts {
 		o(s)
 	}
+	s.grpcOpts = append(s.grpcOpts,
+		grpc.ChainUnaryInterceptor(s.unaryInterceptors...),
+		grpc.ChainStreamInterceptor(s.streamInterceptors...),
+	)
 	if s.tlsConf != nil {
 		s.grpcOpts = append(s.grpcOpts, grpc.Creds(credentials.NewTLS(s.tlsConf)))
 	} else if s.creds != nil {
@@ -65,7 +77,7 @@ func (s *Server) Start() error {
 		log.Errorf("net.Listen(%s, %s) failed: %v", s.network, s.address, err)
 		return err
 	}
-	transport.GrpcHostAddress, _ = netx.Extract(s.address, ln)
+	s.endpoint, _ = netx.Extract(s.address, ln)
 
 	log.Infof("[gRPC] server listening on: %s", ln.Addr().String())
 	s.health.Resume()
