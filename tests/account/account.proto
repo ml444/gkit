@@ -1,0 +1,279 @@
+//    protoc --proto_path=. --go_out=. --go-grpc_out=. ./account.proto
+syntax = "proto3";
+
+package account;
+option go_package = "github.com/ml444/gkit/cmd/account";
+
+import "validate/validate.proto";
+import "optx/optx.proto";
+import "google/api/annotations.proto";
+
+// @spp: service
+service account {
+    // @error:
+    // @freq: ip,60,100
+    rpc Register(RegisterReq) returns (RegisterRsp) {
+        option (google.api.http) = {
+            post: "/account/Register"
+            body: "*"
+        };
+    };
+
+    // @desc: 登录
+    rpc Login (LoginReq) returns (LoginRsp) {
+        option (google.api.http) = {
+            post: "/account/Login"
+            body: "*"
+        };
+    };
+
+    // @desc: 登出
+    rpc Logout (LogoutReq) returns (LogoutRsp) {
+        option (google.api.http) = {
+            post: "/account/Logout"
+            body: "*"
+        };
+    };
+
+    // @desc: 获取Token
+    rpc Token (TokenReq) returns (TokenRsp) {
+        option (google.api.http) = {
+            post: "/account/Token"
+            body: "*"
+        };
+    };
+
+    // @desc: 刷新Token
+    rpc Refresh (RefreshReq) returns (RefreshRsp) {
+        option (google.api.http) = {
+            post: "/account/Refresh"
+            body: "*"
+        };
+    };
+
+    // @desc: 发送验证码
+    rpc VerifyCode (VerifyCodeReq) returns (VerifyCodeRsp) {
+        option (google.api.http) = {
+            post: "/account/VerifyCode"
+            body: "*"
+        };
+    };
+
+    // @desc: 获取公钥
+    rpc GetPublicKey (GetPublicKeyReq) returns (GetPublicKeyRsp) {
+        option (google.api.http) = {
+            get: "/account/GetPublicKey"
+        };
+    };
+
+    // @desc: 重置密码
+    rpc ResetPassword (ResetPasswordReq) returns (ResetPasswordRsp) {
+        option (google.api.http) = {
+            post: "/account/ResetPassword"
+            body: "*"
+        };
+    };
+
+    rpc GetAccountInfo (GetAccountInfoReq) returns (GetAccountInfoRsp) {
+        option (google.api.http) = {
+            get: "/account/GetAccountInfo/{account}"
+//            body: "*"
+        };
+    };
+
+    rpc ListAccount (ListAccountReq) returns (ListAccountRsp) {
+        option (google.api.http) = {
+            get: "/account/ListAccount"
+//            body: "*"
+        };
+    };
+
+    rpc CreateAccountSys (CreateAccountSysReq) returns (CreateAccountSysRsp) {};
+    rpc DecryptPwdSys (DecryptPwdSysReq) returns (DecryptPwdSysRsp) {};
+}
+
+
+enum ErrCode {
+    Success = 0;
+    //@status_code: 400
+    ErrInvalidParam = 101001;
+    //@status_code: 400
+    ErrEmptyParams = 101002;
+    //@status_code: 400
+    ErrAccountLength = 101003; // 账户长度必须在6到20个字符之间
+    //@status_code: 404
+    ErrNotFoundAccount = 101004; // 未找到账号
+    //@status_code: 400
+    ErrPasswordLength = 101005; // 密码长度必须在6到20个字符之间
+    //@status_code: 400
+    ErrPasswordConfirm = 101006; // 两次密码不一致
+    //@status_code: 401
+    ErrPasswordFailed = 101007; // 密码错误
+    //@status_code: 403
+    ErrNotFoundToken = 101008; // 未找到Token
+    //@status_code: 403
+    ErrTokenConfirm = 101009; // 请求前后token不一致
+    //@desc: 发生该错误时，应该重新跳转到登录页面，重新登录
+    //@status_code: 403
+    ErrLoginToken = 101010; // 登录Token超时或错误
+
+    //@status_code: 403
+    ErrAccountExisted = 101011; // 账号已存在
+    //@status_code: 403
+    ErrAccountHasNotJoinedCorp = 101012; // 账号没有加入该企业
+}
+
+message ModelAccount {
+    // @gorm: primarykey
+    uint64 id = 1;
+    uint32 created_at = 3;
+    uint32 updated_at = 4;
+    uint32 deleted_at = 5;
+    // @gorm: <-:create;index:idx_account,unique
+    string account = 6;
+    string password = 7;
+    // @gorm: index:idx_uid
+    uint64 user_id = 8;
+    // @gorm: comment:'0=正常,1=停用'
+    uint32 status = 9;
+    uint32 last_login_at = 10;
+    string last_login_ip = 11;
+}
+
+message RegisterReq {
+    //  string account = 1 [(validate.rules).string = {min_len: 11, max_len: 20}];
+    string account = 1 [(validate.rules).string = {
+        pattern: "^1\\d{10}$",
+        min_len: 11,
+        max_len: 13
+    }];
+    string password = 2 [(validate.rules).string = {min_len: 6, max_len: 500}];
+    //string confirm_pwd = 3 [(validate.rules).string = {min_len: 6, max_len: 500}];
+    string verify_code = 4 [(validate.rules).string = {min_len: 4, max_len: 6}];
+    string nick_name = 5 [(validate.rules).string = {min_len: 2, max_len: 40}];
+    uint64 corp_id = 6;
+}
+
+message RegisterRsp {
+    bool success = 1;
+    string msg = 2;
+}
+
+message LoginReq {
+    string account = 1 [(validate.rules).string = {min_len: 6, max_len: 20}];
+    string password = 2 [(validate.rules).string.min_len = 6];
+}
+
+message LoginRsp {
+    message CorpInfo {
+        uint64 id = 1;
+        string name = 2;
+        string fullname = 3;
+        string logo = 4;
+        uint32 status = 5;
+    }
+    bool success = 1;
+    string login_token = 2;
+    repeated CorpInfo corp_info_list = 3;
+    uint64 user_id = 4;
+}
+
+message LogoutReq {
+    string account = 1 [(validate.rules).string.min_len = 6];
+}
+
+message LogoutRsp {}
+
+message TokenReq {
+    uint64 corp_id = 1;
+    string login_token = 2;
+}
+message TokenRsp {
+    string access_token = 1;
+    string refresh_token = 2;
+}
+
+message RefreshReq {
+    string refresh_token = 1 [(validate.rules).string.min_len = 10];
+}
+
+message RefreshRsp {
+    string access_token = 1;
+    string refresh_token = 2;
+}
+
+message VerifyCodeReq {
+    string phone = 1 [(validate.rules).string = {
+        pattern: "^1\\d{10}$",
+        min_len: 11,
+        max_len: 13
+    }];
+    uint32 verify_type = 2;
+}
+
+message VerifyCodeRsp {
+}
+
+message GetPublicKeyReq {}
+message GetPublicKeyRsp {
+    string public_key = 1;
+}
+
+message ResetPasswordReq {
+    string account = 1;
+    string verify_code = 2;
+    string password = 3 [(validate.rules).string = {min_len: 6, max_len: 500}];
+    //string confirm_pwd = 4 [(validate.rules).string = {min_len: 6, max_len: 255}];
+}
+
+message ResetPasswordRsp {
+    bool success = 1;
+    string msg = 2;
+}
+
+message GetAccountInfoReq {
+    string account = 1;
+}
+
+message GetAccountInfoRsp {
+    ModelAccount data = 1;
+}
+
+
+message ListAccountReq {
+    enum ListOpt {
+        ListOptNil = 0;
+        // @valueType: string
+        ListOptLikeNickName = 1;
+        // @valueType: string
+        ListOptLikeAccount = 2;
+        // @valueType: uint64List
+        ListOptUserIdList = 3;
+    }
+    listoption.ListOption list_option = 1;
+    string name = 2;
+    string account = 3;
+}
+message ListAccountRsp {
+    listoption.Paginate paginate = 1;
+    repeated ModelAccount list = 2;
+}
+
+message CreateAccountSysReq {
+    uint64 user_id = 1 [(validate.rules).uint64.gt = 0];
+    string account = 2 [(validate.rules).string = {min_len: 6, max_len: 20}];
+    string password = 3 [(validate.rules).string = {min_len: 6, max_len: 500}];
+    uint64 corp_id = 4 [(validate.rules).uint64.gt = 0];
+}
+
+message CreateAccountSysRsp{
+}
+
+
+message DecryptPwdSysReq {
+    string password = 1;
+}
+
+message DecryptPwdSysRsp {
+    string plaintext_pwd = 1;
+}

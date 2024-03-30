@@ -30,10 +30,10 @@ can be quickly generated, so that developers can Focus more on business logic de
 ```
 - **errorx**: error handling module
 - **dbx**: Gorm-based database module
-- **listoption**: Paging query module, which defines the conditional filtering method of list data, as well as the parameters and result return of paging query.
 - **log**: log module
 - **metrics**: indicator module
 - **middleware**: middleware module
+- **optx**: It defines the conditional filtering method of list data, and encapsulates the processing method for the two parameter passing methods (enumeration and pointer) of list query; and defines and encapsulates the paging query module.
 - **transport**: transport module
 - **pkg**: public module, including some basic tool classes
 - **internal**: internal module
