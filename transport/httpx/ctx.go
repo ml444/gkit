@@ -35,6 +35,7 @@ type Context interface {
 	Blob(int, string, []byte) error
 	Stream(int, string, io.Reader) error
 	Reset(http.ResponseWriter, *http.Request)
+	ReturnError(error)
 }
 
 type wrappedCtx struct {
@@ -44,10 +45,10 @@ type wrappedCtx struct {
 	rsp    http.ResponseWriter
 }
 
-func NewCtx(rsp http.ResponseWriter, req *http.Request, coder IRouterCoder) Context {
+func NewCtx(rsp http.ResponseWriter, req *http.Request) Context {
 	return &wrappedCtx{
 		status: http.StatusOK,
-		coder:  coder,
+		coder:  &routerCoder{},
 		req:    req,
 		rsp:    rsp,
 	}
@@ -136,6 +137,10 @@ func (c *wrappedCtx) Stream(status int, contentType string, rd io.Reader) error 
 func (c *wrappedCtx) Reset(rsp http.ResponseWriter, req *http.Request) {
 	c.rsp = rsp
 	c.req = req
+}
+
+func (c *wrappedCtx) ReturnError(err error) {
+	c.coder.ErrorEncoder()(c.rsp, c.req, err)
 }
 
 func (c *wrappedCtx) Deadline() (time.Time, bool) {

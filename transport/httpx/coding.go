@@ -79,10 +79,10 @@ func (c *routerCoder) BindForm() RequestDecoder {
 }
 func (c *routerCoder) BindBody() RequestDecoder {
 	return func(r *http.Request, v interface{}) error {
-		codec, ok := coderForRequest(r, "Content-Type")
-		if !ok {
-			return errorx.BadRequest(fmt.Sprintf("unregister Content-Type: %s", r.Header.Get("Content-Type")))
-		}
+		codec, _ := coderForRequest(r, "Content-Type")
+		//if !ok {
+		//	return errorx.BadRequest(fmt.Sprintf("unregister Content-Type: %s", r.Header.Get("Content-Type")))
+		//}
 		data, err := io.ReadAll(r.Body)
 
 		// reset body.
@@ -176,7 +176,7 @@ func DefaultResponseDecoder(_ context.Context, rsp *http.Response, v interface{}
 	return coderByContentType(rsp.Header.Get("Content-Type")).Unmarshal(data, v)
 }
 
-func coderForRequest(r *http.Request, name string) (coder.Coder, bool) {
+func coderForRequest(r *http.Request, name string) (coder.ICoder, bool) {
 	for _, accept := range r.Header[name] {
 		codec := coder.GetCoder(contentSubtype(accept))
 		if codec != nil {
@@ -186,7 +186,7 @@ func coderForRequest(r *http.Request, name string) (coder.Coder, bool) {
 	return coder.GetCoder("json"), false
 }
 
-func coderByContentType(contentType string) coder.Coder {
+func coderByContentType(contentType string) coder.ICoder {
 	codec := coder.GetCoder(contentSubtype(contentType))
 	if codec != nil {
 		return codec

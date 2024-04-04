@@ -178,6 +178,7 @@ type callInfo struct {
 	reqHeader    http.Header
 	operation    string
 	pathTemplate string
+	onResponse   func(*http.Response) error
 }
 
 func defaultCallInfo(path string) callInfo {
@@ -197,6 +198,18 @@ func SetRequestContentType(contentType string) CallOption {
 	}
 }
 
+func RequestHeader(header http.Header) CallOption {
+	return func(ci *callInfo) {
+		ci.reqHeader = header
+	}
+}
+
+func AddRequestHeader(key, value string) CallOption {
+	return func(ci *callInfo) {
+		ci.reqHeader.Add(key, value)
+	}
+}
+
 func Operation(operation string) CallOption {
 	return func(info *callInfo) {
 		info.operation = operation
@@ -207,5 +220,11 @@ func Operation(operation string) CallOption {
 func PathTemplate(pattern string) CallOption {
 	return func(info *callInfo) {
 		info.pathTemplate = pattern
+	}
+}
+
+func OnResponse(onResponse func(*http.Response) error) CallOption {
+	return func(info *callInfo) {
+		info.onResponse = onResponse
 	}
 }

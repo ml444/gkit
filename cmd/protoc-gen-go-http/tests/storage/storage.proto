@@ -1,0 +1,114 @@
+// cmd: protoc --proto_path=. --go-http_out=paths=source_relative:. --go_out=paths=source_relative:. -I=$HOME/github.com/ml444/gctl-templates/protos -I=pluck ./tests/storage/storage.proto
+syntax = "proto3";
+
+package storage;
+
+option go_package = "pkg/base/storage";
+
+import "pluck/pluck.proto";
+import "google/api/annotations.proto";
+
+
+service storage {
+    // @desc: Ordinary upload method
+    rpc UploadV0 (UploadReq) returns (UploadRsp){
+        option (google.api.http) = {
+            post: "/storage/upload/v0"
+            body: "*"
+        };
+    };
+    // @desc: Upload file information through the header, and upload file
+    // content through the body. Use the body field of google.api.http to
+    // specify the field name of the body. You need to specify the
+    // Content-Type as `application/octet-stream`.
+    rpc UploadV1 (UploadReq) returns (UploadRsp){
+        option (google.api.http) = {
+            post: "/storage/upload/v1"
+            body: "file_data"
+        };
+        option (pluck.request) = {
+            default_headers: {
+                content_type: "application/octet-stream"
+            }
+            headers_to: "file_info"
+        };
+    };
+    // @desc: Upload file information through the header,
+    // and specify the body field as `*` to upload the file content.
+    // then pluck will extract the file content from the body
+    // and save to specified field.
+    rpc UploadV2 (UploadReq) returns (UploadRsp){
+        option (google.api.http) = {
+            post: "/storage/upload/v2"
+            body: "*"
+        };
+        option (pluck.request) = {
+            headers_to: "file_info"
+            body_to: "file_data"
+        };
+    };
+
+    // @desc: Download the file, and the binary file is placed in a field in the response body.
+    rpc DownloadV0 (DownloadReq) returns (DownloadRsp){
+        option (google.api.http) = {
+            post: "/storage/download/v0"
+            body: "*"
+        };
+    };
+    // @desc: Download the file and specify `responseBody` through `google.api.http`. 
+    // The binary data will be extracted from the specified field and put into 
+    // the body of the response. At the same time, you can set the relevant 
+    // response headers by configuring `pluck.response.headers_from`.
+    rpc DownloadV1 (DownloadReq) returns (DownloadRsp){
+        option (google.api.http) = {
+            post: "/storage/download/v1"
+            body: "*"
+            response_body: "data"
+        };
+        option (pluck.response) = {
+            headers_from: "headers"
+        };
+    };
+    // @desc: download the excel file, and set the response header `Content-Type` to `application/vnd.openxmlformats`.
+    rpc DownloadV2 (DownloadReq) returns (DownloadRsp){
+        option (google.api.http) = {
+            post: "/storage/download/v2"
+            body: "*"
+        };
+        option (pluck.response) = {
+            default_headers: {
+                content_type: "application/vnd.openxmlformats"
+                access_control_expose_headers: "Content-Disposition"
+            }
+            headers_from: "headers"
+            body_from: "data"
+        };
+    };
+}
+
+message FileInfo {
+    // @desc: 文件名称, 可不填
+    string file_name = 1;
+    // @desc: 文件后缀
+    string file_suffix = 2;
+}
+
+message UploadReq {
+    FileInfo file_info = 1;
+    // @desc: 上传的文件内容
+    bytes file_data = 2;
+}
+message UploadRsp {
+    string url = 1;
+    uint32 size = 2;
+}
+
+
+message DownloadReq {
+    string filename = 1;
+}
+message DownloadRsp {
+    map<string, string> headers = 1;
+    bytes data = 2;
+}
+
