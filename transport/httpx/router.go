@@ -14,6 +14,7 @@ type IRouter interface {
 	IRouteMethod
 	WalkRoute(fn WalkRouteFunc) error
 }
+
 type IHttpRouter interface {
 	ServeHTTP(res http.ResponseWriter, req *http.Request)
 	Use(mws ...middleware.HttpMiddleware)
@@ -25,15 +26,15 @@ type IHttpRouter interface {
 }
 
 type IRouteMethod interface {
-	GET(path string, h HandleFunc, m ...middleware.HttpMiddleware)
-	HEAD(path string, h HandleFunc, m ...middleware.HttpMiddleware)
-	POST(path string, h HandleFunc, m ...middleware.HttpMiddleware)
-	PUT(path string, h HandleFunc, m ...middleware.HttpMiddleware)
-	PATCH(path string, h HandleFunc, m ...middleware.HttpMiddleware)
-	DELETE(path string, h HandleFunc, m ...middleware.HttpMiddleware)
-	CONNECT(path string, h HandleFunc, m ...middleware.HttpMiddleware)
-	OPTIONS(path string, h HandleFunc, m ...middleware.HttpMiddleware)
-	TRACE(path string, h HandleFunc, m ...middleware.HttpMiddleware)
+	GET(path string, h http.HandlerFunc, m ...middleware.HttpMiddleware)
+	HEAD(path string, h http.HandlerFunc, m ...middleware.HttpMiddleware)
+	POST(path string, h http.HandlerFunc, m ...middleware.HttpMiddleware)
+	PUT(path string, h http.HandlerFunc, m ...middleware.HttpMiddleware)
+	PATCH(path string, h http.HandlerFunc, m ...middleware.HttpMiddleware)
+	DELETE(path string, h http.HandlerFunc, m ...middleware.HttpMiddleware)
+	CONNECT(path string, h http.HandlerFunc, m ...middleware.HttpMiddleware)
+	OPTIONS(path string, h http.HandlerFunc, m ...middleware.HttpMiddleware)
+	TRACE(path string, h http.HandlerFunc, m ...middleware.HttpMiddleware)
 }
 
 type IRouterSetting interface {
@@ -52,7 +53,7 @@ type IRouterSetting interface {
 }
 
 // HandleFunc defines a function to serve HTTP requests.
-type HandleFunc func(Context) error
+//type HandleFunc func(Context) error
 
 //type HandleFunc func(ctx context.Context, req interface{}) (interface{}, error)
 
@@ -195,50 +196,45 @@ func (r *Router) Group(prefix string, middlewares ...middleware.HttpMiddleware) 
 	return newR
 }
 
-func (r *Router) handle(method, relativePath string, h HandleFunc, middlewares ...middleware.HttpMiddleware) {
-	next := http.Handler(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-		ctx := NewCtx(res, req, r.Coder)
-		if err := h(ctx); err != nil {
-			r.Coder.ErrorEncoder()(res, req, err) // DefaultErrorEncoder
-		}
-	}))
+func (r *Router) handle(method, relativePath string, h http.HandlerFunc, middlewares ...middleware.HttpMiddleware) {
+	next := http.Handler(h)
 	next = middleware.HTTPChain(middlewares...)(next)
 	next = middleware.HTTPChain(r.middlewares...)(next)
 	r.router.Handle(path.Join(r.prefix, relativePath), next).Methods(method)
 }
 
-func (r *Router) GET(path string, h HandleFunc, m ...middleware.HttpMiddleware) {
+func (r *Router) GET(path string, h http.HandlerFunc, m ...middleware.HttpMiddleware) {
 	r.handle(http.MethodGet, path, h, m...)
 }
 
-func (r *Router) HEAD(path string, h HandleFunc, m ...middleware.HttpMiddleware) {
+func (r *Router) HEAD(path string, h http.HandlerFunc, m ...middleware.HttpMiddleware) {
 	r.handle(http.MethodHead, path, h, m...)
 }
 
-func (r *Router) POST(path string, h HandleFunc, m ...middleware.HttpMiddleware) {
+func (r *Router) POST(path string, h http.HandlerFunc, m ...middleware.HttpMiddleware) {
 	r.handle(http.MethodPost, path, h, m...)
 }
 
-func (r *Router) PUT(path string, h HandleFunc, m ...middleware.HttpMiddleware) {
+func (r *Router) PUT(path string, h http.HandlerFunc, m ...middleware.HttpMiddleware) {
 	r.handle(http.MethodPut, path, h, m...)
 }
 
-func (r *Router) PATCH(path string, h HandleFunc, m ...middleware.HttpMiddleware) {
+func (r *Router) PATCH(path string, h http.HandlerFunc, m ...middleware.HttpMiddleware) {
 	r.handle(http.MethodPatch, path, h, m...)
 }
 
-func (r *Router) DELETE(path string, h HandleFunc, m ...middleware.HttpMiddleware) {
+func (r *Router) DELETE(path string, h http.HandlerFunc, m ...middleware.HttpMiddleware) {
 	r.handle(http.MethodDelete, path, h, m...)
 }
 
-func (r *Router) CONNECT(path string, h HandleFunc, m ...middleware.HttpMiddleware) {
+func (r *Router) CONNECT(path string, h http.HandlerFunc, m ...middleware.HttpMiddleware) {
 	r.handle(http.MethodConnect, path, h, m...)
 }
 
-func (r *Router) OPTIONS(path string, h HandleFunc, m ...middleware.HttpMiddleware) {
+func (r *Router) OPTIONS(path string, h http.HandlerFunc, m ...middleware.HttpMiddleware) {
 	r.handle(http.MethodOptions, path, h, m...)
 }
 
-func (r *Router) TRACE(path string, h HandleFunc, m ...middleware.HttpMiddleware) {
+func (r *Router) TRACE(path string, h http.HandlerFunc, m ...middleware.HttpMiddleware) {
 	r.handle(http.MethodTrace, path, h, m...)
 }

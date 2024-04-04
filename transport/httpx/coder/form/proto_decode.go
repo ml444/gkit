@@ -20,7 +20,7 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
-const fieldSeparater = "."
+const fieldSeparator = "."
 
 var errInvalidFormatMapKey = errors.New("invalid formatting for map key")
 
@@ -363,7 +363,7 @@ func parseURLQueryMapKey(key string) (string, string, error) {
 	)
 	if startIndex < 0 {
 		//nolint:gomnd
-		values := strings.SplitN(key, fieldSeparater, 2)
+		values := strings.SplitN(key, fieldSeparator, 2)
 		//nolint:gomnd
 		if len(values) != 2 {
 			return "", "", errInvalidFormatMapKey

@@ -122,6 +122,11 @@ func (client *Client) invoke(ctx context.Context, req *http.Request, args interf
 		if err = client.decoder(ctx, res, reply); err != nil {
 			return nil, err
 		}
+		if c.onResponse != nil {
+			if err = c.onResponse(res); err != nil {
+				return nil, err
+			}
+		}
 		return reply, nil
 	}
 	if len(client.middleware) > 0 {

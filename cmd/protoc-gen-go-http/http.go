@@ -15,14 +15,21 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
+const release = "v1.1.0"
+const deprecationComment = "// Deprecated: Do not use."
+
 const (
+	httpPackage       = protogen.GoImportPath("net/http")
 	contextPackage    = protogen.GoImportPath("context")
+	pluckPackage      = protogen.GoImportPath("github.com/ml444/gkit/cmd/protoc-gen-go-http/pluck")
 	middlewarePackage = protogen.GoImportPath("github.com/ml444/gkit/middleware")
 	transportPackage  = protogen.GoImportPath("github.com/ml444/gkit/transport")
 	httpxPackage      = protogen.GoImportPath("github.com/ml444/gkit/transport/httpx")
 )
 
 var methodSets = make(map[string]int)
+
+// var hasPluck bool
 
 func generateFile(gen *protogen.Plugin, file *protogen.File, omitempty bool, omitemptyPrefix string) *protogen.GeneratedFile {
 	if len(file.Services) == 0 || (omitempty && !hasHTTPRule(file.Services)) {
@@ -50,9 +57,11 @@ func generateFileContent(gen *protogen.Plugin, file *protogen.File, g *protogen.
 	if len(file.Services) == 0 {
 		return
 	}
+	g.P("var _ = new(", httpPackage.Ident("Request"), ")")
 	g.P("var _ = new(", contextPackage.Ident("Context"), ")")
 	g.P("var _  = make([]", middlewarePackage.Ident("Middleware"), ", 0)")
 	g.P("var _ ", transportPackage.Ident("Server"), " = new(", httpxPackage.Ident("Server"), ")")
+	g.P("var _ = ", pluckPackage.Ident("DisablePluckHeader"))
 	g.P()
 
 	for _, service := range file.Services {
@@ -66,7 +75,7 @@ func genService(_ *protogen.Plugin, file *protogen.File, g *protogen.GeneratedFi
 		g.P(deprecationComment)
 	}
 	// HTTP Server.
-	sd := &serviceDesc{
+	sd := &serviceCtx{
 		ServiceType: service.GoName,
 		ServiceName: string(service.Desc.FullName()),
 		Metadata:    file.Desc.Path(),
@@ -106,7 +115,7 @@ func hasHTTPRule(services []*protogen.Service) bool {
 	return false
 }
 
-func buildHTTPRule(g *protogen.GeneratedFile, service *protogen.Service, m *protogen.Method, rule *annotations.HttpRule, omitemptyPrefix string) *methodDesc {
+func buildHTTPRule(g *protogen.GeneratedFile, service *protogen.Service, m *protogen.Method, rule *annotations.HttpRule, omitemptyPrefix string) *methodCtx {
 	var (
 		path         string
 		method       string
@@ -157,19 +166,25 @@ func buildHTTPRule(g *protogen.GeneratedFile, service *protogen.Service, m *prot
 		md.Body = ""
 	} else if body != "" {
 		md.HasBody = true
-		md.Body = "." + camelCaseVars(body)
+		bodyField := camelCaseVars(body)
+		md.Body = "." + bodyField
+		md.BodyFieldIsBytes(m.Input, body)
+		// md.ReqBodyToField = bodyField
 	} else {
 		md.HasBody = false
 	}
 	if responseBody == "*" {
 		md.ResponseBody = ""
 	} else if responseBody != "" {
-		md.ResponseBody = "." + camelCaseVars(responseBody)
+		rspBodyField := camelCaseVars(responseBody)
+		md.ResponseBody = "." + rspBodyField
+		// md.FieldToRspBody = rspBodyField
 	}
+	md.ParsePluck(m)
 	return md
 }
 
-func buildMethodDesc(g *protogen.GeneratedFile, m *protogen.Method, method, path string) *methodDesc {
+func buildMethodDesc(g *protogen.GeneratedFile, m *protogen.Method, method, path string) *methodCtx {
 	defer func() { methodSets[m.GoName]++ }()
 
 	vars := buildPathVars(path)
@@ -205,12 +220,12 @@ func buildMethodDesc(g *protogen.GeneratedFile, m *protogen.Method, method, path
 	if comment != "" {
 		comment = "// " + m.GoName + strings.TrimPrefix(strings.TrimSuffix(comment, "\n"), "//")
 	}
-	return &methodDesc{
+	return &methodCtx{
 		Name:         m.GoName,
 		OriginalName: string(m.Desc.Name()),
 		Num:          methodSets[m.GoName],
-		Request:      g.QualifiedGoIdent(m.Input.GoIdent),
-		Reply:        g.QualifiedGoIdent(m.Output.GoIdent),
+		Input:        g.QualifiedGoIdent(m.Input.GoIdent),
+		Output:       g.QualifiedGoIdent(m.Output.GoIdent),
 		Comment:      comment,
 		Path:         path,
 		Method:       method,
@@ -327,5 +342,3 @@ func protocVersion(gen *protogen.Plugin) string {
 	}
 	return fmt.Sprintf("v%d.%d.%d%s", v.GetMajor(), v.GetMinor(), v.GetPatch(), suffix)
 }
-
-const deprecationComment = "// Deprecated: Do not use."
