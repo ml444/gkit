@@ -89,7 +89,9 @@ func (l *DefaultLogger) Fatal(values ...interface{}) {
 
 func (l *DefaultLogger) Printf(template string, values ...interface{}) {
 	_, err := l.writer.WriteString(fmt.Sprintf(template, values...))
-	println(err)
+	if err != nil {
+		println(err.Error())
+	}
 }
 func (l *DefaultLogger) Debugf(template string, values ...interface{}) {
 	l.Log(DebugLevel, fmt.Sprintf(template, values...))

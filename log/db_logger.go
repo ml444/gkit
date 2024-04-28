@@ -72,28 +72,28 @@ func (l *dbLogger) LogMode(level gormlogger.LogLevel) gormlogger.Interface {
 }
 
 // Info print info
-func (l dbLogger) Info(ctx context.Context, msg string, data ...interface{}) {
+func (l *dbLogger) Info(ctx context.Context, msg string, data ...interface{}) {
 	if l.LogLevel >= gormlogger.Info {
 		l.Printf(l.infoStr, msg, fmt.Sprintln(data...))
 	}
 }
 
 // Warn print warn messages
-func (l dbLogger) Warn(ctx context.Context, msg string, data ...interface{}) {
+func (l *dbLogger) Warn(ctx context.Context, msg string, data ...interface{}) {
 	if l.LogLevel >= gormlogger.Warn {
 		l.Printf(l.warnStr, msg, fmt.Sprintln(data...))
 	}
 }
 
 // Error print error messages
-func (l dbLogger) Error(ctx context.Context, msg string, data ...interface{}) {
+func (l *dbLogger) Error(ctx context.Context, msg string, data ...interface{}) {
 	if l.LogLevel >= gormlogger.Error {
 		l.Printf(l.errStr, msg, fmt.Sprintln(data...))
 	}
 }
 
 // Trace print sql message
-func (l dbLogger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
+func (l *dbLogger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
 	if l.LogLevel <= gormlogger.Silent {
 		return
 	}
@@ -126,7 +126,7 @@ func (l dbLogger) Trace(ctx context.Context, begin time.Time, fc func() (string,
 }
 
 // ParamsFilter Trace print sql message
-func (l dbLogger) ParamsFilter(ctx context.Context, sql string, params ...interface{}) (string, []interface{}) {
+func (l *dbLogger) ParamsFilter(ctx context.Context, sql string, params ...interface{}) (string, []interface{}) {
 	if l.ParameterizedQueries {
 		return sql, nil
 	}
