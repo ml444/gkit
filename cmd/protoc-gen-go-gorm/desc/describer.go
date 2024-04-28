@@ -26,14 +26,15 @@ type MessageDesc struct {
 type MessageOpts struct {
 	TableName    string
 	IndexClauses []*orm.IndexClause
-	//ForceIndex   string
-	//IgnoreIndex string
+	// ForceIndex   string
+	// IgnoreIndex string
 }
+
 type ORMField struct {
 	FieldName string
 	OldType   string
 	NewType   string
-	//InjectTags *orm.ORMTags
+	// InjectTags *orm.ORMTags
 	ORMTag    string
 	FieldText string
 }
@@ -42,11 +43,18 @@ type SerializeDesc struct {
 	SerializerName     string
 	SerializerTypeName string
 	FieldType          string
-	//Imports            []string
+	// Imports            []string
 	Tmpl string
 }
 
-func JoinInjectTags(tags *orm.ORMTags) string {
+func JoinTags(jsonName string, args ...string) string {
+	if jsonName != "" {
+		args = append(args, fmt.Sprintf(`json:"%s"`, jsonName))
+	}
+	return strings.Join(args, " ")
+}
+
+func JoinORMTags(tags *orm.ORMTags) string {
 	var result []string
 	if tags.IgnoreRw != nil && *tags.IgnoreRw {
 		result = append(result, "-")
@@ -146,7 +154,7 @@ func JoinInjectTags(tags *orm.ORMTags) string {
 	if tags.Serializer != nil {
 		result = append(result, "serializer:"+*tags.Serializer)
 	}
-	return fmt.Sprintf("`gorm:\"%s\"`", strings.Join(result, ";"))
+	return fmt.Sprintf(`gorm:"%s"`, strings.Join(result, ";"))
 }
 
 func TimeKindToString(kind orm.TimestampKind) string {

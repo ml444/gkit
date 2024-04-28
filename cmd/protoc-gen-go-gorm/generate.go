@@ -18,8 +18,10 @@ import (
 	"github.com/ml444/gkit/cmd/protoc-gen-go-gorm/templates"
 )
 
-const release = "v1.0.0"
-const deprecationComment = "// Deprecated: Do not use."
+const (
+	release            = "v1.0.0"
+	deprecationComment = "// Deprecated: Do not use."
+)
 
 //go:embed orm_pb.tmpl
 var serializerTemplate string
@@ -58,7 +60,6 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) *protogen.Generated
 		gen.Error(err)
 	}
 	return g
-
 }
 
 func Render(tpl *template.Template) func(tmplName string, data interface{}) (string, error) {
@@ -88,9 +89,9 @@ func genContent(file *protogen.File, g *protogen.GeneratedFile) error {
 		return nil
 	}
 
-	var importMap = map[string]bool{}
-	var tmplMap = map[string]string{}
-	var commonMap = map[string]string{}
+	importMap := map[string]bool{}
+	tmplMap := map[string]string{}
+	commonMap := map[string]string{}
 	for _, m := range messages {
 		for _, imp := range m.Imports {
 			importMap[imp] = true
@@ -171,7 +172,7 @@ func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, resu
 				FieldName: fieldName,
 				NewType:   oldType,
 				OldType:   oldType,
-				ORMTag:    desc.JoinInjectTags(tags),
+				ORMTag:    desc.JoinTags(string(field.Desc.Name()), desc.JoinORMTags(tags)),
 			}
 			msgDesc.Fields = append(msgDesc.Fields, ormField)
 
@@ -197,7 +198,7 @@ func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, resu
 				sd.IsIgnore = true
 			}
 			var imports []string
-			var needGenSerializer = true
+			needGenSerializer := true
 			switch strings.ToLower(typ) {
 			case "json", "text", "mediumtext", "longtext":
 				if field.Desc.Kind() == protoreflect.StringKind {
@@ -329,11 +330,11 @@ func kindToGoType(kind protoreflect.Kind) string {
 		return "string"
 	case protoreflect.BytesKind:
 		return "[]byte"
-	//case protoreflect.MessageKind:
+	// case protoreflect.MessageKind:
 	//	return "struct"
-	//case protoreflect.GroupKind:
+	// case protoreflect.GroupKind:
 	//	return "struct"
-	//case protoreflect.EnumKind:
+	// case protoreflect.EnumKind:
 	//	return "enum"
 	default:
 		return ""

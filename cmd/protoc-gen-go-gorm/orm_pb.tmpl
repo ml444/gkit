@@ -24,7 +24,7 @@ func (x *T{{ .Name }}) TableName() string {
 
 type T{{ .Name }} struct {
 	{{ range .Fields }}
-	{{ .FieldName }} {{ .NewType }} {{ .ORMTag -}}
+	{{- .FieldName }} {{ .NewType }} `{{ .ORMTag }}`
 	{{ end }}
 }
 
