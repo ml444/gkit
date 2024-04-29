@@ -18,7 +18,6 @@ type ErrCodeDetail struct {
 
 var lang string
 var errCodeMap = map[int32]*ErrCodeDetail{}
-var defaultError = &ErrCodeDetail{}
 
 func SetLang(l string) {
 	lang = l
@@ -40,7 +39,15 @@ type Error struct {
 }
 
 func (e *Error) Error() string {
-	return fmt.Sprintf("error: code=%d errcode=%d message='%s' metadata=%v cause=%s", e.StatusCode, e.ErrorCode, e.Message, e.Metadata, e.cause)
+	if e.cause != nil && len(e.Metadata) != 0 {
+		return fmt.Sprintf("error: [%d: %d] '%s' metadata=%v cause=%s", e.StatusCode, e.ErrorCode, e.Message, e.Metadata, e.cause)
+	} else if e.cause != nil {
+		return fmt.Sprintf("error: [%d: %d] '%s' cause=%s", e.StatusCode, e.ErrorCode, e.Message, e.cause)
+	} else if len(e.Metadata) != 0 {
+		return fmt.Sprintf("error: [%d: %d] '%s' metadata=%v", e.StatusCode, e.ErrorCode, e.Message, e.Metadata)
+	} else {
+		return fmt.Sprintf("error: [%d: %d] '%s'", e.StatusCode, e.ErrorCode, e.Message)
+	}
 }
 
 // JSONBytes returns the JSON representation of the error.
@@ -144,16 +151,6 @@ func NewWithMsg(errCode int32, msg string) *Error {
 	}
 }
 
-func NewDefaultError(statusCode int32, message string) *Error {
-	if statusCode == 0 {
-		statusCode = DefaultStatusCode
-	}
-	if message == "" {
-		message = defaultError.Message
-	}
-	return CreateError(statusCode, defaultError.ErrorCode, message)
-}
-
 // CreateError returns an error object for the status code, error code, message.
 func CreateError(statusCode int32, errCode int32, message string) *Error {
 	return &Error{
@@ -216,14 +213,9 @@ func FromError(err error) *Error {
 	if err == nil {
 		return nil
 	}
-	var Err *Error
-	if errors.As(err, &Err) {
-		return Err
+	if e := new(Error); errors.As(err, &e) {
+		return e
 	}
-	// wrapped error
-	//if se := new(Error); errors.As(err, &se) {
-	//	return se
-	//}
 	gs, ok := status.FromError(err)
 	if !ok {
 		return CreateError(UnknownStatusCode, ErrCodeUnknown, err.Error())
@@ -245,8 +237,8 @@ func FromError(err error) *Error {
 	return ret
 }
 
-// ErrorAs returns true if err is an *Error and its ErrorCode matches errCode.
-func ErrorAs(err error, errCode int32) bool {
+// ErrorIs returns true if err is an *Error and its ErrorCode matches errCode.
+func ErrorIs(err error, errCode int32) bool {
 	e, ok := err.(*Error)
 	if ok {
 		eCode := e.GetErrorCode()
