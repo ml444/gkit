@@ -686,11 +686,42 @@ func main() {
 
 ### middleware
 
-中间件模块，主要包含以下几个功能：
+中间件，目前开发了以下中间件：
+- 通用中间件：用于处理响应中的空响应和统一错误输出的的通用中间件
+- 日志中间件： 记录请求日志、响应日志、请求和响应日志
+- 限流中间件： 用于限制请求的访问频率
+- 恢复中间件： 用于恢复panic，并记录日志
+- 跟踪中间件： 用于链路追踪
+- 参数校验中间件： 用于参数校验，只有启用这个中间件，在proto文件中定义的参数校验规则才会生效
 
-- 记录请求日志
-- 记录响应日志
-- 记录请求和响应日志
+```go
+package main
+
+import (
+    "github.com/ml444/gkit/middleware/general"
+    "github.com/ml444/gkit/middleware/logging"
+    "github.com/ml444/gkit/middleware/ratelimit"
+    "github.com/ml444/gkit/middleware/recovery"
+    "github.com/ml444/gkit/middleware/trace"
+    "github.com/ml444/gkit/middleware/validate"
+)
+
+func main() {
+    // 通用中间件
+    general.NewGeneralMiddleware()
+    // 日志中间件
+    logging.NewLoggingMiddleware()
+    // 限流中间件
+    ratelimit.NewRateLimitMiddleware()
+    // 恢复中间件
+    recovery.NewRecoveryMiddleware()
+    // 跟踪中间件
+    trace.NewTraceMiddleware()
+    // 参数校验中间件
+    validate.NewValidateMiddleware()
+}
+```
+  
 
 ### transport
 
@@ -702,10 +733,7 @@ func main() {
     - http请求头的转换为context内容
     - 前置中间件
 - grpc传输
-
-### validator
-
-参数校验模块，主要包含以下几个功能：
+  - xds负载均衡
 
 ### pkg
 
@@ -718,4 +746,8 @@ func main() {
 - **env**: 用于工作环境的判断，如：是否为开发环境、测试环境、生产环境等
 - **header**: 请求头相关的处理及httpHeader与Context的转换
 - **routine**: 用于协程的安全处理，在协程中使用`routine.Go()`代替`go`关键字，可以捕获协程中的panic，并记录日志。
+- **tracing**: 链路追踪模块，主要包含以下几个功能：
+    - 生成链路追踪的`trace id`和`span id`
+    - 从http请求头中获取链路追踪的`trace id`和`span id`
+    - 设置链路追踪的`trace id`和`span id`到http请求头
 
