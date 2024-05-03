@@ -1,15 +1,23 @@
 # gkit
 
-gkit是一个集成`HTTP`和`GRPC`通信协议的微服务框架，主旨在于易使用，通过封装日常WEB开发的组件，
+[English](README.md)
+
+
+gkit是一个集成`HTTP`和`GRPC`通信协议的微服务框架，易用性为目标，封装许多日常WEB开发的组件及工具以提高开发体验，
 配合`gctl`工具，可以快速的生成项目的基础代码，从而开发人员可以更专注于业务逻辑开发。
+
+## protoc插件
 
 gkit的宗旨是尽可能的使用protobuf来定义和设计接口，通过以下的多个protoc插件来实现大部分代码的自动生成：
 
 - `protoc-gen-go-errcode` 生成错误码和错误信息，可以根据错误码自动获取错误信息和http状态码，支持多语言配置。
-- `protoc-gen-go-field` 生成字段定义，可用前缀、后缀或正则表达式来筛选需要生成字段常量的message。
-- `protoc-gen-go-gorm` 生成gorm的model，包含了字段的tag定义，以及json和bytes类型字段的序列化和反序列化方法。
-- `protoc-gen-go-http` 生成http的路由和handler，并且可用pluck模块实现http的请求头设置，这在上传和下载文件中比较有用。
-- `protoc-gen-go-validate` 生成参数校验的方法，可以根据`v.proto`定义的规则来校验参数。
+- `protoc-gen-go-field` 生成message的字段名称常量和DB的列名。可用前缀、后缀或正则表达式来筛选需要生成字段常量的message。
+- `protoc-gen-go-gorm` 生成gorm的model，通过proto扩展的方式定义了字段的gorm tag，以及json和bytes类型字段的序列化和反序列化方法。
+- `protoc-gen-go-http` 生成http的路由和handler，并且可用pluck扩展模块实现http的请求头设置，这在上传和下载文件中比较有用。
+- `protoc-gen-go-validate` 生成参数校验的方法，可以根据`v.proto`定义的规则来校验参数。调用中间件`validation.Validator`
+  来启动检验。
+
+**安装protoc插件**
 
 ```shell
 $ go get -u github.com/ml444/gkit/cmd/protoc-gen-go-errcode \
@@ -19,9 +27,9 @@ $ go get -u github.com/ml444/gkit/cmd/protoc-gen-go-errcode \
     github.com/ml444/gkit/cmd/protoc-gen-go-validate
 ```
 
-## <a name="complete_example"></a>完整示例
+## <a name="complete_example"></a>完整proto示例
 
-protoc插件的使用示例：
+**protoc插件的使用示例**：
 
 ```protobuf
 syntax = "proto3";
@@ -73,10 +81,10 @@ service user {
             body: "file_data"
         };
         option (pluck.request) = {
-            default_headers: {
-                content_type: "application/octet-stream"
+            default_headers: {          // 设置默认的请求头
+                content_type: "application/octet-stream"   
             }
-            headers_to: "file_info"
+            headers_to: "file_info"     // 将请求头提取到file_info结构体中
         };
     };
 
@@ -86,12 +94,12 @@ service user {
             body: "*"
         };
         option (pluck.response) = {
-            default_headers: {
+            default_headers: {          // 设置默认的响应头
                 content_type: "application/vnd.openxmlformats"
                 access_control_expose_headers: "Content-Disposition"
             }
-            headers_from: "headers"
-            body_from: "data"
+            headers_from: "headers"     // 将headers结构体中的字段设置到http响应头中
+            body_from: "data"           // 将data字段设置到http响应体中
         };
     };
 }
@@ -126,38 +134,38 @@ message ModelUser {
 }
 
 message CreateUserReq {
-    ModelUser data = 1 [(v.rules).message.required = true];
+    ModelUser data = 1 [(v.rules).message.required = true];     // 验证该结构体必须传值
 }
 message CreateUserRsp {
     ModelUser data = 1;
 }
 
 message UpdateUserReq {
-    uint64 id = 1 [(v.rules).uint64.gt = 0];
-    ModelUser data = 2 [(v.rules).message.required = true];
+    uint64 id = 1       [(v.rules).uint64.gt = 0];              // 验证ID值必须大于0
+    ModelUser data = 2  [(v.rules).message.required = true];    // 验证ModelUser必须传值
 }
 message UpdateUserRsp {
     ModelUser data = 1;
 }
 
 message DeleteUserReq {
-    uint64 id = 1 [(v.rules).uint64.gte = 1];
-    // repeated uint64 id_list = 2 [(v.rules).repeated.min_items = 1];
+    uint64 id = 1                   [(v.rules).uint64.gte = 1];             // 验证id大于0
+    // repeated uint64 id_list = 2  [(v.rules).repeated.min_items = 1];     // 验证最少传入一个ID
 }
 message DeleteUserRsp {}
 
 message GetUserReq {
-    uint64 id = 1 [(v.rules).uint64.gt = 0];
+    uint64 id = 1       [(v.rules).uint64.gte = 1];          // 验证ID值必须大于等于1
 }
 message GetUserRsp {
     ModelUser data = 1;
 }
 
 message ListUserReq {
-    repeated uint64 id_list = 1 [(v.rules).repeated.unique = true];
-    optional string name = 2    [(v.rules).string = {min_len: 1, max_len: 50}];
-    optional string phone = 3   [(v.rules).string = {pattern: "\\d+", min_len:6, max_len: 25}];
-    optional string email = 4   [(v.rules).string.email = true];
+    repeated uint64 id_list = 1 [(v.rules).repeated.unique = true];                 // 校验数组内部的元素不能重复
+    optional string name = 2    [(v.rules).string = {min_len: 1, max_len: 50}];     // 校验字符串长度大于等于1，小于等于50
+    optional string phone = 3   [(v.rules).string = {pattern: "\\d+", min_len:6, max_len: 25}];     // 校验字符串长度大于等于6，小于等于25，并且符合正则表达式
+    optional string email = 4   [(v.rules).string.email = true];        // 校验是否是邮箱的格式
     paging.Paginate paginate = 5;
 }
 message ListUserRsp {
@@ -198,6 +206,7 @@ $ protoc --go_out=. \
        --go-field_out=. \
        --go-errcode_out=. \
        --go-validate_out=. \
+        --proto_path=/your/path/gctl-templates/protos \
        user.proto
 $ tree
 .
@@ -210,6 +219,17 @@ $ tree
 ├── user_orm.pb.go
 └── user_validate.pb.go
 ```
+
+```
+import "gkit/v/v.proto";
+import "gkit/err/err.proto";
+import "gkit/orm/orm.proto";
+import "gkit/pluck/pluck.proto";
+import "gkit/dbx/paging/paginate.proto";
+```
+
+proto内部import是引用了`gctl-templates/protos/gkit`,
+如果你把这些导入文件放在其他地方，你可以修改为`import "your/path/xxx.proto`
 
 ## gkit项目结构介绍
 
@@ -247,7 +267,7 @@ $ tree
 - **cmd**: protoc插件
 - **config**: 配置模块，通过结构体tag来定义配置项的读取方式，支持从命令行、环境变量、yaml、json、toml等方式来获取的配置信息。
 - **errorx**: 错误处理模块，封装了日常开发中的错误处理方式，支持自定义错误码和错误信息，支持根据错误码自动获取错误信息和http状态码。
-- **dbx**: 基于gorm进行二次封装的数据库模块，封装了增删改查的方法，支持软删除和分页查询。
+- **dbx**: 基于gorm进行二次封装的数据库模块，封装了查询的链式方法(Eq\In\Like...)，支持软删除和分页查询。
 - **optx**: 定义了列表数据的条件筛选方式，对列表查询的两种（枚举和指针）传参方式封装了其处理方法；并封装了其处理器模块。
 - **log**: 日志模块，定义了日志接口，可以自定义日志实现。把gorm的日志输出也封装了起来，统一输出到指定的logger。
 - **middleware**: 中间件模块, 主要包含了请求和响应日志、限流、恢复、跟踪、参数校验等中间件。
@@ -263,19 +283,20 @@ $ tree
 - 注册错误码和错误信息
 - 封装错误码和错误信息和错误详情和错误堆栈
 - 可根据自定义错误码自动获取错误信息和http状态码
+- 可以设置多语言错误信息，根据请求头的`Accept-Language`来返回对应的错误信息
 - 根据自定义错误码判断是否为指定的错误码
 - 根据GRPC的错误码转化为http状态码
 - 根据http状态码转化为GRPC的错误码
 
-- 可以通过在proto文件中定义错误码和错误信息，然后通过errorx.RegisterErrCode()注册错误码和错误信息，
-  然后通过errorx.New()生成错误信息。在接口返回错误码时会主动转化为http状态码，和错误的中文信息。
+可以通过在proto文件中定义错误码和错误信息，然后通过errorx.RegisterErrCode()注册错误码和错误信息，
+  然后通过`errorx.New()`等方法实例化`Error`对象。在请求返回错误时会返回对应的http状态码和错误信息。
 
 ```protobuf
 syntax = "proto3";
 
 package user;
 
-import "gkit/err/err.proto";     // 引入错误码定义文件: github.com/ml444/gkit/cmd/protoc-gen-go-errcode/err/err.proto
+import "gkit/err/err.proto";     // 源文件: github.com/ml444/gkit/cmd/protoc-gen-go-errcode/err/err.proto
 
 // range of error codes: [102000, 102999]
 enum ErrCode {
@@ -338,9 +359,10 @@ func main() {
 
 基于gorm的数据库模块和Proto格式的model做了一些预处理的工作，主要包含以下几个功能：
 
-- 封装gorm的增删改查，使其更易于使用，并支持软删除以及分页查询。
+- 封装gorm的增删改查，查询封装了链式方法(Eq\Gt\Lt\In\NotIn\Between...)，使其更易于使用，并支持软删除以及分页查询。
+- 封装了复杂查询的参数结构`QueryOpts`, 在一些复杂的查询下，可以更方便地处理查询条件。
 - 针对NotFoundRecord的错误处理，可以自定义错误码和错误信息。
-- 封装列表的分页查询`dbx.paging`，使其更易于使用。
+- 封装列表的分页查询`dbx.paging`，使分页查询更易于使用。
 
 基础使用：
 
@@ -355,12 +377,16 @@ import (
 )
 
 type ModelUser struct {
-	ID        uint64 `gorm:"primary_key"`
-	Name      string
-	Age       uint8
-	CreatedAt uint32
-	UpdatedAt uint32
-	DeletedAt uint32
+	Id        uint64 `gorm:"comment:主键;primarykey"`
+	CreatedAt uint32 `gorm:"comment:创建时间"`
+	UpdatedAt uint32 `gorm:"comment:更新时间"`
+	DeletedAt uint32 `gorm:"comment:删除时间"`
+	Name      string `gorm:"type:varchar(50);comment:名称;index:idx_age_name,priority:2"`
+	Phone     string `gorm:"not null;type:varchar(25);comment:名称;uniqueIndex:uidx_phone"`
+	Age       uint32 `gorm:"type:int;comment:年龄;index:idx_age_name,priority:1"`
+	Sex       uint32 `gorm:"type:tinyint;comment:性别"`
+	Email     string `gorm:"type:varchar(255);comment:邮箱;uniqueIndex:uidx_email"`
+	Avatar    string `gorm:"type:varchar(255);comment:头像"`
 }
 
 type GroupBy struct {
@@ -385,7 +411,7 @@ func main() {
 	// update data: UPDATE `model_user` SET `name`='test2',`age`=20,`updated_at`=1625673600 WHERE `id` = 1
 	err = scope.Eq("id", 1).Update(&ModelUser{Name: "test2", Age: 20})
 
-	// delete data: UPDATE `model_user` SET `deleted_at`=1625673600 WHERE `id` IN (1,2,3)
+	// soft delete data: UPDATE `model_user` SET `deleted_at`=1625673600 WHERE `id` IN (1,2,3)
 	err = scope.In("id", []uint64{1, 2, 3}).Delete()
 
 	// select data: SELECT * FROM `model_user` WHERE `id` = 1 AND `deleted_at` = 0 LIMIT 1
@@ -410,73 +436,17 @@ func main() {
 }
 ```
 
-[完整示例](#complete_example)的proto的示例：
-
-```go
-package main
-
-import (
-	"context"
-
-	"github.com/ml444/gkit/dbx"
-	"github.com/ml444/gkit/log"
-	"github.com/ml444/gkit/optx"
-
-	"gitlab.xxx.com/xxx/internal/db"
-	"gitlab.xxx.com/xxx/pkg/user"
-)
-
-type UserService struct {
-	user.UnsafeUserServer
-}
-
-func NewUserService() UserService {
-	return UserService{}
-}
-
-/*
-...省略其他代码...
-*/
-
-func (s UserService) ListUser(ctx context.Context, req *user.ListUserReq) (*user.ListUserRsp, error) {
-	var rsp user.ListUserRsp
-
-	scope := dbx.NewScope(db.DB(), &user.ModelUser{})
-	err := optx.NewPtrProcessor().
-		AddHandle(user.FieldIdList, func(val interface{}) error {
-			scope.In(user.DbFieldId, val)
-			return nil
-		}).
-		AddHandle(user.FieldName, func(val interface{}) error {
-			scope.Like(user.DbFieldNickName, val.(string))
-			return nil
-		}).
-		AddHandle(user.FieldPhone, func(val interface{}) error {
-			scope.Eq(user.DbFieldPhone, val)
-			return nil
-		}).
-		Process(req)
-
-	// do something...
-	rsp.Paginate, err = scope.PaginateQuery(req.Paginate, &rsp.List)
-	if err != nil {
-		log.Errorf("err: %v", err)
-		return nil, err
-	}
-	return &rsp, nil
-}
-```
-
 #### 分页查询
 
-分页查询的参数和结果返回，都是通过`paging.Paginate`来定义的，可以根据实际情况来选择是否使用分页查询。
-分页查询也有三种使用方式：
+分页查询的参数和结果返回，都是通过`paging.Paginate`来定义的，可以根据实际情况来选择不同分页方式。
+分页查询也有两种使用方式：
 
-1. 通过指定页数和每页数量来查询，这种方式适合于前端分页查询。
-2. 通过指定偏移量和每页数量来查询，这种方式适合于后端分页查询。
-3. 滚动翻页查询，这种方式适合于大数据量的查询。
+1. 通过指定页数和每页数量来查询。
+2. 滚动翻页查询，这种方式适合于大数据量的查询。
 
-4. 分页查询也可以通过`Scope.PaginateQuery()`来实现，这样可以更方便使用。
+_**注意**_：分页查询时可以在第二页之后调用`skip_count`参数来节约数据库的性能，当然这需要前端工程师缓存首次拿到的总数。
+
+分页的数据库查询可以使用`Scope.PaginateQuery()`方法，内部调用了`Count()`和`Find()`。
 
 **分页方式的proto定义**：
 
@@ -485,22 +455,15 @@ syntax = "proto3";
 import "dbx/paging/paging.proto";
 /*
 message Paginate {
-  // current page
   uint32 page = 1;
-  // page size
   uint32 size = 2;
-  // offset is the starting point of the table index.
-  uint32 offset = 3;
-  // total number of data
   int64 total = 5;
-  // When SkipCount is true,
-  // even if CurrentPage is equal to 1, don't count the total.
   bool skip_count = 6;
 }
  */
 
 message ListUserReq {
-    paging.Paginate paginate = 1;   // 指定页数和每页数量 或 指定偏移量和每页数量
+    paging.Paginate paginate = 1;   // 指定页数和每页数量 
 }
 
 message ListUserRsp {
@@ -523,14 +486,12 @@ message ListUserRsp {
 
 ### optx
 
-列表查询模块，主要包含以下几个功能：
+过滤筛选查询模块，有两种方式（枚举和指针）来定义列表的过滤查询参数。而且都封装相应的处理器`Processor`和对应的处理参数的方法，规范化处理列表查询参数。
 
-- 通过枚举和指针两种方式来定义列表的参数查询。
-- 封装查询处理器`Processor`和封装处理参数的方法，规范化处理列表查询参数。
-
-本模块封装了两种列表参数筛选查询方式，一种是通过`optx.Options`来定义查询参数，另一种是通过直接定义指针参数来查询。
-具体使用哪种方式，可以根据实际情况来选择，如果是对外提供的接口，建议使用`optx.Options`来定义查询参数，这样可以更好的控制查询参数，并具备隐蔽性。
-如果是内部接口或者需要传递零值的场景，可以直接定义指针参数来查询，这样可以更方便的使用。
+本模块封装了两种列表参数筛选查询方式，一种是通过`optx.Options`来定义查询参数，另一种是直接定义指针参数来查询。
+具体使用哪种方式，可以根据实际情况来选择，如果是对外隐蔽查询参数的API，可以使用`optx.Options`来定义查询参数，
+这样可以更好地控制查询参数，并对参数含义具备隐蔽性，因为代表其参数的是枚举值。
+如果一般情况或者需要传递零值的场景，可以直接定义指针参数来查询，这种方式直接。
 
 **枚举方式定义查询参数**：
 TODO: 我觉得这种方式应该不会有人喜欢，如果有人喜欢我会考虑实现一个proto插件来生成这种代码。
@@ -660,84 +621,229 @@ func (s *UserService) ListUser(ctx context.Context, req *user.ListUserReq) (*use
 }
 ```
 
-### log
-
-日志模块，主要包含以下几个功能：
-
-- 定义了日志接口，可以自定义日志实现
-- 自定义gorm的日志输出
+[proto的ListUser示例](#complete_example)，包含了数据库查询，过滤筛选和分页功能：
 
 ```go
 package main
 
+import (
+	"context"
+
+	"github.com/ml444/gkit/dbx"
+	"github.com/ml444/gkit/log"
+	"github.com/ml444/gkit/optx"
+
+	"gitlab.xxx.com/xxx/internal/db"
+	"gitlab.xxx.com/xxx/pkg/user"
+)
+
+type UserService struct {
+	user.UnsafeUserServer
+}
+
+func NewUserService() UserService {
+	return UserService{}
+}
+
+/*
+...省略其他代码...
+*/
+
+func (s UserService) ListUser(ctx context.Context, req *user.ListUserReq) (*user.ListUserRsp, error) {
+	var rsp user.ListUserRsp
+
+	scope := dbx.NewScope(db.DB(), &user.ModelUser{})
+	err := optx.NewPtrProcessor().
+		AddHandle(user.FieldIdList, func(val interface{}) error {
+			scope.In(user.DbFieldId, val)
+			return nil
+		}).
+		AddHandle(user.FieldName, func(val interface{}) error {
+			scope.Like(user.DbFieldNickName, val.(string))
+			return nil
+		}).
+		AddHandle(user.FieldPhone, func(val interface{}) error {
+			scope.Eq(user.DbFieldPhone, val)
+			return nil
+		}).
+		Process(req)
+
+	// do something...
+	rsp.Paginate, err = scope.PaginateQuery(req.Paginate, &rsp.List)
+	if err != nil {
+		log.Errorf("err: %v", err)
+		return nil, err
+	}
+	return &rsp, nil
+}
+```
+
+### log
+
+日志模块，主要包含以下几个功能：
+
+- 定义了日志接口，可以自定义日志实现， 默认使用`os.stdout`输出
+- 自定义gorm的日志输出，与自定义的日志实现结合，一起输出指定位置。
+
+直接使用：
+
+```go
+package main
+
+import (
+	"github.com/ml444/gkit/log"
+)
+
+func main() {
+	log.Debug("this is debug")
+	log.Info("this is info")
+	log.Warn("this is warn")
+	log.Error("this is error")
+	log.Fatal("this is error")
+
+	name := "foo"
+	log.Debugf("hi, %s! this is debug", name)
+	log.Infof("hi, %s! this is info", name)
+	log.Warnf("hi, %s! this is warn", name)
+	log.Errorf("hi, %s! this is error", name)
+	log.Fatalf("hi, %s! this is fatal", name)
+}
+```
+
+使用[glog](https://github.com/ml444/glog)的示例
+
+```go
+package main
+
+import (
+	"github.com/ml444/gkit/log"
+	glog "github.com/ml444/glog"
+	glogconf "github.com/ml444/glog/config"
+	gloglevel "github.com/ml444/glog/level"
+)
+
+func InitLogger(debug bool) error {
+	err := log.InitLog(
+		logconf.SetLoggerName("myname"),
+		logconf.SetLevel2Logger(level.InfoLevel),
+		logconf.SetFileDir2Logger("./log"),
+		func(config *logconf.Config) {
+			config.Handler.LogHandlerConfig.Formatter.Text.DisableColors = !debug
+		},
+	)
+	if err != nil {
+		return err
+	}
+	if debug {
+		err = log.InitLog(logconf.SetLevel2Logger(level.DebugLevel))
+		if err != nil {
+			return err
+		}
+	}
+	log.SetLogger(glog.GetLogger())
+	return nil
+}
+
 func main() {
 	// 初始化日志
-	log.Init()
-	// 初始化日志并设置日志级别
-	log.Init(log.WithLevel(log.LevelDebug))
-	// 自定义gorm的日志输出
-	log.Init(log.WithGormLogger(func(l *log.Logger) {
-		l.SetFormatter(&logrus.JSONFormatter{})
-		l.SetOutput(os.Stdout)
-		l.SetLevel(logrus.DebugLevel)
-	}))
+	err := InitLogger(true)
+	if err != nil {
+		println(err.Error())
+		return
+	}
+
+	log.Debug("this is debug")
+	log.Info("this is info")
+	log.Warn("this is warn")
+	log.Error("this is error")
+	log.Fatal("this is error")
+
+	name := "foo"
+	log.Debugf("hi, %s! this is debug", name)
+	log.Infof("hi, %s! this is info", name)
+	log.Warnf("hi, %s! this is warn", name)
+	log.Errorf("hi, %s! this is error", name)
+	log.Fatalf("hi, %s! this is fatal", name)
 }
 ```
 
 ### middleware
 
 中间件，目前开发了以下中间件：
+
 - 通用中间件：用于处理响应中的空响应和统一错误输出的的通用中间件
 - 日志中间件： 记录请求日志、响应日志、请求和响应日志
 - 限流中间件： 用于限制请求的访问频率
 - 恢复中间件： 用于恢复panic，并记录日志
-- 跟踪中间件： 用于链路追踪
+- 跟踪中间件： 用于请求的链路追踪
 - 参数校验中间件： 用于参数校验，只有启用这个中间件，在proto文件中定义的参数校验规则才会生效
 
 ```go
 package main
 
 import (
-    "github.com/ml444/gkit/middleware/general"
-    "github.com/ml444/gkit/middleware/logging"
-    "github.com/ml444/gkit/middleware/ratelimit"
-    "github.com/ml444/gkit/middleware/recovery"
-    "github.com/ml444/gkit/middleware/trace"
-    "github.com/ml444/gkit/middleware/validate"
+	"github.com/ml444/gkit/middleware/general"
+	"github.com/ml444/gkit/middleware/logging"
+	"github.com/ml444/gkit/middleware/ratelimit"
+	"github.com/ml444/gkit/middleware/recovery"
+	"github.com/ml444/gkit/middleware/trace"
+	"github.com/ml444/gkit/middleware/validate"
+	"github.com/ml444/gkit/transport/httpx"
 )
 
 func main() {
-    // 通用中间件
-    general.NewGeneralMiddleware()
-    // 日志中间件
-    logging.NewLoggingMiddleware()
-    // 限流中间件
-    ratelimit.NewRateLimitMiddleware()
-    // 恢复中间件
-    recovery.NewRecoveryMiddleware()
-    // 跟踪中间件
-    trace.NewTraceMiddleware()
-    // 参数校验中间件
-    validate.NewValidateMiddleware()
+	// HTTP
+	httpx.NewServer(
+		httpx.Address(":5050"),
+		httpx.Middleware(
+			// 通用中间件: 处理空响应
+			general.ReplaceEmptyResponse(struct {
+				StatusCode int32
+				ErrCode    int32
+				Message    string
+			}{200, 0, "success"}),
+			// 通用中间件: 把错误统一成errorx.Error的结构
+			general.WrapError(),
+			// 日志中间件: 记录请求的入参和耗时
+			logging.LogRequest(),
+			// 限频中间件: 
+			ratelimit.FrequencyLimit(
+				&ratelimit.LimitCfg{
+					Kind: ratelimit.MatchKindAll,
+					Freqs: []*ratelimit.Cycle{
+						{Period: time.Second * 1, Limit: 100},
+					},
+				},
+				&ratelimit.LimitCfg{
+					Paths: []string{user.OperationUserGetUser},
+					Freqs: []*ratelimit.Cycle{
+						{Period: time.Second * 1, Limit: 50},
+						{Period: time.Second * 60, Limit: 3000},
+					},
+				},
+			),
+			// 恢复中间件
+			recovery.Recovery(),
+			// 跟踪中间件
+			trace.Server(),
+			// 参数校验中间件
+			validate.Validator(),
+
+		),
+	)
 }
 ```
-  
 
 ### transport
 
 传输模块，主要包含以下几个功能：
 
-- http传输
-    - 把http请求转化为grpc请求
-    - 根据传入的grpc Service生成http路由
-    - http请求头的转换为context内容
-    - 前置中间件
-- grpc传输
-  - xds负载均衡
+- 把http请求核心逻辑转化为grpc的Service方法。
+- 封装了http和grpc的中间件，统一中间件的接口。
 
 ### pkg
 
-公共模块，包含了一些基础的工具类，主要包含以下几个模块：
+公共模块，包含了一些基础的工具或功能，主要包含以下几个模块：
 
 - **auth**: 基于jwt的认证模块，主要包含以下几个功能：
     - 生成/解析/验证`access token`和`refresh token`
