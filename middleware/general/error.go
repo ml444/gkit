@@ -13,7 +13,8 @@ import (
 	"github.com/ml444/gkit/middleware"
 )
 
-func ProcessingNonstandardErrors() middleware.Middleware {
+// WrapError: Unify errors into the Error format of errorx.
+func WrapError() middleware.Middleware {
 	return func(handler middleware.ServiceHandler) middleware.ServiceHandler {
 		return func(ctx context.Context, req interface{}) (rsp interface{}, err error) {
 			rsp, err = handler(ctx, req)

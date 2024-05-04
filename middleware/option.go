@@ -2,33 +2,22 @@ package middleware
 
 import "context"
 
-var (
-	defaultOptions = &Options{
-		HandlerFunc: nil,
+// LurkerFunc  The interface of the middleware processing function
+// allows the user to implement the processing logic himself.
+type LurkerFunc func(ctx context.Context, p interface{}) (err error)
+
+func LurkerChain(ctx context.Context, p interface{}, fns ...LurkerFunc) error {
+	for _, fn := range fns {
+		err := fn(ctx, p)
+		if err != nil {
+			return err
+		}
 	}
-)
-
-type HandlerFunc func(p any) (err error)
-
-type HandlerFuncContext func(ctx context.Context, p any) (err error)
-
-func WrapHandlerFuncContext(f HandlerFunc) HandlerFuncContext {
-	return func(ctx context.Context, p any) (err error) {
-		return f(p)
-	}
+	return nil
 }
 
-type Options struct {
-	HandlerFunc HandlerFuncContext
-}
-
-func EvaluateOptions(opts []Option) *Options {
-	optCopy := &Options{}
-	*optCopy = *defaultOptions
-	for _, o := range opts {
-		o(optCopy)
+func ForceLurkerChain(ctx context.Context, p interface{}, fns ...LurkerFunc) {
+	for _, fn := range fns {
+		_ = fn(ctx, p)
 	}
-	return optCopy
 }
-
-type Option func(*Options)
