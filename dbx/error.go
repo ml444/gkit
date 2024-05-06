@@ -2,10 +2,12 @@ package dbx
 
 import (
 	"errors"
-	"github.com/ml444/gkit/errorx"
+	"net/http"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"net/http"
+
+	"github.com/ml444/gkit/errorx"
 )
 
 func GetNotFoundErr(err error) *errorx.Error {

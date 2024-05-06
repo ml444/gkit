@@ -24,9 +24,6 @@ const (
 	ProtoMessageFieldUpdatedAt = "updated_at"
 	ProtoMessageFieldDeletedAt = "deleted_at"
 )
-const DefaultLimit uint32 = 2000
-const DefaultOffset uint32 = 0
-const MaxLimit uint32 = 100000
 
 type ModelBase interface {
 	ProtoReflect() protoreflect.Message
@@ -57,7 +54,7 @@ type Scope struct {
 	*gorm.DB
 	model       interface{}
 	NotFoundErr error
-	//RowsAffected int64
+	// RowsAffected int64
 	idFunc GenerateIDFunc
 
 	resetTime         bool
@@ -81,10 +78,12 @@ func NewScopeOfPure(db *gorm.DB, model interface{}) *Scope {
 		model: model,
 	}
 }
+
 func (s *Scope) SetGenerateIDFunc(idFunc GenerateIDFunc) *Scope {
 	s.idFunc = idFunc
 	return s
 }
+
 func (s *Scope) SetNotFoundErr(notFoundErrCode int32) *Scope {
 	s.NotFoundErr = errorx.NewWithStatus(http.StatusNotFound, notFoundErrCode)
 	return s
@@ -292,22 +291,27 @@ func (s *Scope) Ne(field string, arg interface{}) *Scope {
 	s.DB.Where(fmt.Sprintf("%s != ?", field), arg)
 	return s
 }
+
 func (s *Scope) Eq(field string, arg interface{}) *Scope {
 	s.DB.Where(fmt.Sprintf("%s = ?", field), arg)
 	return s
 }
+
 func (s *Scope) Gt(field string, arg interface{}) *Scope {
 	s.DB.Where(fmt.Sprintf("%s > ?", field), arg)
 	return s
 }
+
 func (s *Scope) Gte(field string, arg interface{}) *Scope {
 	s.DB.Where(fmt.Sprintf("%s >= ?", field), arg)
 	return s
 }
+
 func (s *Scope) Lt(field string, arg interface{}) *Scope {
 	s.DB.Where(fmt.Sprintf("%s < ?", field), arg)
 	return s
 }
+
 func (s *Scope) Lte(field string, arg interface{}) *Scope {
 	s.DB.Where(fmt.Sprintf("%s <= ?", field), arg)
 	return s
@@ -317,14 +321,17 @@ func (s *Scope) Between(field string, arg1, arg2 interface{}) *Scope {
 	s.DB.Where(fmt.Sprintf("%s BETWEEN ? AND ?", field), arg1, arg2)
 	return s
 }
+
 func (s *Scope) NotBetween(field string, arg1, arg2 interface{}) *Scope {
 	s.DB.Where(fmt.Sprintf("%s NOT BETWEEN ? AND ?", field), arg1, arg2)
 	return s
 }
+
 func (s *Scope) Or(query interface{}, args ...interface{}) *Scope {
 	s.DB.Or(query, args...)
 	return s
 }
+
 func (s *Scope) MultiOr(opts map[string]interface{}) *Scope {
 	var values []interface{}
 	var orQueryList []string
@@ -336,6 +343,7 @@ func (s *Scope) MultiOr(opts map[string]interface{}) *Scope {
 	s.DB.Where(strings.Join(orQueryList, " OR "), values...)
 	return s
 }
+
 func (s *Scope) MultiOrLike(opts map[string]string, isPrefix bool) *Scope {
 	var values []interface{}
 	var orQueryList []string
@@ -397,6 +405,7 @@ func (s *Scope) Having(query interface{}, args ...interface{}) *Scope {
 	s.DB.Having(query, args...)
 	return s
 }
+
 func (s *Scope) Joins(query string, args ...interface{}) *Scope {
 	s.DB.Joins(query, args...)
 	return s

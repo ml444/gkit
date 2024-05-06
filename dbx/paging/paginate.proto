@@ -4,23 +4,17 @@ package paging;
 
 option go_package = "github.com/ml444/gkit/dbx/paging;paging";
 
-// There are two modes of paging:
-//1. Classic paging mode. Use "Page", "Size" and "Total" for paging.
-//2. Database preferred mode. Directly use "Offset" and "Size" for paging,
-//   similar to SQL's "offset" and "limit ".
-//   Of course, the total number is still "Total".
+// Classic paging mode. Use "Page" and "Size" for paging.
 message Paginate {
     // @desc: current page
     uint32 page = 1;
     // @desc: page size
     uint32 size = 2;
-    // @desc: offset is the starting point of the table index.
-    uint32 offset = 3;
     // @desc: total number of data
-    int64 total = 5;
+    int64 total = 3;
     // @desc: When SkipCount is true,
     // even if CurrentPage is equal to 1, don't count the total.
-    bool skip_count = 6;
+    bool skip_count = 4;
 }
 
 // Scroll: mode. Do not count the total, Use "Size" and "NextToken" for paging.

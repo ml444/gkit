@@ -2,8 +2,10 @@ package dbx
 
 import "gorm.io/gorm"
 
-type TxHandler func(tx *gorm.DB) error
-type TxCallback func() (model interface{}, execute func(scope *Scope) error)
+type (
+	TxHandler  func(tx *gorm.DB) error
+	TxCallback func() (model interface{}, execute func(scope *Scope) error)
+)
 
 func TxGo(db *gorm.DB, executes ...TxHandler) error {
 	tx := db
@@ -24,6 +26,7 @@ func TxGo(db *gorm.DB, executes ...TxHandler) error {
 	}
 	return tx.Commit().Error
 }
+
 func ScopeTxGo(db *gorm.DB, callbacks ...TxCallback) error {
 	tx := db
 	if _, ok := tx.Statement.ConnPool.(gorm.Tx); !ok {
