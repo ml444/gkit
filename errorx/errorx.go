@@ -16,11 +16,13 @@ type ErrCodeDetail struct {
 	Polyglot   map[string]string
 }
 
-var lang string
-var errCodeMap = map[int32]*ErrCodeDetail{}
+var (
+	gMsgLanguage string
+	errCodeMap   = map[int32]*ErrCodeDetail{}
+)
 
 func SetLang(l string) {
-	lang = l
+	gMsgLanguage = l
 }
 
 func RegisterError(codeMap map[int32]*ErrCodeDetail) {
@@ -64,6 +66,7 @@ func (e *Error) Is(err error) bool {
 	}
 	return false
 }
+
 func (e *Error) IsErrCode(errCode int32) bool {
 	return e.ErrorCode == errCode
 }
@@ -88,6 +91,28 @@ func (e *Error) WithMetadata(md map[string]string) *Error {
 	return err
 }
 
+// ConvertMsgByLang function: Language conversion message based on the Accept-Language request header requirement
+func (e *Error) ConvertMsgByLang(langs ...string) {
+	if len(langs) == 0 {
+		return
+	}
+	detail, ok := errCodeMap[e.ErrorCode]
+	if !ok || len(detail.Polyglot) == 0 {
+		return
+	}
+	for _, lang := range langs {
+		if gMsgLanguage == lang {
+			return
+		}
+		msg, ok := detail.Polyglot[lang]
+		if ok {
+			e.Message = msg
+			return
+		}
+	}
+	return
+}
+
 func (e *Error) GRPCStatus() *status.Status {
 	s, _ := status.New(ToGRPCCode(int(e.StatusCode)), e.Message).
 		WithDetails(&errdetails.ErrorInfo{
@@ -99,8 +124,8 @@ func (e *Error) GRPCStatus() *status.Status {
 
 func pickMsg(detail *ErrCodeDetail) string {
 	msg := detail.Message
-	if detail.Polyglot != nil && lang != "" {
-		if v, ok := detail.Polyglot[lang]; ok {
+	if detail.Polyglot != nil && gMsgLanguage != "" {
+		if v, ok := detail.Polyglot[gMsgLanguage]; ok {
 			msg = v
 		}
 	}

@@ -33,12 +33,12 @@ type IRouterCoder interface {
 	ResponseEncoder() ResponseEncoder
 	ErrorEncoder() ErrorEncoder
 
-	//SetBindVars(RequestDecoder)
-	//SetBindQuery(RequestDecoder)
-	//SetBindForm(RequestDecoder)
-	//SetBindBody(RequestDecoder)
-	//SetResponseEncoder(ResponseEncoder)
-	//SetErrorEncoder(ErrorEncoder)
+	// SetBindVars(RequestDecoder)
+	// SetBindQuery(RequestDecoder)
+	// SetBindForm(RequestDecoder)
+	// SetBindBody(RequestDecoder)
+	// SetResponseEncoder(ResponseEncoder)
+	// SetErrorEncoder(ErrorEncoder)
 }
 
 type routerCoder struct{}
@@ -56,6 +56,7 @@ func (c *routerCoder) BindVars() RequestDecoder {
 		return nil
 	}
 }
+
 func (c *routerCoder) BindQuery() RequestDecoder {
 	return func(r *http.Request, v interface{}) error {
 		if err := coder.GetCoder(form.Name).Unmarshal([]byte(r.URL.Query().Encode()), v); err != nil {
@@ -63,8 +64,8 @@ func (c *routerCoder) BindQuery() RequestDecoder {
 		}
 		return nil
 	}
-
 }
+
 func (c *routerCoder) BindForm() RequestDecoder {
 	return func(r *http.Request, v interface{}) error {
 		if err := r.ParseForm(); err != nil {
@@ -75,11 +76,11 @@ func (c *routerCoder) BindForm() RequestDecoder {
 		}
 		return nil
 	}
-
 }
+
 func (c *routerCoder) BindBody() RequestDecoder {
 	return func(r *http.Request, v interface{}) error {
-		codec, _ := coderForRequest(r, "Content-Type")
+		codec, _ := getCoderForRequest(r, "Content-Type")
 		//if !ok {
 		//	return errorx.BadRequest(fmt.Sprintf("unregister Content-Type: %s", r.Header.Get("Content-Type")))
 		//}
@@ -99,7 +100,6 @@ func (c *routerCoder) BindBody() RequestDecoder {
 		}
 		return nil
 	}
-
 }
 
 func (c *routerCoder) ResponseEncoder() ResponseEncoder {
@@ -112,7 +112,7 @@ func (c *routerCoder) ResponseEncoder() ResponseEncoder {
 			http.Redirect(w, r, redirectUrl, code)
 			return nil
 		}
-		codec, _ := coderForRequest(r, "Accept")
+		codec, _ := getCoderForRequest(r, "Accept")
 		data, err := codec.Marshal(v)
 		if err != nil {
 			return err
@@ -129,15 +129,16 @@ func (c *routerCoder) ResponseEncoder() ResponseEncoder {
 
 func (c *routerCoder) ErrorEncoder() ErrorEncoder {
 	return func(w http.ResponseWriter, r *http.Request, err error) {
-		se := errorx.FromError(err)
-		codec, _ := coderForRequest(r, "Accept")
-		body, err := codec.Marshal(se)
+		ex := errorx.FromError(err)
+		ex.ConvertMsgByLang(getAcceptLanguage(r)...)
+		codec, _ := getCoderForRequest(r, "Accept")
+		body, err := codec.Marshal(ex)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", joinContentType(codec.Name()))
-		w.WriteHeader(int(se.StatusCode))
+		w.WriteHeader(int(ex.StatusCode))
 		_, _ = w.Write(body)
 	}
 }
@@ -176,7 +177,7 @@ func DefaultResponseDecoder(_ context.Context, rsp *http.Response, v interface{}
 	return coderByContentType(rsp.Header.Get("Content-Type")).Unmarshal(data, v)
 }
 
-func coderForRequest(r *http.Request, name string) (coder.ICoder, bool) {
+func getCoderForRequest(r *http.Request, name string) (coder.ICoder, bool) {
 	for _, accept := range r.Header[name] {
 		codec := coder.GetCoder(contentSubtype(accept))
 		if codec != nil {
@@ -217,4 +218,19 @@ func joinContentType(subtype string) string {
 
 func defaultError(err error) error {
 	return errorx.CreateError(errorx.DefaultStatusCode, errorx.ErrCodeInvalidReqSys, err.Error())
+}
+
+func getAcceptLanguage(r *http.Request) (langs []string) {
+	for _, lang := range r.Header["Accept-Language"] {
+		right := strings.Index(lang, ";")
+		if right == -1 {
+			right = len(lang)
+		}
+		l := strings.TrimSpace(lang[:right])
+		if l == "" || l == "*" {
+			continue
+		}
+		langs = append(langs, l)
+	}
+	return
 }
