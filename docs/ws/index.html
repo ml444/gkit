@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GO test WebSocket</title>
+  <script>
+    var ws = null;
+    window.onload = () => {
+        if ('WebSocket' in window) {
+            // 创建websocket连接
+            ws = new WebSocket('ws://127.0.0.1:3001/websocket');
+            // 成功连接的时候推送一条消息，此时服务端就可以开始推送数据了
+            ws.onopen = () => {
+                console.log('websocket success---');
+                ws.send('success bryce');
+            }
+            ws.onmessage = (message) => {
+                let data = message.data;
+                console.log('get websocket message---', data);
+            }
+            ws.onerror = () => {
+                console.error('websocket fail');
+            }
+            ws.onclose = function(e) {
+                console.log("connection closed (" + e.code+")");
+            }
+        } else {
+            console.error('dont support websocket');
+        };
+    };
+
+    function send() {
+        var msg = document.getElementById("message").value;
+        ws.send(msg)
+    }
+</script>
+
+</head>
+<body>
+    <h1> WebSocket test</h1>
+
+    <form>
+        <p>
+        Message: <input id="message" type="text" value="Hello, world!">
+        </p>
+    </form>
+  <button onclick="send();">SendMessage</button>
+</body>
+</html>
