@@ -23,6 +23,8 @@ message Scroll {
     // @desc: page size
     uint32 size = 1;
     // @desc: next page token
-    string next_token = 2;
+    string token = 2;
+    // @desc: token expire time
+    int64 expire = 3;
 }
 

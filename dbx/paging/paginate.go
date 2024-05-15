@@ -55,7 +55,7 @@ func (x *Scroll) SetSize(size uint32) *Scroll {
 	return x
 }
 
-func (x *Scroll) SetNextToken(token string) *Scroll {
-	x.NextToken = token
+func (x *Scroll) SetToken(token string) *Scroll {
+	x.Token = token
 	return x
 }
