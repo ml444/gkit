@@ -8,8 +8,8 @@ import "google/protobuf/descriptor.proto";
 
 
 extend google.protobuf.EnumOptions {
-    int32 lower_bound = 1200;
-    int32 upper_bound = 1201;
+    optional int32 lower_bound = 1200;
+    optional int32 upper_bound = 1201;
 }
 
 extend google.protobuf.EnumValueOptions {
