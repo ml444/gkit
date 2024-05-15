@@ -4,6 +4,7 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"github.com/ml444/gkit/cmd/protoc-gen-go-errcode/err"
 	"path/filepath"
 	"strings"
 	"text/template"
@@ -136,7 +137,7 @@ func generateFileContent(file *protogen.File, g *protogen.GeneratedFile, redecla
 
 func getErrCodeBegin(file *protogen.File) int32 {
 	for _, enum := range file.Enums {
-		if errcode, ok := proto.GetExtension(enum.Desc.Options(), v.E_LowerBound).(int32); ok {
+		if errcode, ok := proto.GetExtension(enum.Desc.Options(), err.E_LowerBound).(int32); ok {
 			if errcode != 0 {
 				return errcode
 			}
