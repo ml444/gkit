@@ -21,8 +21,10 @@ import (
 //go:embed validate.tmpl
 var validateTemplate string
 
-const Version = "1.0.0"
-const deprecationComment = "// Deprecated: Do not use."
+const (
+	Version            = "1.0.0"
+	deprecationComment = "// Deprecated: Do not use."
+)
 
 func generateFile(gen *protogen.Plugin, file *protogen.File) *protogen.GeneratedFile {
 	if len(file.Messages) == 0 {
@@ -133,19 +135,14 @@ func generateFileContent(file *protogen.File, g *protogen.GeneratedFile, redecla
 }
 
 func getErrCodeBegin(file *protogen.File) int32 {
-	var errCodeBegin int32
 	for _, enum := range file.Enums {
-		if errcode, ok := proto.GetExtension(enum.Desc.Options(), v.E_LowerBound).(int32); ok && errcode != 0 {
-			errCodeBegin = errcode
-		} else {
-			if len(enum.Values) > 0 {
-				firstValue := enum.Values[0]
-				errCodeBegin = int32(firstValue.Desc.Number())
+		if errcode, ok := proto.GetExtension(enum.Desc.Options(), v.E_LowerBound).(int32); ok {
+			if errcode != 0 {
+				return errcode
 			}
 		}
 	}
-
-	return errCodeBegin
+	return 0
 }
 
 func genMessage(message *protogen.Message, needWKn *ctx.NeedWellKnown) (bool, *ctx.MessageCtx, []*ctx.ImportCtx) {
@@ -325,9 +322,9 @@ func handleOneOfs(field *protogen.Field, fieldCtx *ctx.FieldCtx, msgData *ctx.Me
 			Field:  field,
 			Name:   field.Oneof.GoName,
 			Type:   string(field.Oneof.Desc.Name()),
-			//Required: *messageRule.Required,
-			//Skip:     *messageRule.Skip,
-			//TmplName: ruleType,
+			// Required: *messageRule.Required,
+			// Skip:     *messageRule.Skip,
+			// TmplName: ruleType,
 		}
 	}
 	required, ok := proto.GetExtension(field.Oneof.Desc.Options(), v.E_Required).(bool)

@@ -16,7 +16,7 @@
 > 
 > **Change 4**: Only reference `google.golang.org/protobuf` to reduce dependencies on other packages.
 >
-> **Change 5**: Add the customization function of error codes to support custom error codes and error messages.
+> **Change 5**: Add the error returned by errorx.Error (custom service error code).
 
 
 `protoc-gen-go-validate` is a protocol plugin for generating go message validators. 
@@ -32,23 +32,23 @@ syntax = "proto3";
 
 package examplepb;
 
-import "validate/v.proto";
+import "v/v.proto";
 
 message Person {
-  uint64 id = 1 [(validate.rules).uint64.gt = 999];
+  uint64 id = 1 [(v.rules).uint64.gt = 999];
 
-  string email = 2 [(validate.rules).string.email = true];
+  string email = 2 [(v.rules).string.email = true];
 
-  string name = 3 [(validate.rules).string = {
+  string name = 3 [(v.rules).string = {
     pattern:   "^[^[0-9]A-Za-z]+( [^[0-9]A-Za-z]+)*$",
     max_bytes: 256,
   }];
 
-  Location home = 4 [(validate.rules).message.required = true];
+  Location home = 4 [(v.rules).message.required = true];
 
   message Location {
-    double lat = 1 [(validate.rules).double = {gte: -90,  lte: 90}];
-    double lng = 2 [(validate.rules).double = {gte: -180, lte: 180}];
+    double lat = 1 [(v.rules).double = {gte: -90,  lte: 90}];
+    double lng = 2 [(v.rules).double = {gte: -180, lte: 180}];
   }
 }
 ```
@@ -99,7 +99,7 @@ into `generated/example_validate.pb.go`:
 ```sh
 protoc \
   -I . \
-  -I path/to/validate/ \
+  -I path_to_validate/ \
   --go_out=paths=source_relative:. \
   --go-validate_out=paths=source_relative:. \
   generated/example.proto
@@ -147,7 +147,7 @@ language-specific constraint capabilities.
 
   ```protobuf
   // x must equal 1.23 exactly
-  float x = 1 [(validate.rules).float.const = 1.23];
+  float x = 1 [(v.rules).float.const = 1.23];
   ```
 
 - **lt/lte/gt/gte**: these inequalities (`<`, `<=`, `>`, `>=`, respectively)
@@ -155,13 +155,13 @@ language-specific constraint capabilities.
 
   ```protobuf
   // x must be less than 10
-  int32 x = 1 [(validate.rules).int32.lt = 10];
+  int32 x = 1 [(v.rules).int32.lt = 10];
 
   // x must be greater than or equal to 20
-  uint64 x = 1 [(validate.rules).uint64.gte = 20];
+  uint64 x = 1 [(v.rules).uint64.gte = 20];
 
   // x must be in the range [30, 40)
-  fixed32 x = 1 [(validate.rules).fixed32 = {gte:30, lt: 40}];
+  fixed32 x = 1 [(v.rules).fixed32 = {gte:30, lt: 40}];
   ```
 
   Inverting the values of `lt(e)` and `gt(e)` is valid and creates an exclusive
@@ -169,7 +169,7 @@ language-specific constraint capabilities.
 
   ```protobuf
   // x must be outside the range [30, 40)
-  double x = 1 [(validate.rules).double = {lt:30, gte:40}];
+  double x = 1 [(v.rules).double = {lt:30, gte:40}];
   ```
 
 - **in/not_in**: these two rules permit specifying allow/denylists for the
@@ -177,10 +177,10 @@ language-specific constraint capabilities.
 
   ```protobuf
   // x must be either 1, 2, or 3
-  uint32 x = 1 [(validate.rules).uint32 = {in: [1,2,3]}];
+  uint32 x = 1 [(v.rules).uint32 = {in: [1,2,3]}];
 
   // x cannot be 0 nor 0.99
-  float x = 1 [(validate.rules).float = {not_in: [0, 0.99]}];
+  float x = 1 [(v.rules).float = {not_in: [0, 0.99]}];
   ```
 
 - **ignore_empty**: this rule specifies that if field is empty or set to the
@@ -189,7 +189,7 @@ language-specific constraint capabilities.
   for optional fields where switching to WKTs is not feasible.
 
   ```protobuf
-  uint32 x = 1 [(validate.rules).uint32 = {ignore_empty: true, gte: 200}];
+  uint32 x = 1 [(v.rules).uint32 = {ignore_empty: true, gte: 200}];
   ```
 
 ### Bools
@@ -198,10 +198,10 @@ language-specific constraint capabilities.
 
   ```protobuf
   // x must be set to true
-  bool x = 1 [(validate.rules).bool.const = true];
+  bool x = 1 [(v.rules).bool.const = true];
 
   // x cannot be set to true
-  bool x = 1 [(validate.rules).bool.const = false];
+  bool x = 1 [(v.rules).bool.const = false];
   ```
 
 ### Strings
@@ -210,7 +210,7 @@ language-specific constraint capabilities.
 
   ```protobuf
   // x must be set to "foo"
-  string x = 1 [(validate.rules).string.const = "foo"];
+  string x = 1 [(v.rules).string.const = "foo"];
   ```
 
 - **len/min_len/max_len**: these rules constrain the number of characters (
@@ -220,13 +220,13 @@ language-specific constraint capabilities.
 
   ```protobuf
   // x must be exactly 5 characters long
-  string x = 1 [(validate.rules).string.len = 5];
+  string x = 1 [(v.rules).string.len = 5];
 
   // x must be at least 3 characters long
-  string x = 1 [(validate.rules).string.min_len = 3];
+  string x = 1 [(v.rules).string.min_len = 3];
 
   // x must be between 5 and 10 characters, inclusive
-  string x = 1 [(validate.rules).string = {min_len: 5, max_len: 10}];
+  string x = 1 [(v.rules).string = {min_len: 5, max_len: 10}];
   ```
 
 - **min_bytes/max_bytes**: these rules constrain the number of bytes in the
@@ -234,10 +234,10 @@ language-specific constraint capabilities.
 
   ```protobuf
   // x must be at most 15 bytes long
-  string x = 1 [(validate.rules).string.max_bytes = 15];
+  string x = 1 [(v.rules).string.max_bytes = 15];
 
   // x must be between 128 and 1024 bytes long
-  string x = 1 [(validate.rules).string = {min_bytes: 128, max_bytes: 1024}];
+  string x = 1 [(v.rules).string = {min_bytes: 128, max_bytes: 1024}];
   ```
 
 - **pattern**: the field must match the specified [RE2-compliant][re2] regular
@@ -246,7 +246,7 @@ language-specific constraint capabilities.
 
   ```protobuf
   // x must be a non-empty, case-insensitive hexadecimal string
-  string x = 1 [(validate.rules).string.pattern = "(?i)^[0-9a-f]+$"];
+  string x = 1 [(v.rules).string.pattern = "(?i)^[0-9a-f]+$"];
   ```
 
 - **prefix/suffix/contains/not_contains**: the field must contain the specified
@@ -255,22 +255,22 @@ language-specific constraint capabilities.
 
   ```protobuf
   // x must begin with "foo"
-  string x = 1 [(validate.rules).string.prefix = "foo"];
+  string x = 1 [(v.rules).string.prefix = "foo"];
 
   // x must end with "bar"
-  string x = 1 [(validate.rules).string.suffix = "bar"];
+  string x = 1 [(v.rules).string.suffix = "bar"];
 
   // x must contain "baz" anywhere inside it
-  string x = 1 [(validate.rules).string.contains = "baz"];
+  string x = 1 [(v.rules).string.contains = "baz"];
 
   // x cannot contain "baz" anywhere inside it
-  string x = 1 [(validate.rules).string.not_contains = "baz"];
+  string x = 1 [(v.rules).string.not_contains = "baz"];
 
   // x must begin with "fizz" and end with "buzz"
-  string x = 1 [(validate.rules).string = {prefix: "fizz", suffix: "buzz"}];
+  string x = 1 [(v.rules).string = {prefix: "fizz", suffix: "buzz"}];
 
   // x must end with ".proto" and be less than 64 characters
-  string x = 1 [(validate.rules).string = {suffix: ".proto", max_len:64}];
+  string x = 1 [(v.rules).string = {suffix: ".proto", max_len:64}];
   ```
 
 - **in/not_in**: these two rules permit specifying allow/denylists for the
@@ -278,10 +278,10 @@ language-specific constraint capabilities.
 
   ```protobuf
   // x must be either "foo", "bar", or "baz"
-  string x = 1 [(validate.rules).string = {in: ["foo", "bar", "baz"]}];
+  string x = 1 [(v.rules).string = {in: ["foo", "bar", "baz"]}];
 
   // x cannot be "fizz" nor "buzz"
-  string x = 1 [(validate.rules).string = {not_in: ["fizz", "buzz"]}];
+  string x = 1 [(v.rules).string = {not_in: ["fizz", "buzz"]}];
   ```
 
 - **ignore_empty**: this rule specifies that if field is empty or set to the
@@ -290,7 +290,7 @@ language-specific constraint capabilities.
   for optional fields where switching to WKTs is not feasible.
 
   ```protobuf
-  string CountryCode = 1 [(validate.rules).string = {ignore_empty: true, len: 2}];
+  string CountryCode = 1 [(v.rules).string = {ignore_empty: true, len: 2}];
   ```
 
 - **well-known formats**: these rules provide advanced constraints for common
@@ -300,42 +300,42 @@ language-specific constraint capabilities.
 
   ```protobuf
   // x must be a valid email address (via RFC 5322)
-  string x = 1 [(validate.rules).string.email = true];
+  string x = 1 [(v.rules).string.email = true];
 
   // x must be a valid address (IP or Hostname).
-  string x = 1 [(validate.rules).string.address = true];
+  string x = 1 [(v.rules).string.address = true];
 
   // x must be a valid hostname (via RFC 1034)
-  string x = 1 [(validate.rules).string.hostname = true];
+  string x = 1 [(v.rules).string.hostname = true];
 
   // x must be a valid IP address (either v4 or v6)
-  string x = 1 [(validate.rules).string.ip = true];
+  string x = 1 [(v.rules).string.ip = true];
 
   // x must be a valid IPv4 address
   // eg: "192.168.0.1"
-  string x = 1 [(validate.rules).string.ipv4 = true];
+  string x = 1 [(v.rules).string.ipv4 = true];
 
   // x must be a valid IPv6 address
   // eg: "fe80::3"
-  string x = 1 [(validate.rules).string.ipv6 = true];
+  string x = 1 [(v.rules).string.ipv6 = true];
 
   // x must be a valid absolute URI (via RFC 3986)
-  string x = 1 [(validate.rules).string.uri = true];
+  string x = 1 [(v.rules).string.uri = true];
 
   // x must be a valid URI reference (either absolute or relative)
-  string x = 1 [(validate.rules).string.uri_ref = true];
+  string x = 1 [(v.rules).string.uri_ref = true];
 
   // x must be a valid UUID (via RFC 4122)
-  string x = 1 [(validate.rules).string.uuid = true];
+  string x = 1 [(v.rules).string.uuid = true];
 
   // x must conform to a well known regex for HTTP header names (via RFC 7230)
-  string x = 1 [(validate.rules).string.well_known_regex = HTTP_HEADER_NAME];
+  string x = 1 [(v.rules).string.well_known_regex = HTTP_HEADER_NAME];
 
   // x must conform to a well known regex for HTTP header values (via RFC 7230)
-  string x = 1 [(validate.rules).string.well_known_regex = HTTP_HEADER_VALUE];
+  string x = 1 [(v.rules).string.well_known_regex = HTTP_HEADER_VALUE];
 
   // x must conform to a well known regex for headers, disallowing \r\n\0 characters.
-  string x = 1 [(validate.rules).string = {well_known_regex: HTTP_HEADER_VALUE, strict: false}];
+  string x = 1 [(v.rules).string = {well_known_regex: HTTP_HEADER_VALUE, strict: false}];
   ```
 
 ### Bytes
@@ -347,10 +347,10 @@ language-specific constraint capabilities.
 
   ```protobuf
   // x must be set to "foo" ("\x66\x6f\x6f")
-  bytes x = 1 [(validate.rules).bytes.const = "foo"];
+  bytes x = 1 [(v.rules).bytes.const = "foo"];
 
   // x must be set to "\xf0\x90\x28\xbc"
-  bytes x = 1 [(validate.rules).bytes.const = "\xf0\x90\x28\xbc"];
+  bytes x = 1 [(v.rules).bytes.const = "\xf0\x90\x28\xbc"];
   ```
 
 - **len/min_len/max_len**: these rules constrain the number of bytes in the
@@ -358,13 +358,13 @@ language-specific constraint capabilities.
 
   ```protobuf
   // x must be exactly 3 bytes
-  bytes x = 1 [(validate.rules).bytes.len = 3];
+  bytes x = 1 [(v.rules).bytes.len = 3];
 
   // x must be at least 3 bytes long
-  bytes x = 1 [(validate.rules).bytes.min_len = 3];
+  bytes x = 1 [(v.rules).bytes.min_len = 3];
 
   // x must be between 5 and 10 bytes, inclusive
-  bytes x = 1 [(validate.rules).bytes = {min_len: 5, max_len: 10}];
+  bytes x = 1 [(v.rules).bytes = {min_len: 5, max_len: 10}];
   ```
 
 - **pattern**: the field must match the specified [RE2-compliant][re2] regular
@@ -373,7 +373,7 @@ language-specific constraint capabilities.
 
   ```protobuf
   // x must be a non-empty, ASCII byte sequence
-  bytes x = 1 [(validate.rules).bytes.pattern = "^[\x00-\x7F]+$"];
+  bytes x = 1 [(v.rules).bytes.pattern = "^[\x00-\x7F]+$"];
   ```
 
 - **prefix/suffix/contains**: the field must contain the specified byte sequence
@@ -381,13 +381,13 @@ language-specific constraint capabilities.
 
   ```protobuf
   // x must begin with "\x99"
-  bytes x = 1 [(validate.rules).bytes.prefix = "\x99"];
+  bytes x = 1 [(v.rules).bytes.prefix = "\x99"];
 
   // x must end with "buz\x7a"
-  bytes x = 1 [(validate.rules).bytes.suffix = "buz\x7a"];
+  bytes x = 1 [(v.rules).bytes.suffix = "buz\x7a"];
 
   // x must contain "baz" anywhere inside it
-  bytes x = 1 [(validate.rules).bytes.contains = "baz"];
+  bytes x = 1 [(v.rules).bytes.contains = "baz"];
   ```
 
 - **in/not_in**: these two rules permit specifying allow/denylists for the
@@ -395,10 +395,10 @@ language-specific constraint capabilities.
 
   ```protobuf
   // x must be either "foo", "bar", or "baz"
-  bytes x = 1 [(validate.rules).bytes = {in: ["foo", "bar", "baz"]}];
+  bytes x = 1 [(v.rules).bytes = {in: ["foo", "bar", "baz"]}];
 
   // x cannot be "fizz" nor "buzz"
-  bytes x = 1 [(validate.rules).bytes = {not_in: ["fizz", "buzz"]}];
+  bytes x = 1 [(v.rules).bytes = {not_in: ["fizz", "buzz"]}];
   ```
 
 - **ignore_empty**: this rule specifies that if field is empty or set to the
@@ -407,7 +407,7 @@ language-specific constraint capabilities.
   for optional fields where switching to WKTs is not feasible.
 
   ```protobuf
-  bytes x = 1 [(validate.rules).bytes = {ignore_empty: true, in: ["foo", "bar", "baz"]}];
+  bytes x = 1 [(v.rules).bytes = {ignore_empty: true, in: ["foo", "bar", "baz"]}];
   ```
 
 - **well-known formats**: these rules provide advanced constraints for common
@@ -417,15 +417,15 @@ language-specific constraint capabilities.
 
   ```protobuf
   // x must be a valid IP address (either v4 or v6) in byte format
-  bytes x = 1 [(validate.rules).bytes.ip = true];
+  bytes x = 1 [(v.rules).bytes.ip = true];
 
   // x must be a valid IPv4 address in byte format
   // eg: "\xC0\xA8\x00\x01"
-  bytes x = 1 [(validate.rules).bytes.ipv4 = true];
+  bytes x = 1 [(v.rules).bytes.ipv4 = true];
 
   // x must be a valid IPv6 address in byte format
   // eg: "\x20\x01\x0D\xB8\x85\xA3\x00\x00\x00\x00\x8A\x2E\x03\x70\x73\x34"
-  bytes x = 1 [(validate.rules).bytes.ipv6 = true];
+  bytes x = 1 [(v.rules).bytes.ipv6 = true];
   ```
 
 ### Enums
@@ -447,7 +447,7 @@ enum State {
 
   ```protobuf
   // x must be set to ACTIVE (2)
-  State x = 1 [(validate.rules).enum.const = 2];
+  State x = 1 [(v.rules).enum.const = 2];
   ```
 
 - **defined_only**: the field must be one of the specified values in the enum
@@ -455,7 +455,7 @@ enum State {
 
   ```protobuf
   // x can only be INACTIVE, PENDING, or ACTIVE
-  State x = 1 [(validate.rules).enum.defined_only = true];
+  State x = 1 [(v.rules).enum.defined_only = true];
   ```
 
 - **in/not_in**: these two rules permit specifying allow/denylists for the
@@ -463,10 +463,10 @@ enum State {
 
   ```protobuf
   // x must be either INACTIVE (0) or ACTIVE (2)
-  State x = 1 [(validate.rules).enum = {in: [0,2]}];
+  State x = 1 [(v.rules).enum = {in: [0,2]}];
 
   // x cannot be PENDING (1)
-  State x = 1 [(validate.rules).enum = {not_in: [1]}];
+  State x = 1 [(v.rules).enum = {not_in: [1]}];
   ```
 
 ### Messages
@@ -486,17 +486,17 @@ enum State {
 
   ```protobuf
   // The fields on Person x will not be validated.
-  Person x = 1 [(validate.rules).message.skip = true];
+  Person x = 1 [(v.rules).message.skip = true];
   ```
 
 - **required**: this rule specifies that the field cannot be unset.
 
   ```protobuf
   // x cannot be unset
-  Person x = 1 [(validate.rules).message.required = true];
+  Person x = 1 [(v.rules).message.required = true];
 
   // x cannot be unset, but the validations on x will not be performed
-  Person x = 1 [(validate.rules).message = {required: true, skip: true}];
+  Person x = 1 [(v.rules).message = {required: true, skip: true}];
   ```
 
 ### Repeated
@@ -506,13 +506,13 @@ enum State {
 
   ```protobuf
   // x must contain at least 3 elements
-  repeated int32 x = 1 [(validate.rules).repeated.min_items = 3];
+  repeated int32 x = 1 [(v.rules).repeated.min_items = 3];
 
   // x must contain between 5 and 10 Persons, inclusive
-  repeated Person x = 1 [(validate.rules).repeated = {min_items: 5, max_items: 10}];
+  repeated Person x = 1 [(v.rules).repeated = {min_items: 5, max_items: 10}];
 
   // x must contain exactly 7 elements
-  repeated double x = 1 [(validate.rules).repeated = {min_items: 7, max_items: 7}];
+  repeated double x = 1 [(v.rules).repeated = {min_items: 7, max_items: 7}];
   ```
 
 - **unique**: this rule requires that all elements in the field must be unique.
@@ -520,7 +520,7 @@ enum State {
 
   ```protobuf
   // x must contain unique int64 values
-  repeated int64 x = 1 [(validate.rules).repeated.unique = true];
+  repeated int64 x = 1 [(v.rules).repeated.unique = true];
   ```
 
 - **items**: this rule specifies constraints that should be applied to each
@@ -529,10 +529,10 @@ enum State {
 
   ```protobuf
   // x must contain positive float values
-  repeated float x = 1 [(validate.rules).repeated.items.float.gt = 0];
+  repeated float x = 1 [(v.rules).repeated.items.float.gt = 0];
 
   // x must contain Persons but don't validate them
-  repeated Person x = 1 [(validate.rules).repeated.items.message.skip = true];
+  repeated Person x = 1 [(v.rules).repeated.items.message.skip = true];
   ```
 
 - **ignore_empty**: this rule specifies that if field is empty or set to the
@@ -541,7 +541,7 @@ enum State {
   for optional fields where switching to WKTs is not feasible.
 
   ```protobuf
-  repeated int64 x = 1 [(validate.rules).repeated = {ignore_empty: true, items: {int64: {gt: 200}}}];
+  repeated int64 x = 1 [(v.rules).repeated = {ignore_empty: true, items: {int64: {gt: 200}}}];
   ```
 
 ### Maps
@@ -551,13 +551,13 @@ enum State {
 
   ```protobuf
   // x must contain at least 3 KV pairs
-  map<string, uint64> x = 1 [(validate.rules).map.min_pairs = 3];
+  map<string, uint64> x = 1 [(v.rules).map.min_pairs = 3];
 
   // x must contain between 5 and 10 KV pairs
-  map<string, string> x = 1 [(validate.rules).map = {min_pairs: 5, max_pairs: 10}];
+  map<string, string> x = 1 [(v.rules).map = {min_pairs: 5, max_pairs: 10}];
 
   // x must contain exactly 7 KV pairs
-  map<string, Person> x = 1 [(validate.rules).map = {min_pairs: 7, max_pairs: 7}];
+  map<string, Person> x = 1 [(v.rules).map = {min_pairs: 7, max_pairs: 7}];
   ```
 
 - **no_sparse**: for map fields with message values, setting this rule to true
@@ -565,7 +565,7 @@ enum State {
 
   ```protobuf
   // all values in x must be set
-  map<uint64, Person> x = 1 [(validate.rules).map.no_sparse = true];
+  map<uint64, Person> x = 1 [(v.rules).map.no_sparse = true];
   ```
 
 - **keys**: this rule specifies constraints that are applied to the keys in the
@@ -573,7 +573,7 @@ enum State {
 
   ```protobuf
   // x's keys must all be negative
-  <sint32, string> x = [(validate.rules).map.keys.sint32.lt = 0];
+  <sint32, string> x = [(v.rules).map.keys.sint32.lt = 0];
   ```
 
 - **values**: this rule specifies constraints that are be applied to each value
@@ -582,10 +582,10 @@ enum State {
 
   ```protobuf
   // x must contain strings of at least 3 characters
-  map<string, string> x = 1 [(validate.rules).map.values.string.min_len = 3];
+  map<string, string> x = 1 [(v.rules).map.values.string.min_len = 3];
 
   // x must contain Persons but doesn't validate them
-  map<string, Person> x = 1 [(validate.rules).map.values.message.skip = true];
+  map<string, Person> x = 1 [(v.rules).map.values.message.skip = true];
   ```
 
 - **ignore_empty**: this rule specifies that if field is empty or set to the
@@ -594,7 +594,7 @@ enum State {
   for optional fields where switching to WKTs is not feasible.
 
   ```protobuf
-  map<string, string> x = 1 [(validate.rules).map = {ignore_empty: true, values: {string: {min_len: 3}}}];
+  map<string, string> x = 1 [(v.rules).map = {ignore_empty: true, values: {string: {min_len: 3}}}];
   ```
 
 ### Well-Known Types (WKTs)
@@ -611,14 +611,14 @@ wrapper encapsulates.
 
 ```protobuf
 // if it is set, x must be greater than 3
-    google.protobuf.Int32Value x = 1 [(validate.rules).int32.gt = 3];
+    google.protobuf.Int32Value x = 1 [(v.rules).int32.gt = 3];
 ```
 
 Message Rules can also be used with scalar Well-Known Types (WKTs):
 
 ```protobuf
 // Ensures that if a value is not set for age, it would not pass the validation despite its zero value being 0.
-message X {google.protobuf.Int32Value age = 1 [(validate.rules).int32.gt = -1, (validate.rules).message.required = true];}
+message X {google.protobuf.Int32Value age = 1 [(v.rules).int32.gt = -1, (v.rules).message.required = true];}
 ```
 
 #### Anys
@@ -627,7 +627,7 @@ message X {google.protobuf.Int32Value age = 1 [(validate.rules).int32.gt = -1, (
 
   ```protobuf
   // x cannot be unset
-  google.protobuf.Any x = 1 [(validate.rules).any.required = true];
+  google.protobuf.Any x = 1 [(v.rules).any.required = true];
   ```
 
 - **in/not_in**: these two rules permit specifying allow/denylists for
@@ -636,7 +636,7 @@ message X {google.protobuf.Int32Value age = 1 [(validate.rules).int32.gt = -1, (
 
   ```protobuf
   // x must not be the Duration or Timestamp WKT
-  google.protobuf.Any x = 1 [(validate.rules).any = {not_in: [
+  google.protobuf.Any x = 1 [(v.rules).any = {not_in: [
       "type.googleapis.com/google.protobuf.Duration",
       "type.googleapis.com/google.protobuf.Timestamp"
     ]}];
@@ -648,14 +648,14 @@ message X {google.protobuf.Int32Value age = 1 [(validate.rules).int32.gt = -1, (
 
   ```protobuf
   // x cannot be unset
-  google.protobuf.Duration x = 1 [(validate.rules).duration.required = true];
+  google.protobuf.Duration x = 1 [(v.rules).duration.required = true];
   ```
 
 - **const**: the field must be _exactly_ the specified value.
 
   ```protobuf
   // x must equal 1.5s exactly
-  google.protobuf.Duration x = 1 [(validate.rules).duration.const = {
+  google.protobuf.Duration x = 1 [(v.rules).duration.const = {
       seconds: 1,
       nanos:   500000000
     }];
@@ -666,13 +666,13 @@ message X {google.protobuf.Int32Value age = 1 [(validate.rules).int32.gt = -1, (
 
   ```protobuf
   // x must be less than 10s
-  google.protobuf.Duration x = 1 [(validate.rules).duration.lt.seconds = 10];
+  google.protobuf.Duration x = 1 [(v.rules).duration.lt.seconds = 10];
 
   // x must be greater than or equal to 20ns
-  google.protobuf.Duration x = 1 [(validate.rules).duration.gte.nanos = 20];
+  google.protobuf.Duration x = 1 [(v.rules).duration.gte.nanos = 20];
 
   // x must be in the range [0s, 1s)
-  google.protobuf.Duration x = 1 [(validate.rules).duration = {
+  google.protobuf.Duration x = 1 [(v.rules).duration = {
       gte: {},
       lt:  {seconds: 1}
     }];
@@ -683,7 +683,7 @@ message X {google.protobuf.Int32Value age = 1 [(validate.rules).int32.gt = -1, (
 
   ```protobuf
   // x must be outside the range [0s, 1s)
-  google.protobuf.Duration x = 1 [(validate.rules).duration = {
+  google.protobuf.Duration x = 1 [(v.rules).duration = {
       lt:  {},
       gte: {seconds: 1}
     }];
@@ -694,13 +694,13 @@ message X {google.protobuf.Int32Value age = 1 [(validate.rules).int32.gt = -1, (
 
   ```protobuf
   // x must be either 0s or 1s
-  google.protobuf.Duration x = 1 [(validate.rules).duration = {in: [
+  google.protobuf.Duration x = 1 [(v.rules).duration = {in: [
       {},
       {seconds: 1}
     ]}];
 
   // x cannot be 20s nor 500ns
-  google.protobuf.Duration x = 1 [(validate.rules).duration = {not_in: [
+  google.protobuf.Duration x = 1 [(v.rules).duration = {not_in: [
       {seconds: 20},
       {nanos: 500}
     ]}];
@@ -712,14 +712,14 @@ message X {google.protobuf.Int32Value age = 1 [(validate.rules).int32.gt = -1, (
 
   ```protobuf
   // x cannot be unset
-  google.protobuf.Timestamp x = 1 [(validate.rules).timestamp.required = true];
+  google.protobuf.Timestamp x = 1 [(v.rules).timestamp.required = true];
   ```
 
 - **const**: the field must be _exactly_ the specified value.
 
   ```protobuf
   // x must equal 2009/11/10T23:00:00.500Z exactly
-  google.protobuf.Timestamp x = 1 [(validate.rules).timestamp.const = {
+  google.protobuf.Timestamp x = 1 [(v.rules).timestamp.const = {
       seconds: 63393490800,
       nanos:   500000000
     }];
@@ -730,13 +730,13 @@ message X {google.protobuf.Int32Value age = 1 [(validate.rules).int32.gt = -1, (
 
   ```protobuf
   // x must be less than the Unix Epoch
-  google.protobuf.Timestamp x = 1 [(validate.rules).timestamp.lt.seconds = 0];
+  google.protobuf.Timestamp x = 1 [(v.rules).timestamp.lt.seconds = 0];
 
   // x must be greater than or equal to 2009/11/10T23:00:00Z
-  google.protobuf.Timestamp x = 1 [(validate.rules).timestamp.gte.seconds = 63393490800];
+  google.protobuf.Timestamp x = 1 [(v.rules).timestamp.gte.seconds = 63393490800];
 
   // x must be in the range [epoch, 2009/11/10T23:00:00Z)
-  google.protobuf.Timestamp x = 1 [(validate.rules).timestamp = {
+  google.protobuf.Timestamp x = 1 [(v.rules).timestamp = {
       gte: {},
       lt:  {seconds: 63393490800}
     }];
@@ -747,7 +747,7 @@ message X {google.protobuf.Int32Value age = 1 [(validate.rules).int32.gt = -1, (
 
   ```protobuf
   // x must be outside the range [epoch, 2009/11/10T23:00:00Z)
-  google.protobuf.Timestamp x = 1 [(validate.rules).timestamp = {
+  google.protobuf.Timestamp x = 1 [(v.rules).timestamp = {
       lt:  {},
       gte: {seconds: 63393490800}
     }];
@@ -758,7 +758,7 @@ message X {google.protobuf.Int32Value age = 1 [(validate.rules).int32.gt = -1, (
 
   ```protobuf
   // x must be less than the current timestamp
-  google.protobuf.Timestamp x = 1 [(validate.rules).timestamp.lt_now = true];
+  google.protobuf.Timestamp x = 1 [(v.rules).timestamp.lt_now = true];
   ```
 - **within**: this rule specifies that the field's value should be within a
   duration of the current time. This rule can be used in conjunction
@@ -766,10 +766,10 @@ message X {google.protobuf.Int32Value age = 1 [(validate.rules).int32.gt = -1, (
 
   ```protobuf
   // x must be within ±1s of the current time
-  google.protobuf.Timestamp x = 1 [(validate.rules).timestamp.within.seconds = 1];
+  google.protobuf.Timestamp x = 1 [(v.rules).timestamp.within.seconds = 1];
 
   // x must be within the range (now, now+1h)
-  google.protobuf.Timestamp x = 1 [(validate.rules).timestamp = {
+  google.protobuf.Timestamp x = 1 [(v.rules).timestamp = {
       gt_now: true,
       within: {seconds: 3600}
     }];
@@ -782,25 +782,25 @@ message X {google.protobuf.Int32Value age = 1 [(validate.rules).int32.gt = -1, (
 
   ```protobuf
   message Person {
-    option (validate.disabled) = true;
+    option (v.disabled) = true;
 
     // x will not be required to be greater than 123
-    uint64 x = 1 [(validate.rules).uint64.gt = 123];
+    uint64 x = 1 [(v.rules).uint64.gt = 123];
 
     // y's fields will not be validated
     Person y = 2;
   }
   ```
 
-- **ignored**: Don't generate a validate method or any related validation code
+- **ignored**: Don't generate a v method or any related validation code
   for this message.
 
   ```protobuf
   message Person {
-    option (validate.ignored) = true;
+    option (v.ignored) = true;
 
     // x will not be required to be greater than 123
-    uint64 x = 1 [(validate.rules).uint64.gt = 123];
+    uint64 x = 1 [(v.rules).uint64.gt = 123];
 
     // y's fields will not be validated
     Person y = 2;
@@ -816,7 +816,7 @@ message X {google.protobuf.Int32Value age = 1 [(validate.rules).int32.gt = -1, (
   ```protobuf
   oneof id {
     // either x, y, or z must be set.
-    option (validate.required) = true;
+    option (v.required) = true;
 
     string x = 1;
     int32  y = 2;
