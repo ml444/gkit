@@ -13,7 +13,6 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/descriptorpb"
 
-	"github.com/ml444/gkit/cmd/protoc-gen-go-gorm/desc"
 	"github.com/ml444/gkit/cmd/protoc-gen-go-gorm/orm"
 	"github.com/ml444/gkit/cmd/protoc-gen-go-gorm/templates"
 )
@@ -83,7 +82,7 @@ func genContent(file *protogen.File, g *protogen.GeneratedFile) error {
 	if err != nil {
 		return err
 	}
-	var messages []*desc.MessageDesc
+	var messages []*orm.MessageDesc
 	parseMessages(g, file.Messages, &messages)
 	if len(messages) == 0 {
 		return nil
@@ -114,7 +113,7 @@ func genContent(file *protogen.File, g *protogen.GeneratedFile) error {
 	sort.Slice(imports, func(i, j int) bool {
 		return imports[i] < imports[j]
 	})
-	fd := &desc.FileDesc{
+	fd := &orm.FileDesc{
 		PackageName: string(file.GoPackageName),
 		Imports:     imports,
 		Messages:    messages,
@@ -128,7 +127,7 @@ func genContent(file *protogen.File, g *protogen.GeneratedFile) error {
 	return tmpl.Execute(g, fd)
 }
 
-func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, result *[]*desc.MessageDesc) {
+func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, result *[]*orm.MessageDesc) {
 	for _, message := range messages {
 		if message.Desc.Options().(*descriptorpb.MessageOptions).GetDeprecated() {
 			g.P("//")
@@ -140,10 +139,10 @@ func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, resu
 		if enable, ok := proto.GetExtension(message.Desc.Options(), orm.E_Enable).(bool); !ok || !enable {
 			continue
 		}
-		msgDesc := desc.MessageDesc{
+		msgDesc := orm.MessageDesc{
 			Name:    message.GoIdent.GoName,
-			Opts:    &desc.MessageOpts{},
-			Fields:  make([]*desc.ORMField, 0),
+			Opts:    &orm.MessageOpts{},
+			Fields:  make([]*orm.ORMField, 0),
 			UtilMap: map[string]string{},
 		}
 		// parse message options
@@ -168,11 +167,11 @@ func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, resu
 			}
 			fieldName := field.GoName
 			oldType := goType(field)
-			ormField := &desc.ORMField{
+			ormField := &orm.ORMField{
 				FieldName: fieldName,
 				NewType:   oldType,
 				OldType:   oldType,
-				ORMTag:    desc.JoinTags(string(field.Desc.Name()), desc.JoinORMTags(tags)),
+				ORMTag:    orm.JoinTags(string(field.Desc.Name()), orm.JoinORMTags(tags)),
 			}
 			msgDesc.Fields = append(msgDesc.Fields, ormField)
 
@@ -185,7 +184,7 @@ func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, resu
 			}
 
 			sType := serializeType(field)
-			sd := desc.SerializeDesc{
+			sd := orm.SerializeDesc{
 				SerializerName:     strings.ToLower(typ),
 				SerializerTypeName: sType,
 				FieldType:          ormField.NewType,

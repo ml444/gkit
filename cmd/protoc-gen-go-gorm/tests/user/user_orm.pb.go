@@ -18,6 +18,8 @@ import (
 	"gorm.io/gorm/clause"
 	"gorm.io/hints"
 	"time"
+
+	"github.com/ml444/gkit/dbx"
 )
 
 const (
@@ -109,13 +111,13 @@ func bytesUnmarshal(buf []byte, x interface{}) error {
 }
 
 type TUserInfo struct {
-	LoginCount  uint32            `gorm:"type:int;comment:登录次数"`
-	LastLoginIp string            `gorm:"type:varchar(255);comment:最后登录IP"`
-	LastLoginAt uint32            `gorm:"type:timestamp;comment:最后登录时间"`
-	GroupIds    UserInfo_GroupIds `gorm:"type:json;comment:分组ID"`
+	LoginCount  uint32            `gorm:"type:int;comment:登录次数" json:"login_count"`
+	LastLoginIp string            `gorm:"type:varchar(255);comment:最后登录IP" json:"last_login_ip"`
+	LastLoginAt uint32            `gorm:"type:timestamp;comment:最后登录时间" json:"last_login_at"`
+	GroupIds    UserInfo_GroupIds `gorm:"type:json;comment:分组ID" json:"group_ids"`
 }
 
-func (x *TUserInfo) ToSource() *UserInfo {
+func (x *TUserInfo) ToSource() dbx.IModel {
 	return &UserInfo{
 		LoginCount:  x.LoginCount,
 		LastLoginIp: x.LastLoginIp,
@@ -124,7 +126,7 @@ func (x *TUserInfo) ToSource() *UserInfo {
 	}
 }
 
-func (x *UserInfo) ToORM() *TUserInfo {
+func (x *UserInfo) ToORM() dbx.ITModel {
 	return &TUserInfo{
 		LoginCount:  x.LoginCount,
 		LastLoginIp: x.LastLoginIp,
@@ -153,26 +155,30 @@ func (x *User) TableName() string {
 	return "my_user"
 }
 
-type TUser struct {
-	Id              uint64               `gorm:"comment:主键;primarykey"`
-	IsValidated     bool                 `gorm:"type:bool;comment:是否验证"`
-	Name            string               `gorm:"type:varchar(255);comment:名称;index:idx_name,class:FULLTEXT;index:idx_age_name,priority:2"`
-	Age             *uint32              `gorm:"type:int;comment:年龄;index:idx_age_name,priority:1"`
-	CreatedAt       User_CreatedAt       `gorm:"type:date;comment:创建时间"`
-	UpdatedAt       User_UpdatedAt       `gorm:"type:time;comment:更新时间"`
-	DeletedAt       User_DeletedAt       `gorm:"type:datetime;comment:删除时间"`
-	Detail1         *UserInfo            `gorm:"type:json;comment:详情"`
-	DetailBlob1     *User_DetailBlob     `gorm:"type:blob;comment:详情"`
-	Avatar          User_Avatar          `gorm:"type:blob;comment:头像"`
-	Tags            User_Tags            `gorm:"-:all;comment:标签列表"`
-	GroupTags       User_GroupTags       `gorm:"type:json;comment:标签名称"`
-	ClientLoginInfo User_ClientLoginInfo `gorm:"type:json;comment:多端登陆详情"`
-	IgnoreData      User_IgnoreData      `gorm:"-:all;comment:标签"`
-	State           User_State           `gorm:"type:int;comment:状态"`
-	Phone           *string              `gorm:"type:varchar(25);default:;comment:名称;uniqueIndex:uidx_phone"`
+func (x *TUser) TableName() string {
+	return "my_user"
 }
 
-func (x *TUser) ToSource() *User {
+type TUser struct {
+	Id              uint64               `gorm:"comment:主键;primaryKey" json:"id"`
+	IsValidated     bool                 `gorm:"type:bool;comment:是否验证" json:"is_validated"`
+	Name            string               `gorm:"type:varchar(255);comment:名称;index:idx_name,class:FULLTEXT;index:idx_age_name,priority:2" json:"name"`
+	Age             *uint32              `gorm:"type:int;comment:年龄;index:idx_age_name,priority:1" json:"age"`
+	CreatedAt       User_CreatedAt       `gorm:"type:date;comment:创建时间" json:"created_at"`
+	UpdatedAt       User_UpdatedAt       `gorm:"type:time;comment:更新时间" json:"updated_at"`
+	DeletedAt       User_DeletedAt       `gorm:"type:datetime;comment:删除时间" json:"deleted_at"`
+	Detail1         *UserInfo            `gorm:"type:json;comment:详情" json:"detail1"`
+	DetailBlob1     *User_DetailBlob     `gorm:"type:blob;comment:详情" json:"detail_blob1"`
+	Avatar          User_Avatar          `gorm:"type:blob;comment:头像" json:"avatar"`
+	Tags            User_Tags            `gorm:"-:all;comment:标签列表" json:"tags"`
+	GroupTags       User_GroupTags       `gorm:"type:json;comment:标签名称" json:"group_tags"`
+	ClientLoginInfo User_ClientLoginInfo `gorm:"type:json;comment:多端登陆详情" json:"client_login_info"`
+	IgnoreData      User_IgnoreData      `gorm:"-:all;comment:标签" json:"ignore_data"`
+	State           User_State           `gorm:"type:int;comment:状态" json:"state"`
+	Phone           *string              `gorm:"type:varchar(25);default:;comment:名称;uniqueIndex:uidx_phone" json:"phone"`
+}
+
+func (x *TUser) ToSource() dbx.IModel {
 	return &User{
 		Id:              x.Id,
 		IsValidated:     x.IsValidated,
@@ -193,7 +199,7 @@ func (x *TUser) ToSource() *User {
 	}
 }
 
-func (x *User) ToORM() *TUser {
+func (x *User) ToORM() dbx.ITModel {
 	return &TUser{
 		Id:              x.Id,
 		IsValidated:     x.IsValidated,
@@ -390,19 +396,23 @@ func (x *Record) TableName() string {
 	return "my_record"
 }
 
-type TRecord struct {
-	Id        uint64         `gorm:"comment:主键;primarykey"`
-	CorpId    uint64         `gorm:"comment:企业ID"`
-	CreatedAt uint32         `gorm:"comment:创建时间"`
-	UpdatedAt uint32         `gorm:"comment:更新时间"`
-	DeletedAt uint32         `gorm:"comment:删除时间"`
-	Status1   Record_Status  `gorm:"comment:状态"`
-	Content   string         `gorm:"comment:内容"`
-	Rules     Record_Rules   `gorm:"type:json;comment:规则详情"`
-	Status2   *Record_Status `gorm:"comment:状态"`
+func (x *TRecord) TableName() string {
+	return "my_record"
 }
 
-func (x *TRecord) ToSource() *Record {
+type TRecord struct {
+	Id        uint64         `gorm:"comment:主键;primaryKey" json:"id"`
+	CorpId    uint64         `gorm:"comment:企业ID" json:"corp_id"`
+	CreatedAt uint32         `gorm:"comment:创建时间" json:"created_at"`
+	UpdatedAt uint32         `gorm:"comment:更新时间" json:"updated_at"`
+	DeletedAt uint32         `gorm:"comment:删除时间" json:"deleted_at"`
+	Status1   Record_Status  `gorm:"comment:状态" json:"status1"`
+	Content   string         `gorm:"comment:内容" json:"content"`
+	Rules     Record_Rules   `gorm:"type:json;comment:规则详情" json:"rules"`
+	Status2   *Record_Status `gorm:"comment:状态" json:"status2"`
+}
+
+func (x *TRecord) ToSource() dbx.IModel {
 	return &Record{
 		Id:        x.Id,
 		CorpId:    x.CorpId,
@@ -416,7 +426,7 @@ func (x *TRecord) ToSource() *Record {
 	}
 }
 
-func (x *Record) ToORM() *TRecord {
+func (x *Record) ToORM() dbx.ITModel {
 	return &TRecord{
 		Id:        x.Id,
 		CorpId:    x.CorpId,

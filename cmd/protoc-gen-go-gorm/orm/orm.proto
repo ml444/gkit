@@ -1,4 +1,3 @@
-//go:generate protoc --proto_path=. --go_out=paths=source_relative:. -I=$HOME/github.com/ml444/gctl-templates/protos ./orm/orm.proto
 syntax = "proto3";
 package orm;
 
@@ -14,18 +13,6 @@ extend google.protobuf.MessageOptions {
     optional string table_name = 1172;
 
     repeated IndexClause index_clauses = 1173;
-
-    // option (orm.use_index) = "idx_name";
-//    // option (orm.use_index) = "idx_age";
-//    repeated string use_index = 1173;
-//    // option (orm.force_index) = "ForJoin(idx_name,idx_name2)";
-//    // option (orm.force_index) = "ForGroupBy(idx_name,idx_name2)";
-//    // option (orm.force_index) = "ForOrderBy(idx_name,idx_name2)";
-//    optional string force_index = 1174;
-//    // option (orm.ignore_index) = "ForJoin(idx_name,idx_name2)";
-//    // option (orm.ignore_index) = "ForGroupBy(idx_name,idx_name2)";
-//    // option (orm.ignore_index) = "ForOrderBy(idx_name,idx_name2)";
-//    optional string ignore_index = 1175;
 }
 
 enum IndexOpKind {
@@ -56,6 +43,8 @@ enum TimestampKind {
     MILLI = 2;
     NANO = 3;
 }
+
+// NOTE: These fields are defined from https://gorm.io/docs/models.html#Fields-Tags
 
 message ORMTags {
     // 指定 db 列名
@@ -114,13 +103,13 @@ message ORMTags {
     // type User struct {
     //     Name string `gorm:"index:,option:CONCURRENTLY"`
     // }
-    repeated string indexs = 8;
+    repeated string index = 8;
     // uniqueIndex 标签的作用与 index 类似，它等效于 index:,unique
     // type User struct {
     //    Name  string `gorm:"uniqueIndex"`
     //    Name2 string `gorm:"uniqueIndex:idx_name"`
     // }
-    repeated string unique_indexs = 9;
+    repeated string unique_index = 9;
 
     // 定义列数据类型的大小或长度，例如 size: 256
     optional int64 size = 10;

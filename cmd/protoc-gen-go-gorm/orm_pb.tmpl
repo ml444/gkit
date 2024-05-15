@@ -4,7 +4,7 @@ import (
 	"{{ . }}"
 	{{ end }}
 
-	model "github.com/ml444/gkit/cmd/protoc-gen-go-gorm/model"
+	"github.com/ml444/gkit/dbx"
 )
 
 {{ range .Commons -}}
@@ -28,7 +28,7 @@ type T{{ .Name }} struct {
 	{{ end }}
 }
 
-func (x *T{{ .Name }}) ToSource() model.IModel {
+func (x *T{{ .Name }}) ToSource() dbx.IModel {
 	return &{{ .Name }}{
 	    {{ range .Fields -}}
 	    {{ if eq .NewType .OldType -}}
@@ -40,7 +40,7 @@ func (x *T{{ .Name }}) ToSource() model.IModel {
 	}
 }
 
-func (x *{{ .Name }}) ToORM() model.ITModel {
+func (x *{{ .Name }}) ToORM() dbx.ITModel {
 	return &T{{ .Name }}{
 	    {{ range .Fields -}}
 	    {{ if eq .NewType .OldType -}}

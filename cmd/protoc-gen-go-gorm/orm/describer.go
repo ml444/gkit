@@ -1,10 +1,8 @@
-package desc
+package orm
 
 import (
 	"fmt"
 	"strings"
-
-	"github.com/ml444/gkit/cmd/protoc-gen-go-gorm/orm"
 )
 
 type FileDesc struct {
@@ -25,7 +23,7 @@ type MessageDesc struct {
 
 type MessageOpts struct {
 	TableName    string
-	IndexClauses []*orm.IndexClause
+	IndexClauses []*IndexClause
 	// ForceIndex   string
 	// IgnoreIndex string
 }
@@ -54,7 +52,7 @@ func JoinTags(jsonName string, args ...string) string {
 	return strings.Join(args, " ")
 }
 
-func JoinORMTags(tags *orm.ORMTags) string {
+func JoinORMTags(tags *ORMTags) string {
 	var result []string
 	if tags.IgnoreRw != nil && *tags.IgnoreRw {
 		result = append(result, "-")
@@ -95,15 +93,15 @@ func JoinORMTags(tags *orm.ORMTags) string {
 		result = append(result, "comment:"+*tags.Comment)
 	}
 	if tags.PrimaryKey != nil && *tags.PrimaryKey {
-		result = append(result, "primarykey")
+		result = append(result, "primaryKey")
 	}
-	if len(tags.Indexs) > 0 {
-		for _, index := range tags.Indexs {
+	if len(tags.Index) > 0 {
+		for _, index := range tags.Index {
 			result = append(result, "index:"+index)
 		}
 	}
-	if len(tags.UniqueIndexs) > 0 {
-		for _, index := range tags.UniqueIndexs {
+	if len(tags.UniqueIndex) > 0 {
+		for _, index := range tags.UniqueIndex {
 			result = append(result, "uniqueIndex:"+index)
 		}
 	}
@@ -157,11 +155,11 @@ func JoinORMTags(tags *orm.ORMTags) string {
 	return fmt.Sprintf(`gorm:"%s"`, strings.Join(result, ";"))
 }
 
-func TimeKindToString(kind orm.TimestampKind) string {
+func TimeKindToString(kind TimestampKind) string {
 	switch kind {
-	case orm.TimestampKind_NANO:
+	case TimestampKind_NANO:
 		return "nano"
-	case orm.TimestampKind_MILLI:
+	case TimestampKind_MILLI:
 		return "milli"
 	default:
 		return ""

@@ -1,4 +1,4 @@
-//go:generate protoc --go_out=. --go-gorm_out=. -I=$HOME/github.com/ml444/gkit/cmd/protoc-gen-go-gorm -I=$HOME/github.com/ml444/gctl-templates/protos user.proto
+//protoc --go_out=. --go-gorm_out=. -I=$HOME/github.com/ml444/gkit/cmd/protoc-gen-go-gorm -I=$HOME/github.com/ml444/gctl-templates/protos user.proto
 syntax = "proto3";
 
 package user;
@@ -40,8 +40,8 @@ message User {
     }
     uint64 id = 1 [(orm.tags) = {primary_key: true, comment: "主键"}];
     bool is_validated = 2 [(orm.tags) = {type: "bool", comment: "是否验证"}];
-    string name = 3 [(orm.tags) = {type: "varchar(255)", indexs: ["idx_name,class:FULLTEXT", "idx_age_name,priority:2"], comment: "名称"}];
-    optional uint32 age = 4 [(orm.tags) = {type: "int", indexs: ["idx_age_name,priority:1"], comment: "年龄"}];
+    string name = 3 [(orm.tags) = {type: "varchar(255)", index: ["idx_name,class:FULLTEXT", "idx_age_name,priority:2"], comment: "名称"}];
+    optional uint32 age = 4 [(orm.tags) = {type: "int", index: ["idx_age_name,priority:1"], comment: "年龄"}];
     uint32 created_at = 5 [(orm.tags) = {type: "date", comment: "创建时间"}];
     uint32 updated_at = 6 [(orm.tags) = {type: "time", comment: "更新时间"}];
     uint32 deleted_at = 7 [(orm.tags) = {type: "datetime", comment: "删除时间"}];
@@ -53,7 +53,7 @@ message User {
     map<int32, UserInfo> client_login_info = 14 [(orm.tags) = {type: "json", comment: "多端登陆详情"}];
     map<uint64, UserInfo> ignore_data = 15 [(orm.tags) = {ignore_all: true, comment: "标签"}];
     State state = 16 [(orm.tags) = {type: "int", comment: "状态"}];
-    optional string phone = 17 [(orm.tags) = {type: "varchar(25)", unique_indexs: "uidx_phone", default: "", comment: "名称"}];
+    optional string phone = 17 [(orm.tags) = {type: "varchar(25)", unique_index: "uidx_phone", default: "", comment: "名称"}];
 }
 
 message Record {
