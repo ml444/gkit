@@ -53,18 +53,19 @@ func TestNewConfig(t *testing.T) {
 	//cfg0 := InitConfig(testConfig{})
 	//t.Log(cfg0)
 	os.Setenv("CONN_MAX_LIFE_TIME", "1234567890")
-	sptr1 := "fo"
-	sptr2 := "ba"
+	s1 := "fo"
+	s2 := "ba"
 	cfg := &testConfig{
+		GroupNameList: []string{"${HOME}", "group2"},
 		DBCfgPtr: &dbCfg{
-			URI:             "",
+			URI:             "This is a ${HOME} directory and it belongs to ${USER}.",
 			ConnMaxLifeTime: 1,
 			ConnMaxIdleTime: 2,
 			MaxOpenConns:    3,
 			MaxIdleConns:    4,
 			Acc: &Anonymous{
-				Account:    []*string{&sptr1, &sptr2},
-				Password:   []string{sptr1, sptr2},
+				Account:    []*string{&s1, &s2},
+				Password:   []string{s1, s2},
 				permission: 0,
 			},
 		}}
@@ -84,6 +85,11 @@ func TestNewConfig(t *testing.T) {
 	if reflect.DeepEqual(cfg.Map, map[string]interface{}{"a": 1, "b": 2}) {
 		t.Error("the env default is not set correctly")
 	}
+	if cfg.GroupNameList[0] == "${HOME}" {
+		t.Error("the env default is not set correctly")
+	} else {
+		t.Log(cfg.GroupNameList)
+	}
 	_ = cfgDefault.SetAndChangeEnv("String", "test")
 	_ = cfgDefault.SetAndChangeEnv("Uint", "456")
 	_ = cfgDefault.SetAndChangeEnv("UintPtr", "456")
@@ -100,8 +106,10 @@ func TestNewConfig(t *testing.T) {
 	if !reflect.DeepEqual(cfg.Map, map[string]interface{}{"a": "11", "b": "22"}) {
 		t.Error("don't get the value of env")
 	}
-	t.Log(cfgDefault)
-	t.Log(cfg.DBCfgPtr.Acc)
+	t.Log(cfg.DBCfgPtr.URI)
+	if cfg.DBCfgPtr.URI == "This is a ${HOME} directory and it belongs to ${USER}." {
+		t.Error("ReplaceEnvVariables failed")
+	}
 	err = cfgDefault.Set("DBCfgPtr__URI", "mysql://root:123456@localhost:3306/test?charset=utf8mb4&parseTime=True&loc=Local")
 	if err != nil {
 		t.Error(err)

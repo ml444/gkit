@@ -158,6 +158,20 @@ func (c *Config) buildMap(key string, v reflect.Value) (err error) {
 			} else {
 				value = vv.Interface()
 			}
+			if s, ok := value.(string); ok && s != "" {
+				value = ReplaceEnvVariables(s)
+				vv.Set(reflect.ValueOf(value))
+			}
+			// []string
+			if vv.Kind() == reflect.Slice && vv.Type().Elem().Kind() == reflect.String {
+				for i := 0; i < vv.Len(); i++ {
+					s := vv.Index(i).String()
+					if s == "" {
+						continue
+					}
+					vv.Index(i).Set(reflect.ValueOf(ReplaceEnvVariables(s)))
+				}
+			}
 			var mValue = Value{value: value}
 			if err = parseFieldTagWithFlag(rtField, vv, &mValue, &c.useFlag); err != nil && !c.ignoreErr {
 				return err

@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -192,4 +194,25 @@ func str2Any(strValue string, t reflect.Type) (v interface{}, err error) {
 	}
 
 	return reflect.Zero(t).Interface(), nil
+}
+
+// ReplaceEnvVariables Find an environment variable in a string and replace it with its value
+func ReplaceEnvVariables(input string) string {
+	if input == "" {
+		return input
+	}
+	// Define a regular expression to match environment variables of the form ${ENV_VAR}
+	envVariableRegex := regexp.MustCompile(`\$\{([^\}]+)\}`)
+
+	// Replace the function and get its value based on the matched environment variable
+	replacer := func(match string) string {
+		envVariableName := strings.Trim(match, "${}")
+		envVariableValue := os.Getenv(envVariableName)
+		return envVariableValue
+	}
+
+	// Use the replacement function to replace all matching environment variables
+	output := envVariableRegex.ReplaceAllStringFunc(input, replacer)
+
+	return output
 }
