@@ -47,7 +47,10 @@ func (p *Paginate) SetSkipCount() *Paginate {
 }
 
 func (p *Paginate) Offset() int {
-	return int(p.Size * p.Page)
+	if p.Page <= 1 {
+		return 0
+	}
+	return int(p.Size * (p.Page - 1))
 }
 
 func (x *Scroll) SetSize(size uint32) *Scroll {
