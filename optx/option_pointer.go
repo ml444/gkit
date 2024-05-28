@@ -1,7 +1,6 @@
 package optx
 
 import (
-	"fmt"
 	"reflect"
 )
 
@@ -16,20 +15,10 @@ func NewPtrProcessor() *PtrProcessor {
 		ptrHandlerMap: make(map[string]handleFunc),
 	}
 }
-func (p *PtrProcessor) AddHandle(key interface{}, h handleFunc) *PtrProcessor {
-	p.ptrHandlerMap[toString(key)] = h
-	return p
-}
 
-func toString(key interface{}) string {
-	switch x := key.(type) {
-	case string:
-		return x
-	case *string:
-		return *x
-	default:
-		return fmt.Sprintf("%v", x)
-	}
+func (p *PtrProcessor) AddHandle(fieldName string, h handleFunc) *PtrProcessor {
+	p.ptrHandlerMap[fieldName] = h
+	return p
 }
 
 func (p *PtrProcessor) Process(opts interface{}) error {
