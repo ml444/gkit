@@ -27,15 +27,16 @@ var (
 // Server is an HTTP server wrappedCtx.
 type Server struct {
 	*http.Server
-	listener    net.Listener
-	tlsConf     *tls.Config
-	endpoint    *url.URL
-	network     string
-	address     string
-	timeout     time.Duration
-	router      IRouter
-	routerCfg   *RouterCfg
-	middlewares []middleware.Middleware
+	listener            net.Listener
+	tlsConf             *tls.Config
+	endpoint            *url.URL
+	network             string
+	address             string
+	timeout             time.Duration
+	router              IRouter
+	routerCfg           *RouterCfg
+	middlewares         []middleware.Middleware
+	disableTransportCtx bool
 }
 
 func NewServer(opts ...ServerOption) *Server {
@@ -89,25 +90,28 @@ func (s *Server) globalMiddleware() middleware.HttpMiddleware {
 				ctx, cancel = context.WithCancel(req.Context())
 			}
 			defer cancel()
-
-			pathTemplate := req.URL.Path
-			if route := mux.CurrentRoute(req); route != nil {
-				// /path/123 -> /path/{id}
-				pathTemplate, _ = route.GetPathTemplate()
+			if !s.disableTransportCtx {
+				pathTemplate := req.URL.Path
+				if route := mux.CurrentRoute(req); route != nil {
+					// /path/123 -> /path/{id}
+					pathTemplate, _ = route.GetPathTemplate()
+				}
+				tr := &Transport{
+					BaseTransport: transport.BaseTransport{
+						Operation: pathTemplate,
+						InHeader:  header.New(req.Header),
+						//OutHeader: header.New(w.Header()),
+					},
+				}
+				if s.endpoint != nil {
+					tr.Endpoint = s.endpoint.String()
+				}
+				req = req.WithContext(transport.ToContext(ctx, tr))
+				defer func() {
+					tr.OutHeader = header.New(w.Header())
+				}()
 			}
-			//log.Debugf("%s %s\n", req.Method, pathTemplate)
-			tr := &Transport{
-				BaseTransport: transport.BaseTransport{
-					Operation: pathTemplate,
-					InHeader:  header.New(req.Header),
-					OutHeader: header.New(w.Header()),
-				},
-			}
-			if s.endpoint != nil {
-				tr.Endpoint = s.endpoint.String()
-			}
-			tr.Request = req.WithContext(transport.ToContext(ctx, tr))
-			next.ServeHTTP(w, tr.Request)
+			next.ServeHTTP(w, req)
 		})
 	}
 }

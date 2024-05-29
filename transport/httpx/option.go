@@ -27,7 +27,7 @@ func Address(addr string) ServerOption {
 	}
 }
 
-// Endpoint with server address.
+// Endpoint with server endpoint address.
 func Endpoint(endpoint *url.URL) ServerOption {
 	return func(s *Server) {
 		s.endpoint = endpoint
@@ -52,6 +52,13 @@ func TLSConfig(c *tls.Config) ServerOption {
 func Listener(lis net.Listener) ServerOption {
 	return func(s *Server) {
 		s.listener = lis
+	}
+}
+
+// DisableTransportCtx cancel default Transport context handling
+func DisableTransportCtx() ServerOption {
+	return func(s *Server) {
+		s.disableTransportCtx = true
 	}
 }
 
@@ -92,21 +99,21 @@ func RouterUseEncodedPath() ServerOption {
 	}
 }
 
-// RouterNotFoundHandler
+// RouterNotFoundHandler Set up `404 NOT FOUND` handler function
 func RouterNotFoundHandler(handler http.Handler) ServerOption {
 	return func(s *Server) {
 		s.routerCfg.NotFoundHandler = handler
 	}
 }
 
-// RouterMethodNotAllowedHandler
+// RouterMethodNotAllowedHandler Set up `405 MethodNotAllowed` handler function
 func RouterMethodNotAllowedHandler(handler http.Handler) ServerOption {
 	return func(s *Server) {
 		s.routerCfg.MethodNotAllowedHandler = handler
 	}
 }
 
-// RouterCoder
+// RouterCoder Customize request parameter and body decoders as well as normal response and error response encoders
 func RouterCoder(coder IRouterCoder) ServerOption {
 	return func(s *Server) {
 		s.routerCfg.Coder = coder

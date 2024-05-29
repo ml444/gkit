@@ -47,7 +47,7 @@ func EnableHealth() ServerOption {
 // Credentials with server credentials.
 func Credentials(creds credentials.TransportCredentials) ServerOption {
 	return func(s *Server) {
-		s.creds = creds
+		s.credentials = creds
 	}
 }
 
@@ -76,5 +76,12 @@ func StreamInterceptor(in ...grpc.StreamServerInterceptor) ServerOption {
 func Options(opts ...grpc.ServerOption) ServerOption {
 	return func(s *Server) {
 		s.grpcOpts = opts
+	}
+}
+
+// DisableTransportCtx cancel default Transport context handling
+func DisableTransportCtx() ServerOption {
+	return func(s *Server) {
+		s.disableTransportCtx = true
 	}
 }

@@ -19,7 +19,7 @@ func (tr *Transport) GetKind() transport.Kind {
 	return transport.KindGRPC
 }
 
-func GetTransportFromGrpcClient(ctx context.Context, method string, cc *grpc.ClientConn, header header.IHeader) transport.ITransport {
+func ClientTransport(ctx context.Context, method string, cc *grpc.ClientConn, header header.IHeader) transport.ITransport {
 	return &Transport{
 		BaseTransport: transport.BaseTransport{
 			Endpoint:  cc.Target(),

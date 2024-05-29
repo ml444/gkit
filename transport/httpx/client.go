@@ -106,7 +106,6 @@ func (client *Client) Invoke(ctx context.Context, method, path string, args inte
 			Operation: c.operation,
 			InHeader:  header.Header(req.Header),
 		},
-		Request: req,
 		//pathTemplate: c.pathTemplate,
 	})
 	return client.invoke(ctx, req, args, reply, c, opts...)

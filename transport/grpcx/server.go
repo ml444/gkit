@@ -24,20 +24,21 @@ import (
 
 type Server struct {
 	*xds.GRPCServer
-	name               string
-	network            string
-	address            string
-	endpoint           string
-	middlewares        []middleware.Middleware
-	grpcOpts           []grpc.ServerOption
-	unaryInterceptors  []grpc.UnaryServerInterceptor
-	streamInterceptors []grpc.StreamServerInterceptor
-	creds              credentials.TransportCredentials
-	tlsConf            *tls.Config
-	health             *health.Server
-	timeout            time.Duration
-	enableHealth       bool
-	debug              bool
+	name                string
+	network             string
+	address             string
+	endpoint            string
+	middlewares         []middleware.Middleware
+	grpcOpts            []grpc.ServerOption
+	unaryInterceptors   []grpc.UnaryServerInterceptor
+	streamInterceptors  []grpc.StreamServerInterceptor
+	credentials         credentials.TransportCredentials
+	tlsConf             *tls.Config
+	health              *health.Server
+	timeout             time.Duration
+	enableHealth        bool
+	debug               bool
+	disableTransportCtx bool
 }
 
 func NewServer(registerFunc func(s grpc.ServiceRegistrar), opts ...ServerOption) *Server {
@@ -47,8 +48,8 @@ func NewServer(registerFunc func(s grpc.ServiceRegistrar), opts ...ServerOption)
 		address: ":5040",
 		health:  health.NewServer(),
 	}
-	s.unaryInterceptors = append(s.unaryInterceptors, s.unaryServerInterceptor())
-	s.streamInterceptors = append(s.streamInterceptors, s.streamServerInterceptor())
+	s.unaryInterceptors = append(s.unaryInterceptors, s.defaultUnaryInterceptor())
+	s.streamInterceptors = append(s.streamInterceptors, s.defaultStreamInterceptor())
 	for _, o := range opts {
 		o(s)
 	}
@@ -58,8 +59,8 @@ func NewServer(registerFunc func(s grpc.ServiceRegistrar), opts ...ServerOption)
 	)
 	if s.tlsConf != nil {
 		s.grpcOpts = append(s.grpcOpts, grpc.Creds(credentials.NewTLS(s.tlsConf)))
-	} else if s.creds != nil {
-		s.grpcOpts = append(s.grpcOpts, grpc.Creds(s.creds))
+	} else if s.credentials != nil {
+		s.grpcOpts = append(s.grpcOpts, grpc.Creds(s.credentials))
 	} else {
 		s.grpcOpts = append(s.grpcOpts, grpc.Creds(insecure.NewCredentials()))
 	}
@@ -99,35 +100,39 @@ func (s *Server) Stop() error {
 >>>>>>>>>>>> server interceptor <<<<<<<<<<<<<
 */
 
-func (s *Server) unaryServerInterceptor() grpc.UnaryServerInterceptor {
+func (s *Server) defaultUnaryInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		md, _ := grpcmd.FromIncomingContext(ctx)
-		outHeader := grpcmd.MD{}
-		tr := &Transport{
-			BaseTransport: transport.BaseTransport{
-				Endpoint:  s.endpoint,
-				Operation: info.FullMethod,
-				InHeader:  header.Header(md),
-				OutHeader: header.Header(outHeader),
-			},
-		}
-		ctx = transport.ToContext(ctx, tr)
 		if s.timeout > 0 {
 			var cancel context.CancelFunc
 			ctx, cancel = context.WithTimeout(ctx, s.timeout)
 			defer cancel()
 		}
+		if !s.disableTransportCtx {
+			md, _ := grpcmd.FromIncomingContext(ctx)
+			outHeader := grpcmd.MD{}
+			tr := &Transport{
+				BaseTransport: transport.BaseTransport{
+					Endpoint:  s.endpoint,
+					Operation: info.FullMethod,
+					InHeader:  header.Header(md),
+					OutHeader: header.Header(outHeader),
+				},
+			}
+			ctx = transport.ToContext(ctx, tr)
+			defer func() {
+				if len(outHeader) > 0 {
+					_ = grpc.SetHeader(ctx, outHeader)
+				}
+			}()
+		}
+
 		h := func(ctx context.Context, req interface{}) (interface{}, error) {
 			return handler(ctx, req)
 		}
 		if len(s.middlewares) > 0 {
 			h = middleware.Chain(s.middlewares...)(h)
 		}
-		reply, err := h(ctx, req)
-		if len(outHeader) > 0 {
-			_ = grpc.SetHeader(ctx, outHeader)
-		}
-		return reply, err
+		return h(ctx, req)
 	}
 }
 
@@ -148,27 +153,28 @@ func (w *wrappedStream) Context() context.Context {
 	return w.ctx
 }
 
-// streamServerInterceptor is a gRPC stream server interceptor
-func (s *Server) streamServerInterceptor() grpc.StreamServerInterceptor {
+// defaultStreamInterceptor is a gRPC stream server interceptor
+func (s *Server) defaultStreamInterceptor() grpc.StreamServerInterceptor {
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		ctx := ss.Context()
-		md, _ := grpcmd.FromIncomingContext(ctx)
-		outHeader := grpcmd.MD{}
-		ctx = transport.ToContext(ctx, &Transport{
-			BaseTransport: transport.BaseTransport{
-				Endpoint:  s.endpoint,
-				Operation: info.FullMethod,
-				InHeader:  header.Header(md),
-				OutHeader: header.Header(outHeader),
-			},
-		})
-
-		ws := NewWrappedStream(ctx, ss)
-
-		err := handler(srv, ws)
-		if len(outHeader) > 0 {
-			_ = grpc.SetHeader(ctx, outHeader)
+		if !s.disableTransportCtx {
+			ctx := ss.Context()
+			md, _ := grpcmd.FromIncomingContext(ctx)
+			outHeader := grpcmd.MD{}
+			ctx = transport.ToContext(ctx, &Transport{
+				BaseTransport: transport.BaseTransport{
+					Endpoint:  s.endpoint,
+					Operation: info.FullMethod,
+					InHeader:  header.Header(md),
+					OutHeader: header.Header(outHeader),
+				},
+			})
+			ss = NewWrappedStream(ctx, ss)
+			defer func() {
+				if len(outHeader) > 0 {
+					_ = grpc.SetHeader(ctx, outHeader)
+				}
+			}()
 		}
-		return err
+		return handler(srv, ss)
 	}
 }

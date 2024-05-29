@@ -12,15 +12,10 @@ var _ transport.ITransport = (*Transport)(nil)
 
 type Transport struct {
 	transport.BaseTransport
-	Request *http.Request
 }
 
 func (tr *Transport) GetKind() transport.Kind {
 	return transport.KindHTTP
-}
-
-func (tr *Transport) GetRequest() *http.Request {
-	return tr.Request
 }
 
 // SetOperation sets the transport Operation.
@@ -32,7 +27,7 @@ func SetOperation(ctx context.Context, op string) {
 	}
 }
 
-func GetTransportFromRequest(r *http.Request) transport.ITransport {
+func ClientTransport(r *http.Request) transport.ITransport {
 	return &Transport{
 		BaseTransport: transport.BaseTransport{
 			Endpoint:  r.URL.String(),
@@ -40,6 +35,5 @@ func GetTransportFromRequest(r *http.Request) transport.ITransport {
 			InHeader:  header.Header(r.Header),
 			OutHeader: nil,
 		},
-		Request: r,
 	}
 }
