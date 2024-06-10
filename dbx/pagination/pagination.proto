@@ -1,23 +1,23 @@
 syntax = "proto3";
 
-package paging;
+package pagination;
 
-option go_package = "github.com/ml444/gkit/dbx/paging;paging";
+option go_package = "github.com/ml444/gkit/dbx/pagination;pagination";
 
-// Classic paging mode. Use "Page" and "Size" for paging.
-message Paginate {
+// Classic pagination mode. Use "Page" and "Size" for pagination.
+message Pagination {
     // @desc: current page
     uint32 page = 1;
     // @desc: page size
     uint32 size = 2;
     // @desc: total number of data
-    int64 total = 3;
+    uint32 total = 3;
     // @desc: When SkipCount is true,
     // even if CurrentPage is equal to 1, don't count the total.
     bool skip_count = 4;
 }
 
-// Scroll: mode. Do not count the total, Use "Size" and "NextToken" for paging.
+// Scroll: mode. Do not count the total, Use "Size" and "NextToken" for pagination.
 //      through the "NextToken" keep getting the next page until the data is finished.
 message Scroll {
     // @desc: page size
@@ -25,6 +25,6 @@ message Scroll {
     // @desc: next page token
     string token = 2;
     // @desc: token expire time
-    int64 expire = 3;
+    uint32 expire = 3;
 }
 

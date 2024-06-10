@@ -7,7 +7,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/ml444/gkit/dbx/paging"
+	"github.com/ml444/gkit/dbx/pagination"
 )
 
 type IModel interface {
@@ -203,7 +203,7 @@ func (x *T) ListAll(opts interface{}) (interface{}, error) {
 	return result.Interface(), nil
 }
 
-func (x *T) ListWithPaginate(paginate *paging.Paginate, opts interface{}) (interface{}, *paging.Paginate, error) {
+func (x *T) ListWithPagination(paginate *pagination.Pagination, opts interface{}) (interface{}, *pagination.Pagination, error) {
 	var err error
 	scope := x.Scope()
 	if opts != nil {
@@ -220,8 +220,8 @@ func (x *T) ListWithPaginate(paginate *paging.Paginate, opts interface{}) (inter
 	}
 	listType := reflect.SliceOf(reflect.TypeOf(x.tModel))
 	tList := reflect.New(listType)
-	var newPaginate *paging.Paginate
-	newPaginate, err = scope.PaginateQuery(paginate, tList.Interface())
+	var newPagination *pagination.Pagination
+	newPagination, err = scope.PaginationQuery(paginate, tList.Interface())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -233,5 +233,5 @@ func (x *T) ListWithPaginate(paginate *paging.Paginate, opts interface{}) (inter
 		}
 		result = reflect.Append(result, reflect.ValueOf(m))
 	}
-	return result.Interface(), newPaginate, nil
+	return result.Interface(), newPagination, nil
 }

@@ -3,7 +3,7 @@ package dbx
 import (
 	"errors"
 
-	"github.com/ml444/gkit/dbx/paging"
+	"github.com/ml444/gkit/dbx/pagination"
 	"github.com/ml444/gkit/log"
 )
 
@@ -12,9 +12,9 @@ const (
 	MaxLimit     uint32 = 100000
 )
 
-func (s *Scope) PaginateQuery(opt *paging.Paginate, list interface{}) (*paging.Paginate, error) {
+func (s *Scope) PaginationQuery(opt *pagination.Pagination, list interface{}) (*pagination.Pagination, error) {
 	var err error
-	opt = s.HandlePaginate(opt)
+	opt = s.HandlePagination(opt)
 	offset := opt.Offset()
 
 	var total int64
@@ -33,7 +33,7 @@ func (s *Scope) PaginateQuery(opt *paging.Paginate, list interface{}) (*paging.P
 		log.Error(err.Error())
 		return nil, err
 	}
-	p := paging.Paginate{
+	p := pagination.Pagination{
 		Page:  opt.Page,
 		Size:  opt.Size,
 		Total: total,
@@ -41,9 +41,9 @@ func (s *Scope) PaginateQuery(opt *paging.Paginate, list interface{}) (*paging.P
 	return &p, nil
 }
 
-func (s *Scope) HandlePaginate(opt *paging.Paginate) *paging.Paginate {
+func (s *Scope) HandlePagination(opt *pagination.Pagination) *pagination.Pagination {
 	if opt == nil {
-		opt = &paging.Paginate{}
+		opt = &pagination.Pagination{}
 	}
 
 	if opt.Size == 0 {
