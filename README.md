@@ -35,11 +35,11 @@ package user;
 
 option go_package = "pkg/user";
 
-import "gkit/v/v.proto";
-import "gkit/err/err.proto";
-import "gkit/orm/orm.proto";
-import "gkit/pluck/pluck.proto";
-import "gkit/dbx/paging/paginate.proto";
+import "v/v.proto";
+import "err/err.proto";
+import "orm/orm.proto";
+import "pluck/pluck.proto";
+import "dbx/pagination/pagination.proto";
 import "google/api/annotations.proto";
 
 
@@ -163,10 +163,10 @@ message ListUserReq {
     optional string name = 2    [(v.rules).string = {min_len: 1, max_len: 50}];     // Verify that the string length is greater than or equal to 1 and less than or equal to 50
     optional string phone = 3   [(v.rules).string = {pattern: "\\d+", min_len:6, max_len: 25}];     // Verify that the string length is greater than or equal to 6, less than or equal to 25, and conforms to the regular expression
     optional string email = 4   [(v.rules).string.email = true];        // Verify whether it is the format of the email
-    paging.Paginate paginate = 5;
+    pagination.Pagination pagination = 5;
 }
 message ListUserRsp {
-    paging.Paginate paginate = 1;
+    pagination.Pagination pagination = 1;
     repeated ModelUser list = 2;
 }
 
@@ -215,11 +215,11 @@ $ tree
 ```
 
 ```
-import "gkit/v/v.proto";
-import "gkit/err/err.proto";
-import "gkit/orm/orm.proto";
-import "gkit/pluck/pluck.proto";
-import "gkit/dbx/paging/paginate.proto";
+import "v/v.proto";
+import "err/err.proto";
+import "orm/orm.proto";
+import "pluck/pluck.proto";
+import "dbx/pagination/pagination.proto";
 ```
 
 The internal import of proto is referenced`gctl-templates/protos/gkit`,
@@ -260,7 +260,7 @@ If you put these import files elsewhere, you can modify it to `import "your/path
 - **cmd**: protoc plugins
 - **config**: The configuration module defines the reading method of configuration items through structure tags, and supports configuration information obtained from the command line, environment variables, yaml, json, toml, etc.
 - **errorx**: The error handling module encapsulates the error handling methods in daily development, supports custom error codes and error messages, and supports automatically obtaining error messages and http status codes based on error codes.
-- **dbx**: The database module is secondary encapsulated based on gorm, encapsulates the chain method of query (Eq\In\Like...), and supports soft deletion and paging query.
+- **dbx**: The database module is secondary encapsulated based on gorm, encapsulates the chain method of query (Eq\In\Like...), and supports soft deletion and pagination query.
 - **optx**: It defines the conditional filtering method of list data, encapsulates its processing method for the two parameter passing methods (enumeration and pointer) of list query, and encapsulates its processor module.
 - **log**: The log module defines a log interface and outputs to standard output by default. The log implementation can be customized.Also encapsulates gorm’s log output,unified output to the specified logger.
 - **middleware**: The middleware module, It mainly includes middleware such as request and response logs, ratelimit, recovery, tracking, and parameter verification.
@@ -291,7 +291,7 @@ syntax = "proto3";
 
 package user;
 
-import "gkit/err/err.proto";     // Source File: github.com/ml444/gkit/cmd/protoc-gen-go-errcode/err/err.proto
+import "err/err.proto";     // Source File: github.com/ml444/gkit/cmd/protoc-gen-go-errcode/err/err.proto
 
 // range of error codes: [102000, 102999]
 enum ErrCode {
@@ -362,10 +362,10 @@ func main() {
 
 Secondary encapsulation based on gorm mainly includes the following functions:
 
-- Encapsulates the creation, update, query, and deletion of gorm. The query encapsulates the chain method (Eq\Gt\Lt\In\Not In\Between...), making it easier to use, and supports soft deletion and paging query.
+- Encapsulates the creation, update, query, and deletion of gorm. The query encapsulates the chain method (Eq\Gt\Lt\In\Not In\Between...), making it easier to use, and supports soft deletion and pagination query.
 - The parameter structure `QueryOpts` that encapsulates complex queries can make it easier to process query conditions under some complex queries.
 - For `Not Found Record` error handling, the error code and error message can be customized.
-- The `dbx.paging` module of list paging query makes paging list query easier to use.
+- The `dbx.pagination` module of list paging query makes paging list query easier to use.
 
 Basic usage：
 
@@ -376,7 +376,7 @@ import (
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"github.com/ml444/gkit/dbx"
-	"github.com/ml444/gkit/dbx/paging"
+	"github.com/ml444/gkit/dbx/pagination"
 )
 
 type ModelUser struct {
@@ -426,9 +426,9 @@ func main() {
 	// select data: SELECT * FROM `model_user` WHERE `deleted_at` = 0 AND `name` Like 'test%' AND `age` <= 25 LIMIT 10 OFFSET 0
 	var users []*ModelUser
 	err = scope.LikePrefix("name", "test").Lte("age", 25).Limit(10).Offset(0).Find(&users)
-	// Or use paginate query to get total count
-	paginate, err := scope.LikePrefix("name", "test").Lte("age", 25).PaginateQuery(&paging.Paginate{Page: 1, Size: 10, SkipCount: false}, &users)
-	// paginate: Paginate{Total: 100, Page: 1, Size: 10} 
+	// Or use pagination query to get total count
+	pagination, err := scope.LikePrefix("name", "test").Lte("age", 25).PaginateQuery(&pagination.Pagination{Page: 1, Size: 10, SkipCount: false}, &users)
+	// pagination: Paginate{Total: 100, Page: 1, Size: 10} 
 
 	// GroupBy and Having
 	var userGroup []*GroupBy
@@ -441,7 +441,7 @@ func main() {
 
 #### Paging query
 
-The data structure of paging query is defined through `paging/paginate.proto`, 
+The data structure of pagination query is defined through `pagination/pagination.proto`, 
 and different paging methods can be selected according to the actual situation.
 There are also two ways to use pagination queries:
 
@@ -455,11 +455,11 @@ front-end engineer to cache the total number obtained for the first page.
 Paginated database queries can use the `Scope.PaginateQuery()` method, 
 which internally calls `Count()` and `Find()`.
 
-**Proto definition of paging mode**：
+**Proto definition of pagination mode**：
 
 ```protobuf
 syntax = "proto3";
-import "dbx/paging/paging.proto";
+import "dbx/pagination/pagination.proto";
 /*
 message Paginate {
   uint32 page = 1;
@@ -470,11 +470,11 @@ message Paginate {
  */
 
 message ListUserReq {
-    paging.Paginate paginate = 1;   // Number of pages and quantity per page must be required 
+    pagination.Pagination pagination = 1;   // Number of pages and quantity per page must be required 
 }
 
 message ListUserRsp {
-    paging.Paginate paginate = 1;
+    pagination.Pagination pagination = 1;
 }
 ```
 
@@ -482,9 +482,9 @@ message ListUserRsp {
 
 ```protobuf
 syntax = "proto3";
-import "dbx/paging/paging.proto";
+import "dbx/pagination/pagination.proto";
 message ListUserReq {
-    paging.Scroll scroll = 1;     // Scroll page query
+    pagination.Scroll scroll = 1;     // Scroll page query
 }
 message ListUserRsp {
     repeated ModelUser list = 2;

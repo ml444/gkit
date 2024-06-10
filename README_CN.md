@@ -38,11 +38,11 @@ package user;
 
 option go_package = "pkg/user";
 
-import "gkit/v/v.proto";
-import "gkit/err/err.proto";
-import "gkit/orm/orm.proto";
-import "gkit/pluck/pluck.proto";
-import "gkit/dbx/paging/paginate.proto";
+import "v/v.proto";
+import "err/err.proto";
+import "orm/orm.proto";
+import "pluck/pluck.proto";
+import "dbx/pagination/pagination.proto";
 import "google/api/annotations.proto";
 
 
@@ -166,10 +166,10 @@ message ListUserReq {
     optional string name = 2    [(v.rules).string = {min_len: 1, max_len: 50}];     // 校验字符串长度大于等于1，小于等于50
     optional string phone = 3   [(v.rules).string = {pattern: "\\d+", min_len:6, max_len: 25}];     // 校验字符串长度大于等于6，小于等于25，并且符合正则表达式
     optional string email = 4   [(v.rules).string.email = true];        // 校验是否是邮箱的格式
-    paging.Paginate paginate = 5;
+    pagination.Pagination pagination = 5;
 }
 message ListUserRsp {
-    paging.Paginate paginate = 1;
+    pagination.Pagination pagination = 1;
     repeated ModelUser list = 2;
 }
 
@@ -221,11 +221,11 @@ $ tree
 ```
 
 ```
-import "gkit/v/v.proto";
-import "gkit/err/err.proto";
-import "gkit/orm/orm.proto";
-import "gkit/pluck/pluck.proto";
-import "gkit/dbx/paging/paginate.proto";
+import "v/v.proto";
+import "err/err.proto";
+import "orm/orm.proto";
+import "pluck/pluck.proto";
+import "dbx/pagination/pagination.proto";
 ```
 
 proto内部import是引用了`gctl-templates/protos/gkit`,
@@ -296,7 +296,7 @@ syntax = "proto3";
 
 package user;
 
-import "gkit/err/err.proto";     // 源文件: github.com/ml444/gkit/cmd/protoc-gen-go-errcode/err/err.proto
+import "err/err.proto";     // 源文件: github.com/ml444/gkit/cmd/protoc-gen-go-errcode/err/err.proto
 
 // range of error codes: [102000, 102999]
 enum ErrCode {
@@ -371,7 +371,7 @@ func main() {
 - 封装gorm的增删改查，查询封装了链式方法(Eq\Gt\Lt\In\NotIn\Between...)，使其更易于使用，并支持软删除以及分页查询。
 - 封装了复杂查询的参数结构`QueryOpts`, 在一些复杂的查询下，可以更方便地处理查询条件。
 - 针对NotFoundRecord的错误处理，可以自定义错误码和错误信息。
-- 封装列表的分页查询`dbx.paging`，使分页查询更易于使用。
+- 封装列表的分页查询`dbx.pagination`，使分页查询更易于使用。
 
 基础使用：
 
@@ -382,7 +382,7 @@ import (
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"github.com/ml444/gkit/dbx"
-	"github.com/ml444/gkit/dbx/paging"
+	"github.com/ml444/gkit/dbx/pagination"
 )
 
 type ModelUser struct {
@@ -432,9 +432,9 @@ func main() {
 	// select data: SELECT * FROM `model_user` WHERE `deleted_at` = 0 AND `name` Like 'test%' AND `age` <= 25 LIMIT 10 OFFSET 0
 	var users []*ModelUser
 	err = scope.LikePrefix("name", "test").Lte("age", 25).Limit(10).Offset(0).Find(&users)
-	// Or use paginate query to get total count
-	paginate, err := scope.LikePrefix("name", "test").Lte("age", 25).PaginateQuery(&paging.Paginate{Page: 1, Size: 10, SkipCount: false}, &users)
-	// return paginate: Paginate{Total: 100, Page: 1, Size: 10} 
+	// Or use pagination query to get total count
+	pag, err := scope.LikePrefix("name", "test").Lte("age", 25).PaginateQuery(&pagination.Pagination{Page: 1, Size: 10, SkipCount: false}, &users)
+	// return pagination: Paginate{Total: 100, Page: 1, Size: 10} 
 
 	// GroupBy and Having
 	var userGroup []*GroupBy
@@ -447,7 +447,7 @@ func main() {
 
 #### 分页查询
 
-分页查询的参数和结果返回，都是通过`paging.Paginate`来定义的，可以根据实际情况来选择不同分页方式。
+分页查询的参数和结果返回，都是通过`pagination.Pagination`来定义的，可以根据实际情况来选择不同分页方式。
 分页查询也有两种使用方式：
 
 1. 通过指定页数和每页数量来查询。
@@ -461,7 +461,7 @@ _**注意**_：分页查询时可以在第二页之后调用`skip_count`参数�
 
 ```protobuf
 syntax = "proto3";
-import "dbx/paging/paging.proto";
+import "dbx/pagination/pagination.proto";
 /*
 message Paginate {
   uint32 page = 1;
@@ -472,11 +472,11 @@ message Paginate {
  */
 
 message ListUserReq {
-    paging.Paginate paginate = 1;   // 指定页数和每页数量 
+    pagination.Pagination pagination = 1;   // 指定页数和每页数量 
 }
 
 message ListUserRsp {
-    paging.Paginate paginate = 1;
+    pagination.Pagination pagination = 1;
 }
 ```
 
@@ -484,9 +484,9 @@ message ListUserRsp {
 
 ```protobuf
 syntax = "proto3";
-import "dbx/paging/paging.proto";
+import "dbx/pagination/pagination.proto";
 message ListUserReq {
-    paging.Scroll scroll = 1;     // 滚动翻页查询
+    pagination.Scroll scroll = 1;     // 滚动翻页查询
 }
 message ListUserRsp {
     repeated ModelUser list = 2;
