@@ -36,7 +36,7 @@ func (s *Scope) PaginationQuery(opt *pagination.Pagination, list interface{}) (*
 	p := pagination.Pagination{
 		Page:  opt.Page,
 		Size:  opt.Size,
-		Total: total,
+		Total: uint32(total),
 	}
 	return &p, nil
 }
