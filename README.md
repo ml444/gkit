@@ -728,8 +728,8 @@ func main() {
 	log.Fatalf("hi, %s! this is fatal", name)
 }
 ```
-
-Example using [glog](https://github.com/ml444/glog)
+It can be used with glog for various flexible outputs, such as file output, streaming, Syslog, console standard output, etc.
+Example of log file storage using [glog](https://github.com/ml444/glog):
 
 ```go
 package main
@@ -741,26 +741,47 @@ import (
 	gloglevel "github.com/ml444/glog/level"
 )
 
+// InitLogger simple configuration
 func InitLogger(debug bool) error {
-	err := log.InitLog(
-		logconf.SetLoggerName("myname"),
-		logconf.SetLevel2Logger(level.InfoLevel),
-		logconf.SetFileDir2Logger("./log"),
-		func(config *logconf.Config) {
-			config.Handler.LogHandlerConfig.Formatter.Text.DisableColors = !debug
-		},
-	)
+	opts := []glog.OptionFunc{
+		glog.SetLoggerName("serviceName"),
+		glog.SetWorkerConfigs(glog.NewDefaultTextFileWorkerConfig("./logs")),
+	}
+	if debug {
+		opts = append(opts, glog.SetLoggerLevel(glog.DebugLevel))
+	}
+	err := glog.InitLog(opts...)
 	if err != nil {
 		return err
 	}
-	if debug {
-		err = log.InitLog(logconf.SetLevel2Logger(level.DebugLevel))
-		if err != nil {
-			return err
-		}
-	}
 	log.SetLogger(glog.GetLogger())
 	return nil
+}
+
+// InitLogger Detailed configuration：
+func InitLogger() error {
+	return glog.InitLog(
+		glog.SetLoggerName("serviceName"),   // optional
+		glog.SetWorkerConfigs(
+			glog.NewWorkerConfig(glog.InfoLevel, 1024).SetFileHandlerConfig(
+				glog.NewDefaultFileHandlerConfig("logs").
+					WithFileName("text_log").       // Also specify a file name
+					WithFileSize(1024*1024*1024).   // 1GB
+					WithBackupCount(12).            // Number of log files to keep
+					WithBulkSize(1024*1024).        // Batch write size to hard drive
+					WithInterval(60*60).            // Logs are cut on an hourly basis on a rolling basis
+					WithRotatorType(glog.FileRotatorTypeTimeAndSize),
+			).SetJSONFormatterConfig(
+				glog.NewDefaultJSONFormatterConfig().WithBaseFormatterConfig(
+					glog.NewDefaultBaseFormatterConfig().
+						WithEnableHostname().       // Record the hostname of the server
+						WithEnableTimestamp().      // Record millisecond timestamp
+						WithEnablePid().            // Record process ID
+						WithEnableIP(),             // Record server IP
+				),
+			),
+		),
+	)
 }
 
 func main() {

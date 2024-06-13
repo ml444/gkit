@@ -546,7 +546,7 @@ func NewUserService() UserService {
 func (s *UserService) ListUser(ctx context.Context, req *user.ListUserReq) (*user.ListUserRsp, error) {
 	var users []*ModelUser
 	scope := getDBScope()
-	err := optx.NewProcessor(req.ListOption).
+	err := optx.NewProcessor().
 		AddUint64List(user.ListUserReq_ListOptIdList, func(valList []uint64) error {
 			scope.In("id", ids)
 			return nil
@@ -559,7 +559,7 @@ func (s *UserService) ListUser(ctx context.Context, req *user.ListUserReq) (*use
 			scope.Eq("phone", phone)
 			return nil
 		}).
-		Process()
+		Process(req.ListOption) // OR: ProcessOptions(req.ListOption)
 	if err != nil {
 		return nil, err
 	}
@@ -605,7 +605,7 @@ func NewUserService() UserService {
 func (s *UserService) ListUser(ctx context.Context, req *user.ListUserReq) (*user.ListUserRsp, error) {
 	var users []*user.ModelUser
 	scope := dbUser.Scope()
-	err := optx.NewPtrProcessor().
+	err := optx.NewProcessor().
 		AddHandle(user.FieldIdList, func(val interface{}) error {
 			scope.In(user.DbFieldId, val)
 			return nil
@@ -618,7 +618,7 @@ func (s *UserService) ListUser(ctx context.Context, req *user.ListUserReq) (*use
 			scope.Eq(user.DbFieldPhone, val)
 			return nil
 		}).
-		Process(req)
+		Process(req)  // OR: ProcessStruct(req)
 	if err != nil {
 		return nil, err
 	}
@@ -662,7 +662,7 @@ func (s UserService) ListUser(ctx context.Context, req *user.ListUserReq) (*user
 	var rsp user.ListUserRsp
 
 	scope := dbx.NewScope(db.DB(), &user.ModelUser{})
-	err := optx.NewPtrProcessor().
+	err := optx.NewProcessor().
 		AddHandle(user.FieldIdList, func(val interface{}) error {
 			scope.In(user.DbFieldId, val)
 			return nil
@@ -718,8 +718,8 @@ func main() {
 	log.Fatalf("hi, %s! this is fatal", name)
 }
 ```
-
-使用[glog](https://github.com/ml444/glog)的示例
+可以搭配glog进行各种灵活的输出，如文件输出、流传输、Syslog、控制台标准输出等。
+使用[glog](https://github.com/ml444/glog)的日志文件存储示例:
 
 ```go
 package main
@@ -727,30 +727,49 @@ package main
 import (
 	"github.com/ml444/gkit/log"
 	glog "github.com/ml444/glog"
-	glogconf "github.com/ml444/glog/config"
-	gloglevel "github.com/ml444/glog/level"
 )
 
+// InitLogger 简单配置
 func InitLogger(debug bool) error {
-	err := log.InitLog(
-		logconf.SetLoggerName("myname"),
-		logconf.SetLevel2Logger(level.InfoLevel),
-		logconf.SetFileDir2Logger("./log"),
-		func(config *logconf.Config) {
-			config.Handler.LogHandlerConfig.Formatter.Text.DisableColors = !debug
-		},
-	)
+    opts := []glog.OptionFunc{
+        glog.SetLoggerName("serviceName"),
+        glog.SetWorkerConfigs(glog.NewDefaultTextFileWorkerConfig("./logs")),
+    }
+    if debug {
+        opts = append(opts, glog.SetLoggerLevel(glog.DebugLevel))
+    }
+	err := glog.InitLog(opts...)
 	if err != nil {
 		return err
 	}
-	if debug {
-		err = log.InitLog(logconf.SetLevel2Logger(level.DebugLevel))
-		if err != nil {
-			return err
-		}
-	}
 	log.SetLogger(glog.GetLogger())
 	return nil
+}
+
+// InitLogger 详细配置：
+func InitLogger() error {
+  return glog.InitLog(
+    glog.SetLoggerName("serviceName"),   // 可选
+    glog.SetWorkerConfigs(
+      glog.NewWorkerConfig(glog.InfoLevel, 1024).SetFileHandlerConfig(
+        glog.NewDefaultFileHandlerConfig("logs").
+          WithFileName("text_log").       // 另外指定文件名
+          WithFileSize(1024*1024*1024).   // 1GB
+          WithBackupCount(12).            // 保留的日志文件数量
+          WithBulkSize(1024*1024).        // 批量写入硬盘的大小
+          WithInterval(60*60).            // 日志按每小时滚动切割
+          WithRotatorType(glog.FileRotatorTypeTimeAndSize),
+      ).SetJSONFormatterConfig(
+        glog.NewDefaultJSONFormatterConfig().WithBaseFormatterConfig(
+          glog.NewDefaultBaseFormatterConfig().
+            WithEnableHostname().       // 记录服务器的hostname
+            WithEnableTimestamp().      // 记录时间戳
+            WithEnablePid().            // 记录进程ID
+            WithEnableIP(),             // 记录服务器IP
+        ),
+      ),
+    ),
+  )
 }
 
 func main() {
