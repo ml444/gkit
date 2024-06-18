@@ -1,6 +1,7 @@
 package dbx
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"unicode"
@@ -129,7 +130,7 @@ func (x *T) Update(m interface{}, whereMap map[string]interface{}) error {
 }
 
 func (x *T) DeleteById(pk uint64) error {
-	return x.Scope().Eq("id", pk).Delete()
+	return x.Scope().Eq(x.PrimaryKey, pk).Delete()
 }
 
 func (x *T) DeleteByWhere(whereMap map[string]interface{}) error {
@@ -151,29 +152,26 @@ func (x *T) Count(whereMap map[string]interface{}) (int64, error) {
 	return x.Scope().Where(whereMap).Count()
 }
 
-func (x *T) GetOne(pk uint64) (interface{}, error) {
-	tm := x.CloneTModel()
-	err := x.Scope().SetNotFoundErr(x.NotFoundErrCode).Eq("id", pk).First(tm)
-	if res, ok := tm.(ITModel); ok {
-		return res.ToSource(), err
-	}
-	return tm, err
+func (x *T) GetOne(pk uint64, m interface{}) error {
+	return NewScope(x.getDB(), m).SetNotFoundErr(x.NotFoundErrCode).Eq(x.PrimaryKey, pk).First(m)
 }
 
-func (x *T) GetOneByWhere(whereMap map[string]interface{}) (interface{}, error) {
-	m := x.CloneTModel()
-	err := x.Scope().SetNotFoundErr(x.NotFoundErrCode).Where(whereMap).First(&m)
-	if err != nil {
-		return nil, err
-	}
-	if res, ok := m.(ITModel); ok {
-		return res.ToSource(), nil
-	}
-	return m, nil
+func (x *T) GetOneByWhere(whereMap map[string]interface{}, m interface{}) error {
+	return NewScope(x.getDB(), m).SetNotFoundErr(x.NotFoundErrCode).Where(whereMap).First(m)
 }
 
-func (x *T) ListAll(opts interface{}) (interface{}, error) {
-	scope := x.Scope()
+func (x *T) ListAll(opts interface{}, listPtr interface{}) error {
+	listType := reflect.TypeOf(listPtr)
+	if listType.Kind() != reflect.Ptr {
+		return errors.New("list must be pointer")
+	}
+	listType = listType.Elem()
+	if listType.Kind() != reflect.Slice && listType.Kind() != reflect.Array {
+		return errors.New("list is not a slice or array")
+	}
+	elemType := listType.Elem()
+	m := reflect.New(elemType).Interface()
+	scope := NewScope(x.getDB(), m)
 	if opts != nil {
 		switch o := opts.(type) {
 		case *Scope:
@@ -186,26 +184,22 @@ func (x *T) ListAll(opts interface{}) (interface{}, error) {
 			}
 		}
 	}
-	listType := reflect.SliceOf(reflect.TypeOf(x.tModel))
-	tList := reflect.New(listType)
-	err := scope.Find(tList.Interface())
-	if err != nil {
-		return nil, err
-	}
-	result := reflect.New(reflect.SliceOf(reflect.TypeOf(x.model))).Elem()
-	for i := 0; i < tList.Elem().Len(); i++ {
-		m := tList.Elem().Index(i).Interface()
-		if res, ok := m.(ITModel); ok {
-			m = res.ToSource()
-		}
-		result = reflect.Append(result, reflect.ValueOf(m))
-	}
-	return result.Interface(), nil
+	return scope.Find(listPtr)
 }
 
-func (x *T) ListWithPagination(paginate *pagination.Pagination, opts interface{}) (interface{}, *pagination.Pagination, error) {
+func (x *T) ListWithPagination(paginate *pagination.Pagination, opts interface{}, listPtr interface{}) (*pagination.Pagination, error) {
 	var err error
-	scope := x.Scope()
+	listType := reflect.TypeOf(listPtr)
+	if listType.Kind() != reflect.Ptr {
+		return nil, errors.New("list must be pointer")
+	}
+	listType = listType.Elem()
+	if listType.Kind() != reflect.Slice && listType.Kind() != reflect.Array {
+		return nil, errors.New("list is not a slice or array")
+	}
+	elemType := listType.Elem()
+	m := reflect.New(elemType).Interface()
+	scope := NewScope(x.getDB(), m)
 	if opts != nil {
 		switch o := opts.(type) {
 		case *Scope:
@@ -218,20 +212,10 @@ func (x *T) ListWithPagination(paginate *pagination.Pagination, opts interface{}
 			}
 		}
 	}
-	listType := reflect.SliceOf(reflect.TypeOf(x.tModel))
-	tList := reflect.New(listType)
 	var newPagination *pagination.Pagination
-	newPagination, err = scope.PaginationQuery(paginate, tList.Interface())
+	newPagination, err = scope.PaginationQuery(paginate, listPtr)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	result := reflect.New(reflect.SliceOf(reflect.TypeOf(x.model))).Elem()
-	for i := 0; i < tList.Elem().Len(); i++ {
-		m := tList.Elem().Index(i).Interface()
-		if res, ok := m.(ITModel); ok {
-			m = res.ToSource()
-		}
-		result = reflect.Append(result, reflect.ValueOf(m))
-	}
-	return result.Interface(), newPagination, nil
+	return newPagination, err
 }
