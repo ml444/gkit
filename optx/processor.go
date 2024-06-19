@@ -347,29 +347,35 @@ func toStr(v interface{}) string {
 	if v == nil {
 		return ""
 	}
-	t := reflect.TypeOf(v)
-	k := t.Kind()
-	switch k {
-	case reflect.Int,
-		reflect.Int32,
-		reflect.Int64,
-		reflect.Int16,
-		reflect.Int8:
-		return strconv.FormatInt(reflect.ValueOf(v).Int(), 10)
-	case reflect.Uint,
-		reflect.Uint32,
-		reflect.Uint64,
-		reflect.Uint16,
-		reflect.Uint8:
-		return strconv.FormatUint(reflect.ValueOf(v).Uint(), 10)
-	case reflect.String:
-		return reflect.ValueOf(v).String()
-	case reflect.Bool:
-		if reflect.ValueOf(v).Bool() {
+	switch vv := v.(type) {
+	case int:
+		return strconv.FormatInt(int64(vv), 10)
+	case int8:
+		return strconv.FormatInt(int64(vv), 10)
+	case int16:
+		return strconv.FormatInt(int64(vv), 10)
+	case int32:
+		return strconv.FormatInt(int64(vv), 10)
+	case int64:
+		return strconv.FormatInt(vv, 10)
+	case uint:
+		return strconv.FormatUint(uint64(vv), 10)
+	case uint8:
+		return strconv.FormatUint(uint64(vv), 10)
+	case uint16:
+		return strconv.FormatUint(uint64(vv), 10)
+	case uint32:
+		return strconv.FormatUint(uint64(vv), 10)
+	case uint64:
+		return strconv.FormatUint(vv, 10)
+	case string:
+		return vv
+	case bool:
+		if vv {
 			return "true"
-		} else {
-			return "false"
 		}
+		return "false"
+
 	}
 	return fmt.Sprintf("%v", v)
 }
