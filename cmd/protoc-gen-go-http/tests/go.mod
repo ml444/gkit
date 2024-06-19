@@ -12,7 +12,7 @@ require (
 	github.com/ml444/gkit/cmd/protoc-gen-go-http v0.0.0-00010101000000-000000000000
 	github.com/xuri/excelize/v2 v2.8.1
 	google.golang.org/genproto/googleapis/api v0.0.0-20231212172506-995d672761c0
-	google.golang.org/protobuf v1.32.0
+	google.golang.org/protobuf v1.34.2
 )
 
 require (

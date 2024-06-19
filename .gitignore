@@ -17,10 +17,8 @@
 .DS_Store
 
 .idea/
-go.sum
 
 __*.go
-*_test.go
 *_test.gobak
 
 issue.md

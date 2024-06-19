@@ -10,7 +10,7 @@ replace (
 require (
 	github.com/ml444/gkit v0.0.0-00010101000000-000000000000
 	github.com/ml444/gkit/cmd/protoc-gen-go-validate v0.0.0-00010101000000-000000000000
-	google.golang.org/protobuf v1.32.0
+	google.golang.org/protobuf v1.34.2
 )
 
 require (
