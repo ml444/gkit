@@ -131,7 +131,7 @@ func (s *Scope) Update(v interface{}, conds ...interface{}) error {
 		s.ResetSysDateTimeField(v)
 	}
 	if len(conds) > 0 {
-		s.DB.Where(conds[0], conds[1:])
+		s.DB.Where(conds[0], conds[1:]...)
 	}
 	s.DB.Updates(v)
 	if s.DB.Error != nil {
@@ -428,6 +428,20 @@ func (s *Scope) Limit(limit int) *Scope {
 
 func (s *Scope) Omit(value ...string) *Scope {
 	s.DB.Omit(value...)
+	return s
+}
+func (s *Scope) Clause(value ...clause.Expression) *Scope {
+	s.DB.Clauses(value...)
+	return s
+}
+
+// ReturnColumns Return data, return all field data without passing columns
+func (s *Scope) ReturnColumns(columns ...string) *Scope {
+	var cols []clause.Column
+	for _, col := range columns {
+		cols = append(cols, clause.Column{Name: col})
+	}
+	s.DB.Clauses(clause.Returning{Columns: cols})
 	return s
 }
 
