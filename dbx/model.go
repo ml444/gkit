@@ -100,11 +100,7 @@ func (x *T) Scope() *Scope {
 }
 
 func (x *T) Create(m interface{}) (err error) {
-	if reflect.TypeOf(m) == reflect.TypeOf(x.tModel) {
-		return x.Scope().Create(m)
-	} else {
-		return NewScope(x.getDB(), m).Create(m)
-	}
+	return NewScope(x.getDB(), m).Create(m)
 }
 
 func (x *T) BatchCreate(list interface{}) (err error) {
@@ -129,16 +125,16 @@ func (x *T) Update(m interface{}, whereMap map[string]interface{}) error {
 	return x.Scope().Where(whereMap).Update(m)
 }
 
-func (x *T) DeleteById(pk uint64) error {
-	return x.Scope().Eq(x.PrimaryKey, pk).Delete()
+func (x *T) DeleteByPk(pk interface{}) error {
+	return NewScope(x.getDB(), x.model).Eq(x.PrimaryKey, pk).Delete()
 }
 
-func (x *T) DeleteByWhere(whereMap map[string]interface{}) error {
-	return x.Scope().Where(whereMap).Delete()
+func (x *T) DeleteByWhere(query interface{}, args ...interface{}) error {
+	return NewScope(x.getDB(), x.model).Where(query, args...).Delete()
 }
 
-func (x *T) ExistByWhere(whereMap map[string]interface{}) (bool, error) {
-	count, err := x.Scope().Where(whereMap).Count()
+func (x *T) ExistByWhere(query interface{}, args ...interface{}) (bool, error) {
+	count, err := NewScope(x.getDB(), x.model).Where(query, args...).Count()
 	if err != nil {
 		return false, err
 	}
@@ -149,7 +145,7 @@ func (x *T) Count(whereMap map[string]interface{}) (int64, error) {
 	if len(whereMap) == 0 {
 		return x.Scope().Count()
 	}
-	return x.Scope().Where(whereMap).Count()
+	return NewScope(x.getDB(), x.model).Where(whereMap).Count()
 }
 
 func (x *T) GetOne(pk uint64, m interface{}) error {
