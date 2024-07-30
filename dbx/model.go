@@ -156,17 +156,28 @@ func (x *T) GetOneByWhere(whereMap map[string]interface{}, m interface{}) error 
 	return NewScope(x.getDB(), m).SetNotFoundErr(x.NotFoundErrCode).Where(whereMap).First(m)
 }
 
-func (x *T) ListAll(opts interface{}, listPtr interface{}) error {
+func (x *T) validateListAndGetModel(listPtr interface{}) (interface{}, error) {
 	listType := reflect.TypeOf(listPtr)
 	if listType.Kind() != reflect.Ptr {
-		return errors.New("list must be pointer")
+		return nil, errors.New("list must be pointer")
 	}
 	listType = listType.Elem()
 	if listType.Kind() != reflect.Slice && listType.Kind() != reflect.Array {
-		return errors.New("list is not a slice or array")
+		return nil, errors.New("list is not a slice or array")
 	}
 	elemType := listType.Elem()
+	if elemType.Kind() == reflect.Ptr {
+		elemType = elemType.Elem()
+	}
 	m := reflect.New(elemType).Interface()
+	return m, nil
+}
+
+func (x *T) ListAll(opts interface{}, listPtr interface{}) error {
+	m, err := x.validateListAndGetModel(listPtr)
+	if err != nil {
+		return err
+	}
 	scope := NewScope(x.getDB(), m)
 	if opts != nil {
 		switch o := opts.(type) {
@@ -184,17 +195,10 @@ func (x *T) ListAll(opts interface{}, listPtr interface{}) error {
 }
 
 func (x *T) ListWithPagination(paginate *pagination.Pagination, opts interface{}, listPtr interface{}) (*pagination.Pagination, error) {
-	var err error
-	listType := reflect.TypeOf(listPtr)
-	if listType.Kind() != reflect.Ptr {
-		return nil, errors.New("list must be pointer")
+	m, err := x.validateListAndGetModel(listPtr)
+	if err != nil {
+		return nil, err
 	}
-	listType = listType.Elem()
-	if listType.Kind() != reflect.Slice && listType.Kind() != reflect.Array {
-		return nil, errors.New("list is not a slice or array")
-	}
-	elemType := listType.Elem()
-	m := reflect.New(elemType).Interface()
 	scope := NewScope(x.getDB(), m)
 	if opts != nil {
 		switch o := opts.(type) {
