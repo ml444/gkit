@@ -9,7 +9,7 @@ func WithFileLoader(loader FileLoader) OptionFunc {
 	}
 }
 
-// WithFilePath setIntoStruct the file path.
+// WithFilePath Set the default configuration file path.
 func WithFilePath(filePath string) OptionFunc {
 	return func(c *Config) {
 		c.filePath = filePath

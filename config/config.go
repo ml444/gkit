@@ -96,11 +96,11 @@ func (c *Config) loadFromFile() (err error) {
 	if c.filePath == "" && c.fileFlag == "" {
 		return nil
 	}
-	if c.filePath == "" {
+	if c.fileFlag != "" {
 		// Get the configuration file path through fileFlag
 		var fp string
 		fs := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-		fs.StringVar(&fp, c.fileFlag, "", "Configuration file path")
+		fs.StringVar(&fp, c.fileFlag, c.filePath, "Configuration file path")
 		err = fs.Parse(os.Args[1:])
 		if err != nil {
 			return fmt.Errorf("flag parse config filepath error: %v \n", err)

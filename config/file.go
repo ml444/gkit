@@ -17,7 +17,7 @@ func (c *Config) LoadFile() error {
 		return nil
 	}
 	if c.fileLoader == nil {
-		return nil
+		return errors.New("config file loader is required")
 		//switch {
 		//case strings.HasSuffix(c.filePath, ".yml") || strings.HasSuffix(c.filePath, ".yaml"):
 		//	c.fileLoader = yaml.NewLoader()
