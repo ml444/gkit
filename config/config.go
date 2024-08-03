@@ -3,12 +3,10 @@ package config
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
-
-	"github.com/ml444/gkit/config/json"
-	"github.com/ml444/gkit/log"
 )
 
 const delimiter = "__"
@@ -22,16 +20,6 @@ const (
 	originFile
 	originInner
 )
-
-type Config struct {
-	v            interface{}
-	m            map[string]*Value
-	fileLoader   FileLoader
-	filePath     string
-	envKeyPrefix string
-	ignoreErr    bool
-	useFlag      bool
-}
 
 type Value struct {
 	kind       OriginKind
@@ -57,6 +45,17 @@ func (v Value) Value() interface{} {
 	return v.value
 }
 
+type Config struct {
+	v            interface{}
+	m            map[string]*Value
+	fileLoader   FileLoader
+	filePath     string
+	fileFlag     string
+	envKeyPrefix string
+	ignoreErr    bool
+	useFlag      bool
+}
+
 // InitConfig passes in a structure pointer and returns a Config object.
 // Recursively traverse all fields and construct a map.
 // Get the value from the environment variable and overwrite the value in the map if it exists.
@@ -71,32 +70,50 @@ func InitConfig(v interface{}, opts ...OptionFunc) (*Config, error) {
 		m:            make(map[string]*Value),
 		ignoreErr:    false,
 		envKeyPrefix: "",
+		fileFlag:     "",
 	}
 	for _, opt := range opts {
 		opt(cfg)
 	}
 
-	if cfg.filePath != "" {
-		if cfg.fileLoader == nil {
-			cfg.fileLoader = json.NewLoader()
-		}
-		err = cfg.LoadFile()
-		if err != nil && !cfg.ignoreErr {
-			log.Errorf("load config file error: %v \n", err)
-			return nil, err
-		}
+	err = cfg.loadFromFile()
+	if err != nil && !cfg.ignoreErr {
+		return nil, err
 	}
 
 	// Get all fields in the structure (including nested fields) to build a map
 	err = cfg.buildMap("", reflect.ValueOf(v))
 	if err != nil && !cfg.ignoreErr {
-		log.Errorf("build map error: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("build map error: %v", err)
 	}
 	if cfg.useFlag {
 		flag.Parse()
 	}
 	return cfg, nil
+}
+
+func (c *Config) loadFromFile() (err error) {
+	if c.filePath == "" && c.fileFlag == "" {
+		return nil
+	}
+	if c.filePath == "" {
+		// Get the configuration file path through fileFlag
+		var fp string
+		fs := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+		fs.StringVar(&fp, c.fileFlag, "", "Configuration file path")
+		err = fs.Parse(os.Args[1:])
+		if err != nil {
+			return fmt.Errorf("flag parse config filepath error: %v \n", err)
+		}
+		if fp != "" {
+			c.filePath = fp
+		}
+	}
+	err = c.LoadFile()
+	if err != nil && !c.ignoreErr {
+		return fmt.Errorf("load config file error: %v \n", err)
+	}
+	return nil
 }
 
 func (c *Config) buildMap(key string, v reflect.Value) (err error) {

@@ -16,6 +16,14 @@ func WithFilePath(filePath string) OptionFunc {
 	}
 }
 
+// WithFileFlag Set the path of the configuration file through fileFlag. 
+// for example: `f` or `fp` or `file`.
+func WithFileFlag(fileFlag string) OptionFunc {
+	return func(c *Config) {
+		c.fileFlag = fileFlag
+	}
+}
+
 func WithIgnoreError(ignoreErr bool) OptionFunc {
 	return func(c *Config) {
 		c.ignoreErr = ignoreErr
