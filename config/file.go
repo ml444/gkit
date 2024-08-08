@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"errors"
 )
 
 type FileLoader interface {
