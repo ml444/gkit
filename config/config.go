@@ -87,6 +87,9 @@ func InitConfig(v interface{}, opts ...OptionFunc) (*Config, error) {
 		return nil, fmt.Errorf("build map error: %v", err)
 	}
 	if cfg.useFlag {
+		if cfg.fileFlag != "" {
+			flag.StringVar(&cfg.filePath, cfg.fileFlag, cfg.filePath, "Configuration file path")
+		}
 		flag.Parse()
 	}
 	return cfg, nil
@@ -103,7 +106,7 @@ func (c *Config) loadFromFile() (err error) {
 		fs.StringVar(&fp, c.fileFlag, c.filePath, "Configuration file path")
 		err = fs.Parse(os.Args[1:])
 		if err != nil {
-			return fmt.Errorf("flag parse config filepath error: %v \n", err)
+			return fmt.Errorf("flag parse config filepath error: %v", err)
 		}
 		if fp != "" {
 			c.filePath = fp
@@ -111,7 +114,7 @@ func (c *Config) loadFromFile() (err error) {
 	}
 	err = c.LoadFile()
 	if err != nil && !c.ignoreErr {
-		return fmt.Errorf("load config file error: %v \n", err)
+		return fmt.Errorf("load config file error: %v", err)
 	}
 	return nil
 }
@@ -189,7 +192,7 @@ func (c *Config) buildMap(key string, v reflect.Value) (err error) {
 					vv.Index(i).Set(reflect.ValueOf(ReplaceEnvVariables(s)))
 				}
 			}
-			var mValue = Value{value: value}
+			mValue := Value{value: value}
 			if err = parseFieldTagWithFlag(rtField, vv, &mValue, &c.useFlag); err != nil && !c.ignoreErr {
 				return err
 			}
