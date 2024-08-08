@@ -22,8 +22,16 @@ import (
 	"github.com/ml444/gkit/transport"
 )
 
+type iServer interface {
+	RegisterService(*grpc.ServiceDesc, any)
+	Serve(net.Listener) error
+	Stop()
+	GracefulStop()
+	GetServiceInfo() map[string]grpc.ServiceInfo
+}
+
 type Server struct {
-	*xds.GRPCServer
+	iServer
 	name                string
 	network             string
 	address             string
@@ -39,9 +47,10 @@ type Server struct {
 	enableHealth        bool
 	debug               bool
 	disableTransportCtx bool
+	enableXDS           bool
 }
 
-func NewServer(registerFunc func(s grpc.ServiceRegistrar), opts ...ServerOption) *Server {
+func NewServer(opts ...ServerOption) *Server {
 	s := &Server{
 		name:    "gkit",
 		network: "tcp",
@@ -64,15 +73,22 @@ func NewServer(registerFunc func(s grpc.ServiceRegistrar), opts ...ServerOption)
 	} else {
 		s.grpcOpts = append(s.grpcOpts, grpc.Creds(insecure.NewCredentials()))
 	}
-	s.GRPCServer, _ = xds.NewGRPCServer(s.grpcOpts...)
+	if s.enableXDS {
+		var err error
+		s.iServer, err = xds.NewGRPCServer(s.grpcOpts...)
+		if err != nil {
+			panic(err.Error())
+		}
+	} else {
+		s.iServer = grpc.NewServer(s.grpcOpts...)
+	}
 	if s.enableHealth {
 		s.health.SetServingStatus(s.name, healthpb.HealthCheckResponse_SERVING)
 		healthpb.RegisterHealthServer(s.GRPCServer, s.health)
 	}
 	if s.debug {
-		reflection.Register(s.GRPCServer)
+		reflection.Register(s.iServer)
 	}
-	registerFunc(s.GRPCServer)
 	return s
 }
 

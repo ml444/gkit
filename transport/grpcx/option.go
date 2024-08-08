@@ -10,9 +10,9 @@ import (
 // ServerOption is gRPC server option.
 type ServerOption func(o *Server)
 
-func Debug() ServerOption {
+func Debug(debug bool) ServerOption {
 	return func(s *Server) {
-		s.debug = true
+		s.debug = debug
 	}
 }
 
@@ -34,6 +34,12 @@ func Address(addr string) ServerOption {
 func Name(name string) ServerOption {
 	return func(s *Server) {
 		s.name = name
+	}
+}
+
+func EnableXDS() ServerOption {
+	return func(s *Server) {
+		s.enableXDS = true
 	}
 }
 
