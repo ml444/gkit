@@ -5,7 +5,6 @@ go 1.19
 require (
 	github.com/go-playground/form v3.1.4+incompatible
 	github.com/gorilla/mux v1.8.1
-	github.com/ml444/gutil v0.0.0-20231221121703-d05adbb24fad
 	github.com/pkg/errors v0.9.1
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240108191215-35c7eff3a6b1
 	google.golang.org/grpc v1.60.1
