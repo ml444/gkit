@@ -16,7 +16,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/ml444/gkit/middleware"
-	"github.com/ml444/gkit/pkg/header"
 	"github.com/ml444/gkit/transport"
 	"github.com/ml444/gkit/transport/httpx/coder/form"
 )
@@ -101,11 +100,9 @@ func (client *Client) Invoke(ctx context.Context, method, path string, args inte
 		req.Header.Set("User-Agent", client.userAgent)
 	}
 	ctx = transport.ToContext(ctx, &Transport{
-		BaseTransport: transport.BaseTransport{
-			Endpoint:  client.endpoint,
-			Operation: c.operation,
-			InHeader:  header.Header(req.Header),
-		},
+		endpoint: client.endpoint,
+		path:     c.operation,
+		inMD:     transport.MD(req.Header),
 		//pathTemplate: c.pathTemplate,
 	})
 	return client.invoke(ctx, req, args, reply, c, opts...)

@@ -6,7 +6,6 @@ import (
 	"net"
 	"time"
 
-	"github.com/ml444/gutil/netx"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -16,9 +15,9 @@ import (
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/xds"
 
+	"github.com/ml444/gkit/internal/netx"
 	"github.com/ml444/gkit/log"
 	"github.com/ml444/gkit/middleware"
-	"github.com/ml444/gkit/pkg/header"
 	"github.com/ml444/gkit/transport"
 )
 
@@ -84,7 +83,7 @@ func NewServer(opts ...ServerOption) *Server {
 	}
 	if s.enableHealth {
 		s.health.SetServingStatus(s.name, healthpb.HealthCheckResponse_SERVING)
-		healthpb.RegisterHealthServer(s.GRPCServer, s.health)
+		healthpb.RegisterHealthServer(s.iServer, s.health)
 	}
 	if s.debug {
 		reflection.Register(s.iServer)
@@ -98,7 +97,7 @@ func (s *Server) Start() error {
 		log.Errorf("net.Listen(%s, %s) failed: %v", s.network, s.address, err)
 		return err
 	}
-	s.endpoint, _ = netx.Extract(s.address, ln)
+	s.endpoint, _ = netx.ExtractEndpoint(s.address, ln)
 
 	log.Infof("[gRPC] server listening on: %s", ln.Addr().String())
 	s.health.Resume()
@@ -124,20 +123,18 @@ func (s *Server) defaultUnaryInterceptor() grpc.UnaryServerInterceptor {
 			defer cancel()
 		}
 		if !s.disableTransportCtx {
-			md, _ := grpcmd.FromIncomingContext(ctx)
-			outHeader := grpcmd.MD{}
+			inMD, _ := grpcmd.FromIncomingContext(ctx)
+			outMD := grpcmd.MD{}
 			tr := &Transport{
-				BaseTransport: transport.BaseTransport{
-					Endpoint:  s.endpoint,
-					Operation: info.FullMethod,
-					InHeader:  header.Header(md),
-					OutHeader: header.Header(outHeader),
-				},
+				endpoint:  s.endpoint,
+				operation: info.FullMethod,
+				inMD:      transport.MD(inMD),
+				outMD:     transport.MD(outMD),
 			}
 			ctx = transport.ToContext(ctx, tr)
 			defer func() {
-				if len(outHeader) > 0 {
-					_ = grpc.SetHeader(ctx, outHeader)
+				if len(outMD) > 0 {
+					_ = grpc.SetHeader(ctx, outMD)
 				}
 			}()
 		}
@@ -174,20 +171,18 @@ func (s *Server) defaultStreamInterceptor() grpc.StreamServerInterceptor {
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if !s.disableTransportCtx {
 			ctx := ss.Context()
-			md, _ := grpcmd.FromIncomingContext(ctx)
-			outHeader := grpcmd.MD{}
+			inMD, _ := grpcmd.FromIncomingContext(ctx)
+			outMD := grpcmd.MD{}
 			ctx = transport.ToContext(ctx, &Transport{
-				BaseTransport: transport.BaseTransport{
-					Endpoint:  s.endpoint,
-					Operation: info.FullMethod,
-					InHeader:  header.Header(md),
-					OutHeader: header.Header(outHeader),
-				},
+				endpoint:  s.endpoint,
+				operation: info.FullMethod,
+				inMD:      transport.MD(inMD),
+				outMD:     transport.MD(outMD),
 			})
 			ss = NewWrappedStream(ctx, ss)
 			defer func() {
-				if len(outHeader) > 0 {
-					_ = grpc.SetHeader(ctx, outHeader)
+				if len(outMD) > 0 {
+					_ = grpc.SetHeader(ctx, outMD)
 				}
 			}()
 		}

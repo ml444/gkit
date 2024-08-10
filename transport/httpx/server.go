@@ -11,16 +11,13 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"github.com/ml444/gkit/internal/netx"
 	"github.com/ml444/gkit/log"
 	"github.com/ml444/gkit/middleware"
-	"github.com/ml444/gkit/pkg/header"
 	"github.com/ml444/gkit/transport"
-	"github.com/ml444/gkit/transport/httpx/host"
 )
 
 var (
-	_ transport.Server = (*Server)(nil)
-	//_ transport.Endpointer = (*Server)(nil)
 	_ http.Handler = (*Server)(nil)
 )
 
@@ -57,9 +54,11 @@ func NewServer(opts ...ServerOption) *Server {
 	}
 	return srv
 }
+
 func (s *Server) Middlewares() []middleware.Middleware {
 	return s.middlewares
 }
+
 func (s *Server) SetMiddlewares(mws ...middleware.Middleware) {
 	s.middlewares = append(s.middlewares, mws...)
 }
@@ -97,18 +96,16 @@ func (s *Server) globalMiddleware() middleware.HttpMiddleware {
 					pathTemplate, _ = route.GetPathTemplate()
 				}
 				tr := &Transport{
-					BaseTransport: transport.BaseTransport{
-						Operation: pathTemplate,
-						InHeader:  header.New(req.Header),
-						//OutHeader: header.New(w.Header()),
-					},
+					path: pathTemplate,
+					inMD: transport.MD(req.Header),
+					req:  req,
 				}
 				if s.endpoint != nil {
-					tr.Endpoint = s.endpoint.String()
+					tr.endpoint = s.endpoint.String()
 				}
 				req = req.WithContext(transport.ToContext(ctx, tr))
 				defer func() {
-					tr.OutHeader = header.New(w.Header())
+					tr.outMD = transport.MD(w.Header())
 				}()
 			}
 			next.ServeHTTP(w, req)
@@ -159,7 +156,7 @@ func (s *Server) listenAndEndpoint() error {
 		s.listener = lis
 	}
 	if s.endpoint == nil {
-		addr, err := host.Extract(s.address, s.listener)
+		addr, err := netx.ExtractEndpoint(s.address, s.listener)
 		if err != nil {
 			return err
 		}
