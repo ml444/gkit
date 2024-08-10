@@ -10,7 +10,6 @@ import (
 	context "context"
 	pluck "github.com/ml444/gkit/cmd/protoc-gen-go-http/pluck"
 	middleware "github.com/ml444/gkit/middleware"
-	transport "github.com/ml444/gkit/transport"
 	httpx "github.com/ml444/gkit/transport/httpx"
 	http "net/http"
 )
@@ -18,7 +17,6 @@ import (
 var _ = new(http.Request)
 var _ = new(context.Context)
 var _ = make([]middleware.Middleware, 0)
-var _ transport.Server = new(httpx.Server)
 var _ = pluck.DisablePluckHeader
 
 const OperationStorageDownloadV0 = "/storage.storage/DownloadV0"

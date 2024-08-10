@@ -22,8 +22,8 @@ const (
 	contextPackage    = protogen.GoImportPath("context")
 	pluckPackage      = protogen.GoImportPath("github.com/ml444/gkit/cmd/protoc-gen-go-http/pluck")
 	middlewarePackage = protogen.GoImportPath("github.com/ml444/gkit/middleware")
-	transportPackage  = protogen.GoImportPath("github.com/ml444/gkit/transport")
-	httpxPackage      = protogen.GoImportPath("github.com/ml444/gkit/transport/httpx")
+	// transportPackage  = protogen.GoImportPath("github.com/ml444/gkit/transport")
+	httpxPackage = protogen.GoImportPath("github.com/ml444/gkit/transport/httpx")
 )
 
 var methodSets = make(map[string]int)
@@ -58,8 +58,8 @@ func generateFileContent(gen *protogen.Plugin, file *protogen.File, g *protogen.
 	}
 	g.P("var _ = new(", httpPackage.Ident("Request"), ")")
 	g.P("var _ = new(", contextPackage.Ident("Context"), ")")
-	g.P("var _  = make([]", middlewarePackage.Ident("Middleware"), ", 0)")
-	g.P("var _ ", transportPackage.Ident("Server"), " = new(", httpxPackage.Ident("Server"), ")")
+	g.P("var _ = make([]", middlewarePackage.Ident("Middleware"), ", 0)")
+	g.P("var _ = new(", httpxPackage.Ident("Server"), ")")
 	g.P("var _ = ", pluckPackage.Ident("DisablePluckHeader"))
 	g.P()
 
