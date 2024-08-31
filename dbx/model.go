@@ -118,11 +118,15 @@ func (x *T) BatchCreate(list interface{}) (err error) {
 	}
 }
 
-func (x *T) Update(m interface{}, whereMap map[string]interface{}) error {
+func (x *T) Update(m interface{}, whereMap map[string]interface{}) (rows int64, err error) {
+	scope := x.Scope().Where(whereMap)
 	if im, ok := (m).(IModel); ok {
-		return x.Scope().Where(whereMap).Update(im.ToORM())
+		err = scope.Update(im.ToORM())
+	} else {
+		err = scope.Update(m)
 	}
-	return x.Scope().Where(whereMap).Update(m)
+	rows = scope.RowsAffected
+	return rows, err
 }
 
 func (x *T) DeleteByPk(pk interface{}) error {
