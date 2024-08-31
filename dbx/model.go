@@ -59,7 +59,7 @@ func findPrimaryKey(m interface{}) (pk string) {
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		gormTag := field.Tag.Get("gorm")
-		if !strings.Contains(gormTag, "primarykey") {
+		if !strings.Contains(strings.ToLower(gormTag), "primarykey") {
 			continue
 		}
 		jsonTag := field.Tag.Get("json")
