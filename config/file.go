@@ -1,8 +1,8 @@
 package config
 
 import (
-	"os"
 	"errors"
+	"os"
 )
 
 type FileLoader interface {
@@ -13,7 +13,7 @@ type FileLoader interface {
 // supporting multiple formats, such as: yaml, json, toml, ini.
 // Note: This method will not overwrite existing configurations in the
 // command line and environment variables, only other configurations.
-func (c *Config) LoadFile() error {
+func (c *Processor) LoadFile() error {
 	if c.filePath == "" {
 		return nil
 	}

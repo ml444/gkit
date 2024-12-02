@@ -69,7 +69,7 @@ func TestNewConfig(t *testing.T) {
 				permission: 0,
 			},
 		}}
-	cfgDefault, err := InitConfig(cfg)
+	err := InitConfig(cfg)
 	if err != nil {
 		t.Error(err)
 	}
@@ -90,32 +90,10 @@ func TestNewConfig(t *testing.T) {
 	} else {
 		t.Log(cfg.GroupNameList)
 	}
-	_ = cfgDefault.SetAndChangeEnv("String", "test")
-	_ = cfgDefault.SetAndChangeEnv("Uint", "456")
-	_ = cfgDefault.SetAndChangeEnv("UintPtr", "456")
-	_ = cfgDefault.SetAndChangeEnv("Map", "a:11,b:22")
-	if cfg.String != "test" {
-		t.Error("don't get the value of env")
-	}
-	if cfg.Uint != 456 {
-		t.Error("don't get the value of env")
-	}
-	if cfg.UintPtr != nil && *cfg.UintPtr != 456 {
-		t.Error("don't get the value of env")
-	}
-	if !reflect.DeepEqual(cfg.Map, map[string]interface{}{"a": "11", "b": "22"}) {
-		t.Error("don't get the value of env")
-	}
+
 	t.Log(cfg.DBCfgPtr.URI)
 	if cfg.DBCfgPtr.URI == "This is a ${HOME} directory and it belongs to ${USER}." {
 		t.Error("ReplaceEnvVariables failed")
-	}
-	err = cfgDefault.Set("DBCfgPtr__URI", "mysql://root:123456@localhost:3306/test?charset=utf8mb4&parseTime=True&loc=Local")
-	if err != nil {
-		t.Error(err)
-	}
-	if cfg.DBCfgPtr.URI != "mysql://root:123456@localhost:3306/test?charset=utf8mb4&parseTime=True&loc=Local" {
-		t.Error("setIntoStruct failed")
 	}
 }
 
@@ -182,10 +160,39 @@ type JWTCfg struct {
 
 func TestConfig1(t *testing.T) {
 	cfg := Config1{}
-	c, err := InitConfig(&cfg)
+	err := InitConfig(&cfg)
 	if err != nil {
 		t.Error(err)
 	}
-	t.Log(c)
 	t.Log(cfg.Debug)
+}
+
+func TestWalk(t *testing.T) {
+	type args struct {
+		c  any
+		fn func(k string, v any) error
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "ok",
+			args: args{
+				c: &testConfig{Debug: true},
+				fn: func(k string, v any) error {
+					t.Logf("key: %s, value: %v \n", k, v)
+					return nil
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := Walk(tt.args.c, tt.args.fn); (err != nil) != tt.wantErr {
+				t.Errorf("Walk() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
 }

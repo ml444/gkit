@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"strings"
 )
 
 const delimiter = "__"
@@ -45,7 +44,7 @@ func (v Value) Value() interface{} {
 	return v.value
 }
 
-type Config struct {
+type Processor struct {
 	v            interface{}
 	m            map[string]*Value
 	fileLoader   FileLoader
@@ -56,16 +55,16 @@ type Config struct {
 	useFlag      bool
 }
 
-// InitConfig passes in a structure pointer and returns a Config object.
+// InitConfig passes in a structure pointer.
 // Recursively traverse all fields and construct a map.
 // Get the value from the environment variable and overwrite the value in the map if it exists.
-func InitConfig(v interface{}, opts ...OptionFunc) (*Config, error) {
+func InitConfig(v interface{}, opts ...OptionFunc) error {
 	if v == nil {
 		panic("InitConfig: v is nil")
 	}
 
 	var err error
-	cfg := &Config{
+	cfg := &Processor{
 		v:            v,
 		m:            make(map[string]*Value),
 		ignoreErr:    false,
@@ -78,24 +77,21 @@ func InitConfig(v interface{}, opts ...OptionFunc) (*Config, error) {
 
 	err = cfg.loadFromFile()
 	if err != nil && !cfg.ignoreErr {
-		return nil, err
+		return err
 	}
 
 	// Get all fields in the structure (including nested fields) to build a map
 	err = cfg.buildMap("", reflect.ValueOf(v))
 	if err != nil && !cfg.ignoreErr {
-		return nil, fmt.Errorf("build map error: %v", err)
+		return fmt.Errorf("build map error: %v", err)
 	}
 	if cfg.useFlag {
-		if cfg.fileFlag != "" {
-			flag.StringVar(&cfg.filePath, cfg.fileFlag, cfg.filePath, "Configuration file path")
-		}
 		flag.Parse()
 	}
-	return cfg, nil
+	return nil
 }
 
-func (c *Config) loadFromFile() (err error) {
+func (c *Processor) loadFromFile() (err error) {
 	if c.filePath == "" && c.fileFlag == "" {
 		return nil
 	}
@@ -119,7 +115,7 @@ func (c *Config) loadFromFile() (err error) {
 	return nil
 }
 
-func (c *Config) buildMap(key string, v reflect.Value) (err error) {
+func (c *Processor) buildMap(key string, v reflect.Value) (err error) {
 	if v.Kind() == reflect.Ptr {
 		if v.IsNil() {
 			v = reflect.Zero(v.Type().Elem())
@@ -184,12 +180,12 @@ func (c *Config) buildMap(key string, v reflect.Value) (err error) {
 			}
 			// []string
 			if vv.Kind() == reflect.Slice && vv.Type().Elem().Kind() == reflect.String {
-				for i := 0; i < vv.Len(); i++ {
-					s := vv.Index(i).String()
+				for j := 0; j < vv.Len(); j++ {
+					s := vv.Index(j).String()
 					if s == "" {
 						continue
 					}
-					vv.Index(i).Set(reflect.ValueOf(ReplaceEnvVariables(s)))
+					vv.Index(j).Set(reflect.ValueOf(ReplaceEnvVariables(s)))
 				}
 			}
 			mValue := Value{value: value}
@@ -205,106 +201,31 @@ func (c *Config) buildMap(key string, v reflect.Value) (err error) {
 	return nil
 }
 
-// Get can obtain the value in the structure
-func (c *Config) Get(parts ...string) (value interface{}) {
-	// If no parts are provided, return the value stored in c.v
-	if keysLen := len(parts); keysLen == 0 {
-		return c.v
-	} else if keysLen == 1 {
-		// If only one part is provided, check if it exists in c.m
-		k := parts[0]
-		if v, ok := c.m[k]; ok {
-			return v.value
-		}
-		// If not found in c.m, split the key using delimiter
-		parts = strings.Split(k, delimiter)
-	} else {
-		if v, ok := c.m[strings.Join(parts, delimiter)]; ok {
-			return v.value
-		}
-	}
-	return value
-}
-
-// Set to setIntoStruct the value in the structure
-func (c *Config) Set(key string, v interface{}) error {
-	// set to Config
-	err := c.setIntoStruct(strings.Split(key, delimiter), v)
-	if err != nil {
-		return err
+// Walk Pass in a config structure and a key-value processing function,
+// traverse the structure, and pass the field names and values to the function for processing
+func Walk(c any, fn func(k string, v any) error) error {
+	val := reflect.ValueOf(c)
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
 	}
 
-	old, ok := c.m[key]
-	if !ok {
-		return NotFoundValueErr(key)
+	if val.Kind() != reflect.Struct {
+		return errors.New("provided value is not a struct")
 	}
-	old.value = v
-	c.m[key] = old
 
-	return nil
-}
-
-func (c *Config) setIntoStruct(parts []string, v interface{}) error {
-	vV := reflect.ValueOf(c.v)
-	for _, key := range parts {
-		if vV.Kind() == reflect.Ptr {
-			vV = vV.Elem()
-		}
-
-		vV = vV.FieldByName(key)
-		if !vV.IsValid() {
-			return errors.New("invalid key")
-		}
-
-		cfgT := vV.Type()
-		if cfgT.Kind() == reflect.Ptr {
-			cfgT = cfgT.Elem()
-		}
-
-		if cfgT.Kind() == reflect.Struct {
+	for i := 0; i < val.NumField(); i++ {
+		field := val.Type().Field(i)
+		if !field.IsExported() {
 			continue
 		}
-		if vStr, ok := v.(string); ok {
-			value, err := str2Any(vStr, vV.Type())
-			if err != nil && !c.ignoreErr {
-				return err
-			}
-			v = value
-		}
-		vV.Set(reflect.ValueOf(v))
-		break
-	}
-	return nil
-}
+		fieldValue := val.Field(i)
 
-// SetAndChangeEnv setIntoStruct the value in the environment variable
-func (c *Config) SetAndChangeEnv(key string, v string) error {
-
-	err := c.Set(key, v)
-	if err != nil {
-		return err
-	}
-
-	// set to env
-	mValue, ok := c.m[key]
-	if !ok {
-		return NotFoundValueErr(key)
-	}
-	if mValue.nameInEnv != "" {
-		return os.Setenv(mValue.nameInEnv, v)
-	}
-	return os.Setenv(key, v)
-}
-
-func (c *Config) Walk(fn func(k string, v *Value) error) error {
-	if c.m == nil {
-		return nil
-	}
-	for k, v := range c.m {
-		err := fn(k, v)
+		// Call handler function
+		err := fn(field.Name, fieldValue.Interface())
 		if err != nil {
 			return err
 		}
 	}
+
 	return nil
 }

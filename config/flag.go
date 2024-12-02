@@ -11,23 +11,6 @@ func GetTagValues(tag reflect.StructTag, key string) (bool, []string) {
 	tagValue, ok := tag.Lookup(key)
 	return ok, strings.Split(tagValue, ";")
 }
-func GetTagValue(tag reflect.StructTag, key string) (bool, string) {
-	tagValue, ok := tag.Lookup(key)
-	return ok, tagValue
-}
-
-func slice2map(values []string) map[string]string {
-	for _, value := range values {
-		if !strings.Contains(value, "=") {
-			continue
-		}
-		sList := strings.Split(value, "=")
-		if len(sList) != 2 {
-			panic("")
-		}
-	}
-	return nil
-}
 
 func parseFieldTagWithFlag(field reflect.StructField, v reflect.Value, mValue *Value, useFlag *bool) error {
 	tag := field.Tag
@@ -68,6 +51,9 @@ func parseFieldTagWithFlag(field reflect.StructField, v reflect.Value, mValue *V
 					v.Set(reflect.ValueOf(val))
 				}
 			}
+		}
+		if flag.Lookup(name) != nil {
+			return nil
 		}
 		var err error
 		if v.CanAddr() {
