@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/status"
@@ -19,6 +20,7 @@ type ErrCodeDetail struct {
 var (
 	gMsgLanguage string
 	errCodeMap   = map[int32]*ErrCodeDetail{}
+	lock         = sync.Mutex{}
 )
 
 func SetLang(l string) {
@@ -26,6 +28,8 @@ func SetLang(l string) {
 }
 
 func RegisterError(codeMap map[int32]*ErrCodeDetail) {
+	lock.Lock()
+	defer lock.Unlock()
 	for k, detail := range codeMap {
 		if detail.StatusCode == 0 {
 			detail.StatusCode = DefaultStatusCode
