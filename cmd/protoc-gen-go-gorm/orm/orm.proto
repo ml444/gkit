@@ -176,4 +176,5 @@ message ORMTags {
     // 例如: serializer:json/gob/unixtime
     optional string serializer = 28;
 
+    optional bool encrypt = 29;
 }
