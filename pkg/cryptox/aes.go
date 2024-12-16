@@ -10,36 +10,13 @@ import (
 	"github.com/ml444/gkit/log"
 )
 
-type stringer interface {
-	EncodeToString([]byte) string
-	DecodeString(string) ([]byte, error)
-}
-
-type OptFunc func(c *AES)
-
-func OptWithNonceSize(size int) OptFunc {
-	return func(c *AES) {
-		c.nonceSize = size
-	}
-}
-func OptWithDataByte(data []byte) OptFunc {
-	return func(c *AES) {
-		c.AdditionalData = data
-	}
-}
-
-func OptWithStringer(i stringer) OptFunc {
-	return func(c *AES) {
-		c.stringer = i
-	}
-}
-
 type AES struct {
 	AdditionalData []byte
 	key            []byte
+	FixedNonce     []byte
 	nonceSize      int
 	gcm            cipher.AEAD
-	stringer       stringer
+	encoder        encoder
 }
 
 func NewAES(key []byte, opts ...OptFunc) (*AES, error) {
@@ -50,8 +27,8 @@ func NewAES(key []byte, opts ...OptFunc) (*AES, error) {
 	for _, opt := range opts {
 		opt(c)
 	}
-	if c.stringer == nil {
-		c.stringer = base64.RawStdEncoding
+	if c.encoder == nil {
+		c.encoder = base64.RawStdEncoding
 	}
 	block, err := aes.NewCipher(c.key)
 	if err != nil {
@@ -94,17 +71,20 @@ func (x *AES) EncryptWithString(plaintext string) (string, error) {
 		log.Errorf("Encrypt err: %v", err)
 		return "", err
 	}
-	return x.stringer.EncodeToString(cipherBuf), nil
+	return x.encoder.EncodeToString(cipherBuf), nil
 }
 
 func (x *AES) EncryptWithBytes(plaintext []byte) ([]byte, error) {
-	nonce := x.NewNonce()
+	nonce := x.FixedNonce
+	if nonce == nil {
+		nonce = x.NewNonce()
+	}
 	ciphertext := x.gcm.Seal(nil, nonce, plaintext, x.AdditionalData)
 	return append(nonce, ciphertext...), nil
 }
 
 func (x *AES) DecryptWithString(ciphertext string) (string, error) {
-	cipherBuf, err := x.stringer.DecodeString(ciphertext)
+	cipherBuf, err := x.encoder.DecodeString(ciphertext)
 	if err != nil {
 		log.Errorf("DecodeString err: %v\n", err)
 		return "", err
@@ -126,20 +106,53 @@ func (x *AES) DecryptWithBytes(cipherBuf []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-func (x *AES) Encode2Str(b []byte) string {
-	return x.stringer.EncodeToString(b)
-}
-func (x *AES) Decode2Byte(s string) ([]byte, error) {
-	return x.stringer.DecodeString(s)
-}
 func (x *AES) NewNonce() []byte {
 	return genNonce(x.nonceSize)
 }
 func (x *AES) NewNonceStr() string {
-	return x.stringer.EncodeToString(x.NewNonce())
+	return x.encoder.EncodeToString(x.NewNonce())
 }
 func genNonce(size int) []byte {
 	nonce := make([]byte, size)
 	_, _ = rand.Read(nonce)
 	return nonce
+}
+
+type OptFunc func(c *AES)
+
+// AESOptWithNonceSize sets the nonce size for the AES encryption.
+// The default nonce size is 12 bytes, which is the recommended size.
+// If you need to use a different nonce size, you can set it using this option.
+// NOTE: If you set a fixed nonce, this setting will be invalid.
+func AESOptWithNonceSize(size int) OptFunc {
+	return func(c *AES) {
+		if c.FixedNonce != nil {
+			return
+		}
+		c.nonceSize = size
+	}
+}
+
+// AESOptWithFixedNonce sets the fixed nonce for the AES encryption.
+// This setting enables the same string to be encrypted with the same result.
+// This is needed in some business scenarios. However, it should be used with
+// caution as it can lead to security vulnerabilities.
+// If not sets this option will generate a new nonce for each encryption.
+func AESOptWithFixedNonce(nonce []byte) OptFunc {
+	return func(c *AES) {
+		c.FixedNonce = nonce
+		c.nonceSize = len(nonce)
+	}
+}
+
+func AESOptWithDataByte(data []byte) OptFunc {
+	return func(c *AES) {
+		c.AdditionalData = data
+	}
+}
+
+func AESOptWithEncoder(i encoder) OptFunc {
+	return func(c *AES) {
+		c.encoder = i
+	}
 }
