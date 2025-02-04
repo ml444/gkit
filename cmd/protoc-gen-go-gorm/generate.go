@@ -165,15 +165,22 @@ func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, resu
 			if !ok || tags == nil {
 				continue
 			}
+			forceORM, tagStr := orm.JoinORMTags(tags)
 			fieldName := field.GoName
 			oldType := goType(field)
 			ormField := &orm.ORMField{
 				FieldName: fieldName,
 				NewType:   oldType,
 				OldType:   oldType,
-				ORMTag:    orm.JoinTags(string(field.Desc.Name()), orm.JoinORMTags(tags)),
+				ORMTag:    orm.JoinTags(string(field.Desc.Name()), tagStr),
 			}
+			msgDesc.ForceORM = forceORM
 			msgDesc.Fields = append(msgDesc.Fields, ormField)
+			if len(NeedGenerateFunctionFields) > 0 {
+				if ok1 := NeedGenerateFunctionFields[fieldName]; ok1 {
+					msgDesc.NeedGenFuncFields = append(msgDesc.NeedGenFuncFields, ormField)
+				}
+			}
 
 			typ := ""
 			if tags.Type != nil && *tags.Type != "" {

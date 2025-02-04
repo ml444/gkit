@@ -1,7 +1,6 @@
 package dbx
 
 import (
-	"reflect"
 	"testing"
 
 	"gorm.io/gorm"
@@ -15,12 +14,9 @@ func TestScope_PaginationQuery(t *testing.T) {
 	}
 	type args struct {
 		opt  *pagination.Pagination
-		list interface{}
+		list *[]*testOrmModel
 	}
-	opt := &pagination.Pagination{
-		Page: 1,
-		Size: 10,
-	}
+
 	tests := []struct {
 		name    string
 		fields  fields
@@ -31,28 +27,31 @@ func TestScope_PaginationQuery(t *testing.T) {
 		{
 			name: "normal case",
 			fields: fields{
-				DB: &gorm.DB{},
+				DB: testGetDB(),
 			},
 			args: args{
-				opt:  opt,
-				list: nil,
+				opt:  &pagination.Pagination{Page: 1, Size: 10},
+				list: &[]*testOrmModel{},
 			},
-			want:    &pagination.Pagination{},
+			want:    &pagination.Pagination{Page: 1, Size: 10},
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &Scope{
-				DB: tt.fields.DB,
-			}
+			s := NewScope(testGetDB(), &testOrmModel{})
 			got, err := s.PaginationQuery(tt.args.opt, tt.args.list)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Scope.PaginationQuery() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
+			if got.Page != tt.want.Page || got.Size != tt.want.Size {
 				t.Errorf("Scope.PaginationQuery() = %v, want %v", got, tt.want)
+			}
+			if !got.SkipCount && got.Total > 0 {
+				if got.Total > got.Size && len(*tt.args.list) != int(got.Size) {
+					t.Errorf("find err: list len: %d, want: %d", len(*tt.args.list), got.Size)
+				}
 			}
 		})
 	}

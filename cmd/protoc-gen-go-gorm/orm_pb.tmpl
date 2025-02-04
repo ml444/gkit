@@ -17,6 +17,19 @@ func (x *{{ .Name }}) TableName() string {
 	return "{{ .Opts.TableName }}"
 }
 
+
+func (x *{{ .Name }}) ToORM() dbx.ITModel {
+	return &T{{ .Name }}{
+{{ range .Fields -}}
+    {{ if eq .NewType .OldType -}}
+        {{ .FieldName }}: x.{{ .FieldName -}},
+    {{ else -}}
+        {{ .FieldName }}: {{ .NewType }}(x.{{ .FieldName -}}),
+    {{ end -}}
+{{ end }}
+	}
+}
+
 func (x *T{{ .Name }}) TableName() string {
 	return "{{ .Opts.TableName }}"
 }
@@ -27,7 +40,14 @@ type T{{ .Name }} struct {
 	{{- .FieldName }} {{ .NewType }} `{{ .ORMTag }}`
 	{{ end }}
 }
-
+    {{ if gt (len .NeedGenFuncFields) 0 }}
+        {{- $ModelName := .Name }}
+        {{- range .NeedGenFuncFields }}
+func (x *T{{ $ModelName }}) Get{{.FieldName}}() {{.NewType }} {
+	return x.{{.FieldName}}
+}
+        {{- end }}
+    {{- end}}
 func (x *T{{ .Name }}) ToSource() dbx.IModel {
 	return &{{ .Name }}{
 	    {{ range .Fields -}}
@@ -39,21 +59,25 @@ func (x *T{{ .Name }}) ToSource() dbx.IModel {
         {{ end }}
 	}
 }
-
-func (x *{{ .Name }}) ToORM() dbx.ITModel {
-	return &T{{ .Name }}{
-	    {{ range .Fields -}}
-	    {{ if eq .NewType .OldType -}}
-        {{ .FieldName }}: x.{{ .FieldName -}},
-        {{ else -}}
-        {{ .FieldName }}: {{ .NewType }}(x.{{ .FieldName -}}),
-        {{ end -}}
-        {{ end }}
-	}
+{{ $existSerializationField := gt (len .SerializeFields) 0 }}
+func (x *T{{ .Name }}) ExistSerializationField() bool {
+	{{- if $existSerializationField }}
+	return true
+    {{- else }}
+	return false
+    {{ end -}}
 }
 
-{{ $modelName := .Name }}
-{{ if gt (len .Opts.IndexClauses) 0 }}
+func (x *T{{ .Name }}) ForceTModel() bool {
+		{{ if or .ForceORM $existSerializationField }}
+	return true
+        {{- else }}
+	return false
+        {{ end -}}
+}
+
+{{- $modelName := .Name }}
+{{- if gt (len .Opts.IndexClauses) 0 }}
 {{ range .Opts.IndexClauses -}}
 func (x *T{{ $modelName }}) {{ .ToFuncName }}() clause.Expression {
 	return {{ .ToString }}

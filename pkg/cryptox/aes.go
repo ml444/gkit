@@ -49,6 +49,16 @@ func (x *AES) Encrypt(plaintext any) (any, error) {
 		return x.EncryptWithString(v)
 	case []byte:
 		return x.EncryptWithBytes(v)
+	case []string:
+		result := []string{}
+		for _, s := range v {
+			vv, err := x.EncryptWithString(s)
+			if err != nil {
+				return result, err
+			}
+			result = append(result, string(vv))
+		}
+		return result, nil
 	default:
 		return nil, fmt.Errorf("ciphertext type [%T] not supported", plaintext)
 	}
@@ -60,6 +70,16 @@ func (x *AES) Decrypt(ciphertext any) (any, error) {
 		return x.DecryptWithString(v)
 	case []byte:
 		return x.DecryptWithBytes(v)
+	case []string:
+		var result []string
+		for _, s := range v {
+			vv, err := x.DecryptWithString(s)
+			if err != nil {
+				return result, err
+			}
+			result = append(result, string(vv))
+		}
+		return result, nil
 	default:
 		return nil, fmt.Errorf("ciphertext type [%T] not supported", ciphertext)
 	}
@@ -109,9 +129,11 @@ func (x *AES) DecryptWithBytes(cipherBuf []byte) ([]byte, error) {
 func (x *AES) NewNonce() []byte {
 	return genNonce(x.nonceSize)
 }
+
 func (x *AES) NewNonceStr() string {
 	return x.encoder.EncodeToString(x.NewNonce())
 }
+
 func genNonce(size int) []byte {
 	nonce := make([]byte, size)
 	_, _ = rand.Read(nonce)
