@@ -8,7 +8,7 @@ import (
 func TestAES(t *testing.T) {
 	x, err := NewAES(
 		[]byte("u8pAdGgDU4Yw59aIFfieNiJNRrmHWYj1"),
-		AESOptWithDataByte([]byte("test")),
+		// AESOptWithDataByte([]byte("test")),
 	)
 	if err != nil {
 		panic(err.Error())
@@ -48,11 +48,12 @@ func TestAES(t *testing.T) {
 		t.Errorf("plainText: %v, want %v", plainText2, testBytes)
 	}
 }
+
 func TestAESWithFixedNonce(t *testing.T) {
 	t.Log(len([]byte("fixedNonce12")))
 	x, err := NewAES(
 		[]byte("u8pAdGgDU4Yw59aIFfieNiJNRrmHWYj1"),
-		AESOptWithDataByte([]byte("test")),
+		// AESOptWithDataByte([]byte("test")),
 		AESOptWithFixedNonce([]byte("fixedNonce12")),
 	)
 	if err != nil {

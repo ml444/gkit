@@ -1,7 +1,6 @@
 package dbx
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -38,11 +37,18 @@ type ProtoUpsertedAt interface {
 	// GetDeletedAt() uint32
 	// ProtoReflect() protoreflect.Message
 }
+
+type ProtoUpdatedAt interface {
+	GetUpdatedAt() uint32
+}
+
 type ProtoDeletedAt interface {
 	GetDeletedAt() uint32
 }
 
-type GenerateIDFunc func(ctx context.Context, cnt int) []uint64
+type ITable interface {
+	TableName() string
+}
 
 type OrderColumn struct {
 	Field   string
@@ -52,23 +58,33 @@ type OrderColumn struct {
 
 type Scope struct {
 	*gorm.DB
-	model       interface{}
-	NotFoundErr error
-	// RowsAffected int64
-	idFunc GenerateIDFunc
+	model        interface{}
+	NotFoundErr  error
+	RowsAffected int64
 
 	resetTime         bool
 	ignoreNotFoundErr bool
 }
 
-func NewScope(db *gorm.DB, model interface{}) *Scope {
-	tx := db.Model(model)
-	if _, ok := model.(ProtoDeletedAt); ok {
+func NewScope(db *gorm.DB, modelOrTable interface{}) *Scope {
+	if modelOrTable == nil {
+		panic("modelOrTable is nil")
+	}
+	var tx *gorm.DB
+	switch v := modelOrTable.(type) {
+	case string:
+		tx = db.Table(v)
+	case ITable:
+		tx = db.Table(v.TableName())
+	default:
+		tx = db.Model(modelOrTable)
+	}
+	if _, ok := modelOrTable.(ProtoDeletedAt); ok {
 		tx = tx.Where("deleted_at = 0")
 	}
 	return &Scope{
 		DB:    tx,
-		model: model,
+		model: modelOrTable,
 	}
 }
 
@@ -77,11 +93,6 @@ func NewScopeOfPure(db *gorm.DB, model interface{}) *Scope {
 		DB:    db.Model(model),
 		model: model,
 	}
-}
-
-func (s *Scope) SetGenerateIDFunc(idFunc GenerateIDFunc) *Scope {
-	s.idFunc = idFunc
-	return s
 }
 
 func (s *Scope) SetNotFoundErr(notFoundErrCode int32) *Scope {
@@ -120,15 +131,30 @@ func (s *Scope) Create(v interface{}) error {
 	return s.DB.Create(v).Error
 }
 
-// CreateInBatches Insert data in batches after splitting data according to batchSize
+func (s *Scope) Save(v interface{}) error {
+	if s.resetTime {
+		s.ResetSysDateTimeField(v)
+	}
+
+	return s.DB.Save(v).Error
+}
+
 func (s *Scope) CreateInBatches(values interface{}, batchSize int) error {
-	return s.DB.CreateInBatches(values, batchSize).Error
+	tx := s.DB.CreateInBatches(values, batchSize)
+	s.RowsAffected = tx.RowsAffected
+	return tx.Error
 }
 
 // Update updates attributes using callbacks. values must be a struct or map.
 func (s *Scope) Update(v interface{}, conds ...interface{}) error {
 	if s.resetTime {
 		s.ResetSysDateTimeField(v)
+	} else {
+		if vv, okk := v.(map[string]interface{}); okk {
+			if _, ok := s.model.(ProtoUpdatedAt); ok {
+				vv[ProtoMessageFieldUpdatedAt] = time.Now().Unix()
+			}
+		}
 	}
 	if len(conds) > 0 {
 		s.DB.Where(conds[0], conds[1:]...)
@@ -430,6 +456,7 @@ func (s *Scope) Omit(value ...string) *Scope {
 	s.DB.Omit(value...)
 	return s
 }
+
 func (s *Scope) Clause(value ...clause.Expression) *Scope {
 	s.DB.Clauses(value...)
 	return s

@@ -149,9 +149,6 @@ message ORMTags {
     //    Name3 string `gorm:"check:,name <> 'jinzhu'"`
     // }
     optional string check = 19;
-    // constraint 标签的 OnDelete、OnUpdate 选项设置外键约束，例如：
-    // `gorm:"constraint:OnDelete:CASCADE;OnUpdate:SET NULL;"`
-    optional string constraint = 20;
 
     // 忽略该字段
     // - 表示无读写
@@ -177,4 +174,81 @@ message ORMTags {
     optional string serializer = 28;
 
     optional bool encrypt = 29;
+
+    /*
+    >>>>>>>>>>Association Tags<<<<<<<
+    link: https://gorm.io/docs/associations.html#tags
+     */
+
+    // 指定当前模型的列名，用作联接表中的外键.关联字段的外键名称，例如：`gorm:"foreignKey:UserID"`
+    /*
+    type User struct {
+        gorm.Model
+        Name         string
+        CompanyRefer int
+        Company      Company `gorm:"foreignKey:CompanyRefer"`
+        // 使用 CompanyRefer 作为外键
+    }
+    
+    type Company struct {
+        ID   int
+        Name string
+    }
+    */
+    optional string foreign_key = 30;
+
+    // 关联字段的关联表名称，例如：`gorm:"foreignKey:UserNumber;references:MemberNumber"`
+    optional string references = 31;
+
+    // Defines the polymorphic type, typically the model name.
+    // By default polymorphic:<value> will prefix the column type and column id with <value>.
+    // The value will be the table name pluralized.
+    // Toys []Toy `gorm:"polymorphic:Owner;"`
+    optional string polymorphic = 32;
+
+    // Sets the polymorphic value, usually the table name, if not specified otherwise.
+
+    /*
+    type Dog struct {
+      ID   int
+      Name string
+      Toys []Toy `gorm:"polymorphicType:Kind;polymorphicId:OwnerID;polymorphicValue:master"`
+    }
+
+    type Toy struct {
+      ID        int
+      Name      string
+      OwnerID   int
+      Kind      string
+    }
+     */
+    optional string polymorphic_type = 33;      // Specifies the column type.
+    optional string polymorphic_value = 34;     // Specifies the value of the type.
+    optional string polymorphic_id = 35;        // Specifies the column ID.
+
+    // Names the join table used in a many-to-many relationship.
+    // `gorm:"many2many:user_languages;"`
+    optional string many2many = 36;
+
+    /*
+    type User struct {
+      gorm.Model
+      Profiles []Profile `gorm:"many2many:user_profiles;foreignKey:Refer;joinForeignKey:UserReferID;References:UserRefer;joinReferences:ProfileRefer"`
+      Refer    uint      `gorm:"index:,unique"`
+    }
+
+    type Profile struct {
+      gorm.Model
+      Name      string
+      UserRefer uint `gorm:"index:,unique"`
+    }
+     */
+    // Identifies the foreign key column in the join table that maps back to the current model’s table.
+    optional string join_foreign_key = 37;
+    // Points to the foreign key column in the join table that links to the reference model’s table.
+    optional string join_references = 38;
+
+    // constraint 标签的 OnDelete、OnUpdate 选项设置外键约束，例如：
+    // `gorm:"constraint:OnDelete:CASCADE;OnUpdate:SET NULL;"`
+    optional string constraint = 39;
 }
