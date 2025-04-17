@@ -16,6 +16,12 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+var FileAlias string
+
+func GetAliasName() string {
+	return FileAlias
+}
+
 func Render(tpl *template.Template) func(tmplName string, data interface{}) (string, error) {
 	return func(tmplName string, data interface{}) (string, error) {
 		var b bytes.Buffer
@@ -32,6 +38,7 @@ func lookup(f protogen.Field, name string) string {
 		name,
 	)
 }
+
 func errIdxCause(field protogen.Field, idx, cause string, reason ...interface{}) string {
 	n := field.GoName
 	var fld string
@@ -63,7 +70,7 @@ func errIdxCause(field protogen.Field, idx, cause string, reason ...interface{})
 		errCode: %d,
 		%s%s
 	}`,
-		"ValidationError",
+		fmt.Sprintf("%sValidationError", FileAlias),
 		fld,
 		fmt.Sprint(reason...),
 		errCode,
@@ -149,7 +156,7 @@ func oneOfTypeName(f protogen.Field) string {
 		}
 	}
 	return f.Desc.Kind().String()
-	//return pgsgo.TypeName(fns.OneofOption(f)).Pointer()
+	// return pgsgo.TypeName(fns.OneofOption(f)).Pointer()
 }
 
 func inType(f protogen.Field, x interface{}) string {
@@ -164,7 +171,7 @@ func inType(f protogen.Field, x interface{}) string {
 			return "string"
 		default:
 			return f.Desc.Kind().String()
-			//return pgsgo.TypeName(fmt.Sprintf("%T", x)).Element().String()
+			// return pgsgo.TypeName(fmt.Sprintf("%T", x)).Element().String()
 		}
 	case protoreflect.EnumKind:
 		fullname := string(f.Desc.Enum().FullName())
@@ -313,4 +320,8 @@ func GetElemRule(field protogen.Field, rule proto.Message) (rules *v.FieldRules,
 		return
 	}
 	return
+}
+
+func JoinString(ss ...string) string {
+	return strings.Join(ss, "")
 }

@@ -1,7 +1,7 @@
 package templates
 
 const HostTpl = `
-	func _validateHostname(host string) error {
+	func {{GetAliasName}}_validateHostname(host string) error {
 		s := strings.ToLower(strings.TrimSuffix(host, "."))
 
 		if len(host) > 253 {
@@ -33,7 +33,7 @@ const HostTpl = `
 `
 
 const EmailTpl = `
-	func _validateEmail(addr string) error {
+	func {{GetAliasName}}_validateEmail(addr string) error {
 		a, err := mail.ParseAddress(addr)
 		if err != nil {
 			return err
@@ -50,12 +50,12 @@ const EmailTpl = `
 			return errors.New("email address local phrase cannot exceed 64 characters")
 		}
 
-		return _validateHostname(parts[1])
+		return {{GetAliasName}}_validateHostname(parts[1])
 	}
 `
 
 const UuidTpl = `
-	func _validateUuid(uuid string) error {
+	func {{GetAliasName}}_validateUuid(uuid string) error {
 		if matched := _uuidPattern.MatchString(uuid); !matched {
 			return errors.New("invalid uuid format")
 		}

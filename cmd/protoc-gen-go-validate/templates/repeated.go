@@ -39,7 +39,6 @@ const RepTpl = `
 		{{ lookup $f "Unique" }} := {{ if isBytes $f.Desc -}}
 			make(map[string]struct{}, len({{ .GetAccessor }}))
 		{{ else -}}
-			// make(map[{[ (typ $f).Element ]}]struct{}, len({{ .GetAccessor }}))
 			make(map[{{ .Type }}]struct{}, len({{ .GetAccessor }}))
 		{{ end -}}
 	{{ end }}

@@ -33,7 +33,9 @@ var FuncMap = map[string]interface{}{
 	//"enumPackages":  enumPackages,
 
 	//"GetImports":  GetImports,
-	"OnType":      OnType,
-	"GetElemRule": GetElemRule,
-	"inKind":      inKind,
+	"OnType":       OnType,
+	"GetElemRule":  GetElemRule,
+	"inKind":       inKind,
+	"JoinString":   JoinString,
+	"GetAliasName": GetAliasName,
 }

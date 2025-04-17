@@ -4,11 +4,11 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
-	"github.com/ml444/gkit/cmd/protoc-gen-go-errcode/err"
-	"path/filepath"
 	"strings"
 	"text/template"
 	"unicode"
+
+	"github.com/ml444/gkit/cmd/protoc-gen-go-errcode/err"
 
 	"google.golang.org/protobuf/reflect/protoreflect"
 
@@ -16,6 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/ml444/gkit/cmd/protoc-gen-go-validate/ctx"
+	"github.com/ml444/gkit/cmd/protoc-gen-go-validate/funcs"
 	"github.com/ml444/gkit/cmd/protoc-gen-go-validate/v"
 )
 
@@ -45,48 +46,26 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) *protogen.Generated
 	g.P("package ", file.GoPackageName)
 	g.P()
 
-	var err error
-	//buf := new(bytes.Buffer)
-	//tmpl, err = tmpl.Parse(templates.FileTmpl)
-	//if err != nil {
-	//	panic(err.Error())
-	//}
-	//err = tmpl.Execute(buf, file)
-	//if err != nil {
-	//	panic(err.Error())
-	//}
-	//g.P(buf.String())
-	g.P()
-	fileDir := string(file.GoImportPath)
-	isRelative := isRelativePath(gen.Request.GetParameter())
-	if isRelative {
-		// TODO: --go-validate_out=paths=source_relative:./go
-		fileDir, _ = filepath.Split(file.GeneratedFilenamePrefix)
-	}
-	redeclaredList, err := FindRedeclaredInPkg(fileDir, file.GeneratedFilenamePrefix)
-	if err != nil {
-		panic(err.Error())
-	}
 	//if !redeclaredList {
 	//	g.P(templates.CommonDefTmpl)
 	//}
-	generateFileContent(file, g, redeclaredList)
+	generateFileContent(file, g)
 	return g
 }
 
-func generateFileContent(file *protogen.File, g *protogen.GeneratedFile, redeclaredList []string) {
+func generateFileContent(file *protogen.File, g *protogen.GeneratedFile) {
 	var err error
 	if len(file.Messages) == 0 {
 		return
 	}
-	tmpl := template.New("file")
-	Register(tmpl)
-	tmpl, err = tmpl.New("validate").Parse(strings.TrimSpace(validateTemplate))
-	if err != nil {
-		panic(err.Error())
-	}
+	dirs := strings.Split(file.GeneratedFilenamePrefix, "/")
+	fileName := dirs[len(dirs)-1]
+	funcs.FileAlias = fileName
 
-	validateCtx := &ctx.ValidateCtx{}
+	validateCtx := &ctx.ValidateCtx{
+		FileAliasName: fileName,
+		PackageName:   string(file.GoPackageName),
+	}
 	validateCtx.ErrCodeBegin = getErrCodeBegin(file)
 
 	needWKn := &ctx.NeedWellKnown{}
@@ -105,25 +84,15 @@ func generateFileContent(file *protogen.File, g *protogen.GeneratedFile, redecla
 	for path, alias := range importMap {
 		validateCtx.Imports = append(validateCtx.Imports, &ctx.ImportCtx{Alias: alias, Path: path})
 	}
-	redeclaredMap := make(map[string]bool)
-	for _, redeclared := range redeclaredList {
-		redeclaredMap[redeclared] = true
-	}
-	if needWKn.Email && redeclaredMap["_validateEmail"] {
-		needWKn.Email = false
-	}
-	if needWKn.Hostname && redeclaredMap["_validateHostname"] {
-		needWKn.Hostname = false
-	}
-	if needWKn.UUID && redeclaredMap["_validateUuid"] {
-		needWKn.UUID = false
-	}
+	validateCtx.Imports = append(validateCtx.Imports, &ctx.ImportCtx{Alias: "", Path: "github.com/ml444/gkit/errorx"})
 	validateCtx.NeedWellKnow = needWKn
-	if !redeclaredMap["ValidationError"] {
-		validateCtx.Imports = append(validateCtx.Imports, &ctx.ImportCtx{Alias: "", Path: "github.com/ml444/gkit/errorx"})
-		validateCtx.NeedCommon = true
-	}
 
+	tmpl := template.New("file")
+	Register(tmpl)
+	tmpl, err = tmpl.New("validate").Parse(strings.TrimSpace(validateTemplate))
+	if err != nil {
+		panic(err.Error())
+	}
 	buf := new(bytes.Buffer)
 	err = tmpl.Lookup("validate").Execute(buf, validateCtx)
 	if err != nil {

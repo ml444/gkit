@@ -132,19 +132,19 @@ const StrTpl = `
 			errors = append(errors, err)
 		}
 	{{ else if $r.GetEmail }}
-		if err := _validateEmail({{ .GetAccessor }}); err != nil {
+		if err := {{GetAliasName}}_validateEmail({{ .GetAccessor }}); err != nil {
 			err = {{ errCause .Field "err" "value must be a valid email address" }}
 			if !all { return err }
 			errors = append(errors, err)
 		}
 	{{ else if $r.GetHostname }}
-		if err := _validateHostname({{ .GetAccessor }}); err != nil {
+		if err := {{GetAliasName}}_validateHostname({{ .GetAccessor }}); err != nil {
 			err = {{ errCause .Field "err" "value must be a valid hostname" }}
 			if !all { return err }
 			errors = append(errors, err)
 		}
 	{{ else if $r.GetAddress }}
-		if err := _validateHostname({{ .GetAccessor }}); err != nil {
+		if err := {{GetAliasName}}_validateHostname({{ .GetAccessor }}); err != nil {
 			if ip := net.ParseIP({{ .GetAccessor }}); ip == nil {
 				err := {{ err .Field "value must be a valid hostname, or ip address" }}
 				if !all { return err }
@@ -168,7 +168,7 @@ const StrTpl = `
 			errors = append(errors, err)
 		}
 	{{ else if $r.GetUuid }}
-		if err := _validateUuid({{ .GetAccessor }}); err != nil {
+		if err := {{GetAliasName}}_validateUuid({{ .GetAccessor }}); err != nil {
 			err = {{ errCause .Field "err" "value must be a valid UUID" }}
 			if !all { return err }
 			errors = append(errors, err)

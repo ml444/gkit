@@ -12,11 +12,13 @@ import (
 )
 
 type ValidateCtx struct {
-	Imports      []*ImportCtx
-	Messages     []*MessageCtx
-	NeedWellKnow *NeedWellKnown
-	NeedCommon   bool
-	ErrCodeBegin int32
+	FileAliasName string
+	PackageName   string
+	Imports       []*ImportCtx
+	Messages      []*MessageCtx
+	NeedWellKnow  *NeedWellKnown
+	NeedCommon    bool
+	ErrCodeBegin  int32
 }
 
 type NeedWellKnown struct {
@@ -48,15 +50,15 @@ type OneOfField struct {
 	Fields []*FieldCtx
 	Name   string
 	Type   string
-	//Index    int
+	//   Index    int
 	Required bool
 	Skip     bool
-	//TmplName string
-	//Err      error
+	//   TmplName string
+	//   Err      error
 }
 
 type FieldCtx struct {
-	//MessageDesc protoreflect.MessageDescriptor
+	//   MessageDesc protoreflect.MessageDescriptor
 	Desc     protoreflect.FieldDescriptor
 	Field    *protogen.Field
 	Rules    proto.Message
@@ -183,10 +185,13 @@ func (fc FieldCtx) GetAccessor() string {
 
 	return fmt.Sprintf("m.Get%s()", fc.Field.GoName)
 }
+
 func (fc *FieldCtx) SetAccessor(def string) *FieldCtx {
 	fc.Accessor = def
+
 	return fc
 }
+
 func (fc *FieldCtx) MapTypeName(field *protogen.Field, desc protoreflect.FieldDescriptor, rule *v.FieldRules) *FieldCtx {
 	rType, rIns, mRule, wrap := ResolveRules(desc, rule)
 	elem := FieldCtx{

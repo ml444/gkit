@@ -60,10 +60,11 @@ var _uuidPattern = regexp.MustCompile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F
 {{ end }}
 {{ end }}
 
-{{ if .NeedCommon }}
-// ValidationError is the validation error
+{{- $VErrName := JoinString .FileAliasName "ValidationError"}}
+{{- $MErrName := JoinString .FileAliasName "MultiError"}}
+// {{$VErrName}} is the validation error
 // returned by .Validate if the designated constraints aren't met.
-type ValidationError struct {
+type {{$VErrName}} struct {
 	field   string
 	reason  string
 	errCode int32
@@ -72,18 +73,18 @@ type ValidationError struct {
 }
 
 // Field function returns field value.
-func (e  ValidationError) Field() string { return e.field }
+func (e {{$VErrName}}) Field() string { return e.field }
 
-func (e  ValidationError) Reason() string { return e.reason }
+func (e {{$VErrName}}) Reason() string { return e.reason }
 
-func (e  ValidationError) Cause() error { return e.cause }
+func (e {{$VErrName}}) Cause() error { return e.cause }
 
-func (e  ValidationError) Key() bool { return e.key }
+func (e {{$VErrName}}) Key() bool { return e.key }
 
-func (e  ValidationError) ErrorName() string { return "ValidationError" }
+func (e {{$VErrName}}) ErrorName() string { return "{{$VErrName}}" }
 
 // Error satisfies the builtin error interface
-func (e  ValidationError) Error() string {
+func (e {{$VErrName}}) Error() string {
 	if e.errCode != 0 {
 		return errorx.New(e.errCode).Error()
 	} else {
@@ -102,12 +103,12 @@ func (e  ValidationError) Error() string {
 	}
 }
 
-// ValidationError is an error wrapping multiple validation errors
+// {{$MErrName}} is an error wrapping multiple validation errors
 // returned by .ValidateAll() if the designated constraints aren't met.
-type  MultiError []error
+type {{$MErrName}} []error
 
 // Error returns a concatenation of all the error messages it wraps.
-func (m MultiError) Error() string {
+func (m {{$MErrName}}) Error() string {
 	var msgs []string
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
@@ -116,8 +117,7 @@ func (m MultiError) Error() string {
 }
 
 // AllErrors returns a list of validation violation errors.
-func (m MultiError) AllErrors() []error { return m }
-{{ end }}
+func (m {{$MErrName}}) AllErrors() []error { return m }
 
 {{ range .Messages }}
 
@@ -134,7 +134,7 @@ func (m *{{ .TypeName }}) Validate() error {
 {{ if .Disabled -}}
 	{{ cmt "ValidateAll is disabled for " .TypeName ". This method will always return nil." }}
 {{- else -}}
-	{{ cmt "ValidateAll checks the field values on " .TypeName " with the rules defined in the proto definition for this message. If any rules are violated, the result is a list of violation errors wrapped in " .TypeName "MultiError, or nil if none found." }}
+	{{ cmt "ValidateAll checks the field values on " .TypeName " with the rules defined in the proto definition for this message. If any rules are violated, the result is a list of violation errors wrapped in " .TypeName "{{$MErrName}}, or nil if none found." }}
 {{- end -}}
 func (m *{{ .TypeName }}) ValidateAll() error {
 	return m.validate(true)
@@ -161,7 +161,7 @@ func (m *{{ .TypeName }}) validate(all bool) error {
 				{{- range $oneof.Fields }}
 					case *{{ oneOfType .Field }}:
 						if v == nil {
-							err := ValidationError{
+							err := {{$VErrName}}{
 								field: "{{ $oneof.Name }}",
 								reason: "oneof value cannot be a typed-nil",
 							}
@@ -178,7 +178,7 @@ func (m *{{ .TypeName }}) validate(all bool) error {
 			}
 			{{- if $oneof.Required }}
 			if !oneof{{ $oneof.Name }}Present {
-				err := ValidationError{
+				err := {{$VErrName}}{
 					field: "{{ $oneof.Name }}",
 					reason: "value is required",
 				}
@@ -195,7 +195,7 @@ func (m *{{ .TypeName }}) validate(all bool) error {
 		{{ end }}
 
 		if len(errors) > 0 {
-			return  MultiError(errors)
+			return  {{$MErrName}}(errors)
 		}
 
 		return nil
