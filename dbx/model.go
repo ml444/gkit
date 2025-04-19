@@ -471,7 +471,7 @@ func (x *T) ListWithPagination(paginate *pagination.Pagination, opts any, listPt
 	}
 
 	var newPagination *pagination.Pagination
-	newPagination, err = scope.PaginationQuery(paginate, listPtr)
+	newPagination, err = scope.PaginationQuery(paginate, valList)
 	if err != nil {
 		return nil, err
 	}
