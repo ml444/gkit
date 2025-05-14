@@ -2,7 +2,6 @@ package transport
 
 import (
 	"fmt"
-	"strings"
 )
 
 type MD map[string][]string
@@ -12,9 +11,7 @@ func New(mds ...map[string][]string) MD {
 	md := MD{}
 	for _, m := range mds {
 		for k, vList := range m {
-			for _, v := range vList {
-				md.Append(k, v)
-			}
+			md.Append(k, vList...)
 		}
 	}
 	return md
@@ -28,7 +25,7 @@ func Pairs(kv ...string) MD {
 	}
 	md := make(MD, len(kv)/2)
 	for i := 0; i < len(kv); i += 2 {
-		key := strings.ToLower(kv[i])
+		key := kv[i]
 		md[key] = append(md[key], kv[i+1])
 	}
 	return md
@@ -39,13 +36,12 @@ func (m MD) Append(key string, values ...string) {
 	if len(values) == 0 {
 		return
 	}
-	key = strings.ToLower(key)
 	m[key] = append(m[key], values...)
 }
 
 // GetFirst obtains the first value for a given key.
 func (m MD) GetFirst(key string) string {
-	v := m[strings.ToLower(key)]
+	v := m[key]
 	if len(v) == 0 {
 		return ""
 	}
@@ -54,7 +50,7 @@ func (m MD) GetFirst(key string) string {
 
 // Get obtains the values for a given key.
 func (m MD) Get(key string) []string {
-	return m[strings.ToLower(key)]
+	return m[key]
 }
 
 // Set stores the key-value pair.
@@ -62,12 +58,11 @@ func (m MD) Set(key string, values ...string) {
 	if len(values) == 0 {
 		return
 	}
-	m[strings.ToLower(key)] = values
+	m[key] = values
 }
 
 // Delete removes the values for a given key.
 func (m MD) Delete(k string) {
-	k = strings.ToLower(k)
 	delete(m, k)
 }
 
@@ -101,6 +96,7 @@ func (m MD) Copy() MD {
 	}
 	return md
 }
+
 func copyOf(v []string) []string {
 	vals := make([]string, len(v))
 	copy(vals, v)

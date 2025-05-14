@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+
+	"github.com/ml444/gkit/transport"
 )
 
 var _ Context = (*wrappedCtx)(nil)
@@ -23,14 +25,14 @@ type Context interface {
 	Header() http.Header
 	Request() *http.Request
 	Response() http.ResponseWriter
-	Bind(interface{}) error
-	BindVars(interface{}) error
-	BindQuery(interface{}) error
-	BindForm(interface{}) error
-	Returns(interface{}, error) error
-	Result(int, interface{}) error
-	JSON(int, interface{}) error
-	XML(int, interface{}) error
+	Bind(any) error
+	BindVars(any) error
+	BindQuery(any) error
+	BindForm(any) error
+	Returns(any, error)
+	Result(int, any)
+	JSON(int, any) error
+	XML(int, any) error
 	String(int, string) error
 	Blob(int, string, []byte) error
 	Stream(int, string, io.Reader) error
@@ -79,35 +81,44 @@ func (c *wrappedCtx) Query() url.Values {
 }
 func (c *wrappedCtx) Request() *http.Request        { return c.req }
 func (c *wrappedCtx) Response() http.ResponseWriter { return c.rsp }
-func (c *wrappedCtx) Bind(v interface{}) error      { return c.coder.BindBody()(c.req, v) }
-func (c *wrappedCtx) BindVars(v interface{}) error  { return c.coder.BindVars()(c.req, v) }
-func (c *wrappedCtx) BindQuery(v interface{}) error { return c.coder.BindQuery()(c.req, v) }
-func (c *wrappedCtx) BindForm(v interface{}) error  { return c.coder.BindForm()(c.req, v) }
+func (c *wrappedCtx) Bind(v any) error              { return c.coder.BindBody()(c.req, v) }
+func (c *wrappedCtx) BindVars(v any) error          { return c.coder.BindVars()(c.req, v) }
+func (c *wrappedCtx) BindQuery(v any) error         { return c.coder.BindQuery()(c.req, v) }
+func (c *wrappedCtx) BindForm(v any) error          { return c.coder.BindForm()(c.req, v) }
 
-func (c *wrappedCtx) Returns(v interface{}, err error) error {
+func (c *wrappedCtx) Returns(v any, err error) {
 	if err != nil {
-		return err
+		c.ReturnError(err)
+		return
 	}
-	return c.Result(c.status, v)
+	c.Result(c.status, v)
 }
 
-func (c *wrappedCtx) Result(status int, v interface{}) error {
-	return c.coder.ResponseEncoder()(status, c.rsp, c.req, v)
+func (c *wrappedCtx) Result(status int, v any) {
+	c.setResponseHeaders()
+	err := c.coder.ResponseEncoder()(status, c.rsp, c.req, v)
+	if err != nil {
+		c.ReturnError(err)
+		return
+	}
 }
 
-func (c *wrappedCtx) JSON(status int, v interface{}) error {
+func (c *wrappedCtx) JSON(status int, v any) error {
+	c.setResponseHeaders()
 	c.rsp.Header().Set("Content-Type", "application/json")
 	c.rsp.WriteHeader(status)
 	return json.NewEncoder(c.rsp).Encode(v)
 }
 
-func (c *wrappedCtx) XML(status int, v interface{}) error {
+func (c *wrappedCtx) XML(status int, v any) error {
+	c.setResponseHeaders()
 	c.rsp.Header().Set("Content-Type", "application/xml")
 	c.rsp.WriteHeader(status)
 	return xml.NewEncoder(c.rsp).Encode(v)
 }
 
 func (c *wrappedCtx) String(status int, text string) error {
+	c.setResponseHeaders()
 	c.rsp.Header().Set("Content-Type", "text/plain")
 	c.rsp.WriteHeader(status)
 	_, err := c.rsp.Write([]byte(text))
@@ -118,6 +129,7 @@ func (c *wrappedCtx) String(status int, text string) error {
 }
 
 func (c *wrappedCtx) Blob(status int, contentType string, data []byte) error {
+	c.setResponseHeaders()
 	c.rsp.Header().Set("Content-Type", contentType)
 	c.rsp.WriteHeader(status)
 	_, err := c.rsp.Write(data)
@@ -128,6 +140,7 @@ func (c *wrappedCtx) Blob(status int, contentType string, data []byte) error {
 }
 
 func (c *wrappedCtx) Stream(status int, contentType string, rd io.Reader) error {
+	c.setResponseHeaders()
 	c.rsp.Header().Set("Content-Type", contentType)
 	c.rsp.WriteHeader(status)
 	_, err := io.Copy(c.rsp, rd)
@@ -140,6 +153,7 @@ func (c *wrappedCtx) Reset(rsp http.ResponseWriter, req *http.Request) {
 }
 
 func (c *wrappedCtx) ReturnError(err error) {
+	c.setResponseHeaders()
 	c.coder.ErrorEncoder()(c.rsp, c.req, err)
 }
 
@@ -164,9 +178,28 @@ func (c *wrappedCtx) Err() error {
 	return c.req.Context().Err()
 }
 
-func (c *wrappedCtx) Value(key interface{}) interface{} {
+func (c *wrappedCtx) Value(key any) any {
 	if c.req == nil {
 		return nil
 	}
 	return c.req.Context().Value(key)
+}
+
+func (c *wrappedCtx) setResponseHeaders() {
+	if c.req == nil {
+		return
+	}
+	ctx := c.req.Context()
+	tr, ok := transport.FromContext(ctx)
+	if !ok {
+		return
+	}
+	if outHeaders := tr.OutHeader(); len(outHeaders) > 0 {
+		for k, v := range outHeaders {
+			if len(v) == 0 {
+				continue
+			}
+			c.rsp.Header().Add(k, v[0])
+		}
+	}
 }

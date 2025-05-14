@@ -97,7 +97,12 @@ func JoinORMTags(tags *ORMTags) (bool, string) {
 		result = append(result, "type:"+*tags.Type)
 	}
 	if tags.Default != nil {
-		result = append(result, "default:"+*tags.Default)
+		v := *tags.Default
+		if v == "" {
+			result = append(result, "default:''")
+		} else {
+			result = append(result, "default:"+v)
+		}
 	}
 
 	if tags.Comment != nil {

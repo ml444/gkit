@@ -114,7 +114,6 @@ func (e *Error) ConvertMsgByLang(langs ...string) {
 			return
 		}
 	}
-	return
 }
 
 func (e *Error) GRPCStatus() *status.Status {
@@ -139,8 +138,7 @@ func pickMsg(detail *ErrCodeDetail) string {
 func getErrDetail(errCode int32) *ErrCodeDetail {
 	detail, ok := errCodeMap[errCode]
 	if !ok {
-		detail = &ErrCodeDetail{}
-		detail.StatusCode = UnknownStatusCode
+		detail = &ErrCodeDetail{StatusCode: DefaultStatusCode}
 	}
 	return detail
 }

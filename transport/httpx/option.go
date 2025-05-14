@@ -62,10 +62,17 @@ func DisableTransportCtx() ServerOption {
 	}
 }
 
-// SetMiddlewares with server middlewares.
+// SetMiddlewares with service middlewares.
 func SetMiddlewares(mws ...middleware.Middleware) ServerOption {
 	return func(s *Server) {
 		s.middlewares = append(s.middlewares, mws...)
+	}
+}
+
+// SetMiddlewares with http server middlewares.
+func SetHTTPMiddlewares(mws ...middleware.HttpMiddleware) ServerOption {
+	return func(s *Server) {
+		s.httpMiddlewares = append(s.httpMiddlewares, mws...)
 	}
 }
 

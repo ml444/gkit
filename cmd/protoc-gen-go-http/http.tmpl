@@ -53,13 +53,9 @@ func {{$svrType}}_{{.Name}}{{.Num}}_HTTP_Handler(srv {{$svrType}}HTTPServer, mws
 			ctx.ReturnError(err)
 			return
 		}
-		if err = ctx.Returns(out.(*{{ .Output }}){{.ResponseBody}}, err); err != nil {
-			ctx.ReturnError(err)
-		}
+		ctx.Returns(out.(*{{ .Output }}){{.ResponseBody}}, err)
             {{- else}}
-		if err := ctx.Returns(handler(ctx, &in)); err != nil {
-		   	ctx.ReturnError(err)
-		}
+		ctx.Returns(handler(ctx, &in))
             {{- end}}
         {{- else }}
 {{/*        if disPluck := r.Header.Get(pluck.DisablePluckHeader); disPluck != "" {*/}}
@@ -88,9 +84,7 @@ func {{$svrType}}_{{.Name}}{{.Num}}_HTTP_Handler(srv {{$svrType}}HTTPServer, mws
             {{- end }}
 
             {{- if and (eq .FieldToRspHeaders "") (eq .FieldToRspBody "") }}
-		if err := ctx.Returns(handler(ctx, &in)); err != nil {
-			ctx.ReturnError(err)
-		}
+		ctx.Returns(handler(ctx, &in))
             {{- else }}
         out, err := handler(ctx, &in)
 		if err != nil {
@@ -114,9 +108,7 @@ func {{$svrType}}_{{.Name}}{{.Num}}_HTTP_Handler(srv {{$svrType}}HTTPServer, mws
                 {{- else if or .ResponseBody }}
 		w.Write(out.(*{{ .Output }}){{ .ResponseBody }})
                 {{- else }}
-		if err = ctx.Returns(out, err); err != nil {
-			ctx.ReturnError(err)
-		}
+		ctx.Returns(out, err)
                 {{- end }}
             {{- end }}
         {{- end }}

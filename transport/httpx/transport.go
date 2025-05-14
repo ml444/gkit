@@ -21,6 +21,7 @@ type Transport struct {
 func (tr *Transport) Kind() string {
 	return "http"
 }
+
 func (tr *Transport) Endpoint() string {
 	return tr.endpoint
 }
@@ -36,6 +37,7 @@ func (tr *Transport) InHeader() transport.MD {
 func (tr *Transport) OutHeader() transport.MD {
 	return tr.outMD
 }
+
 func (tr *Transport) Request() *http.Request {
 	return tr.req
 }
@@ -56,4 +58,13 @@ func ClientTransport(r *http.Request) transport.ITransport {
 		inMD:     transport.MD(r.Header),
 		req:      r,
 	}
+}
+
+func GetTransport(ctx context.Context) (*Transport, bool) {
+	tr, ok := transport.FromContext(ctx)
+	if !ok {
+		return nil, false
+	}
+	httpTr, okk := tr.(*Transport)
+	return httpTr, okk
 }

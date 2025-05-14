@@ -17,9 +17,7 @@ import (
 	"github.com/ml444/gkit/transport"
 )
 
-var (
-	_ http.Handler = (*Server)(nil)
-)
+var _ http.Handler = (*Server)(nil)
 
 // Server is an HTTP server wrappedCtx.
 type Server struct {
@@ -32,6 +30,7 @@ type Server struct {
 	timeout             time.Duration
 	router              IRouter
 	routerCfg           *RouterCfg
+	httpMiddlewares     []middleware.HttpMiddleware
 	middlewares         []middleware.Middleware
 	disableTransportCtx bool
 }
@@ -48,6 +47,7 @@ func NewServer(opts ...ServerOption) *Server {
 	}
 	srv.router = newRouter("/", srv.routerCfg)
 	srv.router.Use(srv.globalMiddleware())
+	srv.router.Use(srv.httpMiddlewares...)
 	srv.Server = &http.Server{
 		Handler:   srv.router,
 		TLSConfig: srv.tlsConf,
@@ -96,17 +96,15 @@ func (s *Server) globalMiddleware() middleware.HttpMiddleware {
 					pathTemplate, _ = route.GetPathTemplate()
 				}
 				tr := &Transport{
-					path: pathTemplate,
-					inMD: transport.MD(req.Header),
-					req:  req,
+					path:  pathTemplate,
+					inMD:  transport.MD(req.Header),
+					outMD: transport.MD{},
+					req:   req,
 				}
 				if s.endpoint != nil {
 					tr.endpoint = s.endpoint.String()
 				}
 				req = req.WithContext(transport.ToContext(ctx, tr))
-				defer func() {
-					tr.outMD = transport.MD(w.Header())
-				}()
 			}
 			next.ServeHTTP(w, req)
 		})

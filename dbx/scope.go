@@ -1,6 +1,7 @@
 package dbx
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -484,5 +485,10 @@ func (s *Scope) Preload(query string, args ...interface{}) *Scope {
 
 func (s *Scope) Association(value string) *Scope {
 	s.DB.Association(value)
+	return s
+}
+
+func (s *Scope) Transaction(fc func(tx *gorm.DB) error, opts ...*sql.TxOptions) *Scope {
+	s.DB.Transaction(fc, opts...)
 	return s
 }

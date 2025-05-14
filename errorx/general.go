@@ -3,6 +3,10 @@ package errorx
 
 import "net/http"
 
+func NoContent() *Error {
+	return CreateError(http.StatusNoContent, 0, "")
+}
+
 // BadRequest new BadRequest error that is mapped to a 400 response.
 func BadRequest(message string) *Error {
 	return CreateError(http.StatusBadRequest, ErrCodeInvalidReqSys, message)
