@@ -1,7 +1,9 @@
 package cryptox
 
 import (
-	"bytes"
+	"crypto/sha1"
+	"encoding/base64"
+	"encoding/hex"
 	"reflect"
 	"testing"
 )
@@ -76,17 +78,18 @@ func TestGenRSAKey(t *testing.T) {
 		wantErr bool
 	}{
 		// TODO: Add test cases.
+		{"test", args{2048}, testPrivateKeyPKCS8, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			out := &bytes.Buffer{}
-			err := GenRSAKey(out, tt.args.bits)
+			privPEM, pubPEM, err := GenerateRSAKey(tt.args.bits)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GenRSAKey() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if gotOut := out.String(); gotOut != tt.wantOut {
+			if gotOut := string(privPEM); gotOut != tt.wantOut {
 				t.Errorf("GenRSAKey() gotOut = %v, want %v", gotOut, tt.wantOut)
+				t.Errorf("PublicKey: %s", string(pubPEM))
 			}
 		})
 	}
@@ -102,6 +105,8 @@ func TestRSA(t *testing.T) {
 		t.Errorf("err: %v\n", err)
 		return
 	}
+	// x.SetEncoder(&HexEncoder{})
+	x.SetHash(sha1.New())
 	// test string
 	s, err := x.Encrypt(testString)
 	if err != nil {
@@ -109,7 +114,6 @@ func TestRSA(t *testing.T) {
 		return
 	}
 	t.Logf("ciphertext: %s\n", s.(string))
-	t.Logf("ciphertext: %v\n", s)
 	plainText, err := x.Decrypt(s)
 	if err != nil {
 		t.Errorf("err: %v\n", err)
@@ -140,6 +144,8 @@ func TestRSA(t *testing.T) {
 		t.Errorf("err: %v\n", err)
 		return
 	}
+	t.Logf("PKCS1v15 ciphertext: %v\n", base64.StdEncoding.EncodeToString(bb))
+	t.Logf("PKCS1v15 ciphertext: %v\n", hex.EncodeToString(bb))
 	plainText3, err := x.DecryptPKCS1v15(bb)
 	if err != nil {
 		t.Errorf("err: %v\n", err)

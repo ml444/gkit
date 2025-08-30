@@ -3,12 +3,12 @@ package cryptox
 import (
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha512"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
 	"errors"
-	"io"
+	"hash"
 
 	"github.com/ml444/gkit/log"
 )
@@ -17,18 +17,18 @@ type RSA struct {
 	publicKey  *rsa.PublicKey
 	privateKey *rsa.PrivateKey
 	encoder    encoder
+	ihash      hash.Hash
 }
 
 func NewRSA(private []byte) (*RSA, error) {
-	r := &RSA{}
+	r := &RSA{
+		encoder: base64.StdEncoding,
+		ihash:   sha256.New(),
+	}
 	err := r.SetPrivateKey(private)
 	if err != nil {
 		log.Errorf("err: %v\n", err)
 		return nil, err
-	}
-
-	if r.encoder == nil {
-		r.encoder = base64.RawStdEncoding
 	}
 	return r, nil
 }
@@ -57,8 +57,8 @@ func (r *RSA) Decrypt(ciphertext any) (any, error) {
 
 // EncryptWithBytes encrypts AdditionalData with public key
 func (r *RSA) EncryptWithBytes(msg []byte) ([]byte, error) {
-	hash := sha512.New()
-	return rsa.EncryptOAEP(hash, rand.Reader, r.publicKey, msg, nil)
+	// hash := sha512.New()
+	return rsa.EncryptOAEP(r.ihash, rand.Reader, r.publicKey, msg, nil)
 }
 
 func (r *RSA) EncryptWithString(plaintext string) (string, error) {
@@ -71,8 +71,8 @@ func (r *RSA) EncryptWithString(plaintext string) (string, error) {
 
 // DecryptWithBytes decrypts AdditionalData with private key
 func (r *RSA) DecryptWithBytes(ciphertext []byte) ([]byte, error) {
-	hash := sha512.New()
-	return rsa.DecryptOAEP(hash, rand.Reader, r.privateKey, ciphertext, nil)
+	// hash := sha512.New()
+	return rsa.DecryptOAEP(r.ihash, rand.Reader, r.privateKey, ciphertext, nil)
 }
 
 func (r *RSA) DecryptWithString(ciphertext string) (string, error) {
@@ -131,41 +131,75 @@ func (r *RSA) SetPrivateKey(private []byte) error {
 	return nil
 }
 
-// SetPublicKeyByBase64 Get bytes AdditionalData by decoding base64 string
-func (r *RSA) SetPublicKeyByBase64(publicStr string) error {
-	return r.SetPublicKey([]byte(publicStr))
+func ParsePrivatePem(privatePEM []byte) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode(privatePEM)
+	if block == nil {
+		return nil, errors.New("decode private PEM error")
+	}
+	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	return key.(*rsa.PrivateKey), nil
 }
 
-// SetPrivateKeyByBase64 Get bytes AdditionalData by decoding base64 string
-func (r *RSA) SetPrivateKeyByBase64(privateStr string) error {
-	return r.SetPrivateKey([]byte(privateStr))
+// SetEncoder sets the encoder for encoding and decoding
+func (r *RSA) SetEncoder(encoder encoder) {
+	r.encoder = encoder
 }
 
-func GenRSAKey(out io.Writer, bits int) error {
+// SetHash sets the hash function for signing and verifying
+func (r *RSA) SetHash(h hash.Hash) {
+	r.ihash = h
+}
+
+func GenerateRSAKey(bits int) (privateBytes, publicBytes []byte, err error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		panic(err)
+		return nil, nil, err
 	}
-	privateStream := x509.MarshalPKCS1PrivateKey(privateKey)
+	privateBuf, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	if err != nil {
+		return
+	}
 	block := &pem.Block{
 		Type:  "RSA PRIVATE KEY",
-		Bytes: privateStream,
+		Bytes: privateBuf,
 	}
-	prvKeyBuf := pem.EncodeToMemory(block)
-	n, err := out.Write(prvKeyBuf)
+	privateBytes = pem.EncodeToMemory(block)
+
+	publicKey := &privateKey.PublicKey
+	publicBuf, err := x509.MarshalPKIXPublicKey(publicKey)
 	if err != nil {
-		if err == io.ErrShortWrite {
-			for n < len(prvKeyBuf) {
-				x, err := out.Write(prvKeyBuf[n:])
-				if err != nil {
-					return err
-				}
-				n += x
-			}
-		} else {
-			return err
-		}
-		return err
+		return
 	}
-	return nil
+	block = &pem.Block{
+		Type:  "RSA PUBLIC KEY",
+		Bytes: publicBuf,
+	}
+	publicBytes = pem.EncodeToMemory(block)
+	return
+}
+
+func FormatPublicPEM(publicKey any) ([]byte, error) {
+	publicBuf, err := x509.MarshalPKIXPublicKey(publicKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PUBLIC KEY",
+		Bytes: publicBuf,
+	}), nil
+}
+
+func FormatPrivatePEM(privateKey any) ([]byte, error) {
+	privateBuf, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	if err != nil {
+		return nil, err
+	}
+	return pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: privateBuf,
+	}), nil
 }

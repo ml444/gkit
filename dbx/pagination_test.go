@@ -40,7 +40,7 @@ func TestScope_PaginationQuery(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := NewScope(testGetDB(), &testOrmModel{})
-			got, err := s.PaginationQuery(tt.args.opt, tt.args.list)
+			got, err := s.PaginationQuery(tt.args.list, tt.args.opt.Page, tt.args.opt.Size)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Scope.PaginationQuery() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -59,29 +59,26 @@ func TestScope_PaginationQuery(t *testing.T) {
 
 func TestScope_HandlePagination(t *testing.T) {
 	scope := &Scope{}
-	t.Run("nil pagination", func(t *testing.T) {
-		opt := scope.HandlePagination(nil)
-		if opt.Size != DefaultLimit {
+	t.Run("zero pagination", func(t *testing.T) {
+		opt := scope.HandlePagination(0, 0)
+		if opt.Size != uint32(DefaultLimit) {
 			t.Errorf("%d != %d", opt.Size, DefaultLimit)
 		}
 	})
 
 	t.Run("size less than 0", func(t *testing.T) {
-		opt := &pagination.Pagination{
-			Size: 0,
-		}
-		opt = scope.HandlePagination(opt)
-		if opt.Size != DefaultLimit {
+		opt := scope.HandlePagination(1, 0)
+		if opt.Size != uint32(DefaultLimit) {
 			t.Errorf("%d != %d", opt.Size, DefaultLimit)
 		}
 	})
 
 	t.Run("size greater than max limit", func(t *testing.T) {
 		opt := &pagination.Pagination{
-			Size: MaxLimit + 1,
+			Size: uint32(MaxLimit) + 1,
 		}
-		opt = scope.HandlePagination(opt)
-		if opt.Size != MaxLimit {
+		opt = scope.HandlePagination(opt.Page, opt.Size)
+		if opt.Size != uint32(MaxLimit) {
 			t.Errorf("%d != %d", opt.Size, MaxLimit)
 		}
 	})
@@ -90,7 +87,7 @@ func TestScope_HandlePagination(t *testing.T) {
 		opt := &pagination.Pagination{
 			Size: 100,
 		}
-		opt = scope.HandlePagination(opt)
+		opt = scope.HandlePagination(opt.Page, opt.Size)
 		if opt.Size != 100 {
 			t.Errorf("%d != %d", opt.Size, 100)
 		}

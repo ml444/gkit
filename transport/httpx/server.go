@@ -105,6 +105,17 @@ func (s *Server) globalMiddleware() middleware.HttpMiddleware {
 					tr.endpoint = s.endpoint.String()
 				}
 				req = req.WithContext(transport.ToContext(ctx, tr))
+				defer func() {
+					if tr.outMD != nil {
+						// set response headers
+						for k, v := range tr.outMD {
+							if len(v) == 0 {
+								continue
+							}
+							w.Header().Set(k, v[0])
+						}
+					}
+				}()
 			}
 			next.ServeHTTP(w, req)
 		})

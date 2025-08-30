@@ -1,6 +1,7 @@
 package dbx
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -12,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/ml444/gkit/dbx/pagination"
+	"github.com/ml444/gkit/errorx"
 	"github.com/ml444/gkit/log"
 )
 
@@ -38,13 +40,14 @@ type ITModel interface {
 type GenerateIDFunc func() uint64
 
 type T struct {
-	getDB           func() *gorm.DB
-	model           interface{}
-	ormModel        interface{}
-	forceTModel     bool
-	NotFoundErrCode int32
-	BatchCreateSize int
-	PrimaryKey      string
+	getDB             func() *gorm.DB
+	model             any
+	ormModel          any
+	forceTModel       bool
+	IgnoreNotFoundErr bool
+	NotFoundErrCode   int32
+	BatchCreateSize   int
+	PrimaryKey        string
 
 	// encrypt config
 	EncryptFieldMap map[string]ICipher // {dbFieldName:structFieldName}
@@ -137,14 +140,24 @@ func camelToSnake(s string) string {
 	return result.String()
 }
 
-//	func (x *T) CloneTModel() interface{} {
-//		mT := reflect.TypeOf(x.ormModel)
-//		if mT.Kind() == reflect.Ptr {
-//			mT = mT.Elem()
-//		}
-//		return reflect.New(mT).Interface()
-//	}
-func (x *T) getModel() interface{} {
+func (x *T) Clone() *T {
+	return &T{
+		getDB:             x.getDB,
+		model:             x.model,
+		ormModel:          x.ormModel,
+		forceTModel:       x.forceTModel,
+		IgnoreNotFoundErr: x.IgnoreNotFoundErr,
+		NotFoundErrCode:   x.NotFoundErrCode,
+		BatchCreateSize:   x.BatchCreateSize,
+		PrimaryKey:        x.PrimaryKey,
+		EncryptFieldMap:   x.EncryptFieldMap,
+		NeedEncrypt:       x.NeedEncrypt,
+		DisableDecrypt:    x.DisableDecrypt,
+		IdGenerator:       x.IdGenerator,
+	}
+}
+
+func (x *T) getModel() any {
 	var mT reflect.Type
 	if x.forceTModel {
 		mT = reflect.TypeOf(x.ormModel)
@@ -157,20 +170,24 @@ func (x *T) getModel() interface{} {
 	return reflect.New(mT).Interface()
 }
 
-func (x *T) Scope() *Scope {
-	return NewScope(x.getDB(), x.getModel())
+func (x *T) Scope(ctx context.Context) *Scope {
+	return NewScope(x.getDB(), x.getModel()).WithContext(ctx)
 }
 
-func (x *T) Create(m interface{}) (err error) {
+func (x *T) Create(ctx context.Context, m any, omitFields ...string) (err error) {
 	err = x.CheckAndCrypto(m, cipherKindEncrypt, true)
 	if err != nil {
 		log.Errorf("err: %v\n", err)
 		return err
 	}
+	scope := x.Scope(ctx)
+	if len(omitFields) > 0 {
+		scope.Omit(omitFields...)
+	}
 	if x.forceTModel {
 		if im, ok := (m).(IModel); ok {
 			ormModel := im.ToORM()
-			err = x.Scope().Create(ormModel)
+			err = scope.Create(ormModel)
 			if err != nil {
 				log.Errorf("err: %v\n", err)
 				return err
@@ -178,10 +195,10 @@ func (x *T) Create(m interface{}) (err error) {
 			return copier.Copy(m, ormModel)
 		}
 	}
-	return x.Scope().Create(m)
+	return scope.Create(m)
 }
 
-func (x *T) BatchCreate(list any) (err error) {
+func (x *T) BatchCreate(ctx context.Context, list any, omitFields ...string) (err error) {
 	err = x.CheckAndCrypto(list, cipherKindEncrypt, true)
 	if err != nil {
 		log.Errorf("err: %v\n", err)
@@ -190,6 +207,10 @@ func (x *T) BatchCreate(list any) (err error) {
 	listV := reflect.Indirect(reflect.ValueOf(list))
 	if listV.Kind() == reflect.Interface {
 		listV = reflect.ValueOf(listV.Interface())
+	}
+	scope := x.Scope(ctx)
+	if len(omitFields) > 0 {
+		scope.Omit(omitFields...)
 	}
 	switch listV.Kind() {
 	case reflect.Array, reflect.Slice:
@@ -202,29 +223,33 @@ func (x *T) BatchCreate(list any) (err error) {
 				ormList.Elem().Set(newOrmList)
 			}
 			valList := ormList.Interface()
-			err = x.Scope().CreateInBatches(valList, x.BatchCreateSize)
+			err = scope.CreateInBatches(valList, x.BatchCreateSize)
 			if err != nil {
 				log.Errorf("err: %v\n", err)
 				return err
 			}
 			return copier.Copy(list, valList)
 		}
-		return x.Scope().CreateInBatches(list, x.BatchCreateSize)
+		return scope.CreateInBatches(list, x.BatchCreateSize)
 	default:
-		return x.Scope().Create(list)
+		return scope.Create(list)
 	}
 }
 
-func (x *T) Save(m interface{}) (err error) {
+func (x *T) Save(ctx context.Context, m any, omitFields ...string) (err error) {
 	err = x.CheckAndCrypto(m, cipherKindEncrypt, true)
 	if err != nil {
 		log.Errorf("err: %v\n", err)
 		return err
 	}
+	scope := x.Scope(ctx)
+	if len(omitFields) > 0 {
+		scope.Omit(omitFields...)
+	}
 	if x.forceTModel {
 		if im, ok := (m).(IModel); ok {
 			ormModel := im.ToORM()
-			err = x.Scope().Save(ormModel)
+			err = scope.Save(ormModel)
 			if err != nil {
 				log.Errorf("err: %v\n", err)
 				return err
@@ -232,16 +257,16 @@ func (x *T) Save(m interface{}) (err error) {
 			return copier.Copy(m, ormModel)
 		}
 	}
-	return x.Scope().Save(m)
+	return scope.Save(m)
 }
 
-func (x *T) Update(m interface{}, query interface{}, args ...interface{}) (rows int64, err error) {
+func (x *T) Update(ctx context.Context, m any, query any, args ...any) (rows int64, err error) {
 	err = x.CheckAndCrypto(m, cipherKindEncrypt, false)
 	if err != nil {
 		log.Errorf("err: %v\n", err)
 		return 0, err
 	}
-	scope := x.Scope()
+	scope := x.Scope(ctx)
 	if query != nil {
 		err = x.CheckAndCrypto(query, cipherKindEncrypt, false)
 		if err != nil {
@@ -258,40 +283,55 @@ func (x *T) Update(m interface{}, query interface{}, args ...interface{}) (rows 
 	return scope.RowsAffected, err
 }
 
-func (x *T) UpdateByPk(m interface{}, pk any) (rows int64, err error) {
+func (x *T) UpdateByPk(ctx context.Context, m any, pk any, selectFields ...string) (rows int64, err error) {
 	if x.PrimaryKey == "" {
 		return 0, errors.New("unable to find a unique primary key field")
 	}
-	return x.Update(m, x.PrimaryKey, pk)
+	err = x.CheckAndCrypto(m, cipherKindEncrypt, false)
+	if err != nil {
+		log.Errorf("err: %v\n", err)
+		return 0, err
+	}
+	scope := x.Scope(ctx)
+	scope.Eq(x.PrimaryKey, pk)
+	if len(selectFields) > 0 {
+		scope.Select(selectFields...)
+	}
+	if im, ok := (m).(IModel); ok && x.forceTModel {
+		err = scope.Update(im.ToORM())
+	} else {
+		err = scope.Update(m)
+	}
+	return scope.RowsAffected, err
 }
 
-func (x *T) DeleteByPk(pk any) error {
+func (x *T) DeleteByPk(ctx context.Context, pk any) error {
 	if x.PrimaryKey == "" {
 		return errors.New("unable to find a unique primary key field")
 	}
-	return x.Scope().Eq(x.PrimaryKey, pk).Delete()
+	return x.Scope(ctx).Where(x.PrimaryKey, pk).Delete()
 }
 
-func (x *T) DeleteByWhere(query interface{}, args ...interface{}) error {
+func (x *T) DeleteByWhere(ctx context.Context, query any, args ...any) error {
 	err := x.CheckAndCrypto(query, cipherKindEncrypt, false)
 	if err != nil {
 		log.Errorf("err: %v\n", err)
 		return err
 	}
-	return x.Scope().Where(query, args...).Delete()
+	return x.Scope(ctx).Where(query, args...).Delete()
 }
 
-func (x *T) ExistByWhere(args ...interface{}) (bool, error) {
-	count, err := x.Count(args...)
+func (x *T) ExistByWhere(ctx context.Context, args ...any) (bool, error) {
+	count, err := x.Count(ctx, args...)
 	if err != nil {
 		return false, err
 	}
 	return count > 0, nil
 }
 
-func (x *T) Count(args ...interface{}) (int64, error) {
+func (x *T) Count(ctx context.Context, args ...any) (int64, error) {
 	if len(args) == 0 {
-		return x.Scope().Count()
+		return x.Scope(ctx).Count()
 	}
 	query := args[0]
 	args = args[1:]
@@ -300,18 +340,21 @@ func (x *T) Count(args ...interface{}) (int64, error) {
 		log.Errorf("err: %v\n", err)
 		return 0, err
 	}
-	return x.Scope().Where(query, args...).Count()
+	return x.Scope(ctx).Where(query, args...).Count()
 }
 
-func (x *T) GetOne(pk any, m interface{}) (err error) {
+func (x *T) GetOne(ctx context.Context, m any, pk any) (err error) {
 	if x.PrimaryKey == "" {
 		return errors.New("unable to find a unique primary key field")
 	}
-	return x.GetOneByWhere(m, x.PrimaryKey, pk)
+	return x.GetOneByWhere(ctx, m, x.PrimaryKey, pk)
 }
 
-func (x *T) GetOneByWhere(m interface{}, query interface{}, args ...interface{}) (err error) {
-	tx := NewScope(x.getDB(), m)
+func (x *T) GetOneByWhere(ctx context.Context, m any, query any, args ...any) (err error) {
+	tx := x.Scope(ctx)
+	if x.IgnoreNotFoundErr {
+		tx.IgnoreNotFoundErr()
+	}
 	if query != nil {
 		err = x.CheckAndCrypto(query, cipherKindEncrypt, false)
 		if err != nil {
@@ -319,7 +362,7 @@ func (x *T) GetOneByWhere(m interface{}, query interface{}, args ...interface{})
 		}
 		tx = tx.Where(query, args...)
 	}
-	if x.NotFoundErrCode != 0 {
+	if !x.IgnoreNotFoundErr && x.NotFoundErrCode != 0 {
 		tx = tx.SetNotFoundErr(x.NotFoundErrCode)
 	}
 	if im, ok := (m).(IModel); ok && x.forceTModel {
@@ -343,7 +386,7 @@ func (x *T) GetOneByWhere(m interface{}, query interface{}, args ...interface{})
 	return err
 }
 
-func (x *T) validateListAndGetModel(listPtr interface{}) (interface{}, error) {
+func (x *T) validateListAndGetModel(listPtr any) (any, error) {
 	listType := reflect.TypeOf(listPtr)
 	if listType.Kind() != reflect.Ptr {
 		return nil, errors.New("list must be pointer")
@@ -360,7 +403,7 @@ func (x *T) validateListAndGetModel(listPtr interface{}) (interface{}, error) {
 	return m, nil
 }
 
-func (x *T) processOpts(scope *Scope, opts interface{}) (*Scope, error) {
+func (x *T) processOpts(scope *Scope, opts any) (*Scope, error) {
 	if opts == nil {
 		return scope, nil
 	}
@@ -391,7 +434,7 @@ func (x *T) processOpts(scope *Scope, opts interface{}) (*Scope, error) {
 			if err != nil {
 				return scope, err
 			}
-			scope = scope.Where(o)
+			return scope.Where(o), nil
 		}
 	default:
 		optsV := reflect.ValueOf(opts)
@@ -411,7 +454,7 @@ func (x *T) processOpts(scope *Scope, opts interface{}) (*Scope, error) {
 	return scope, nil
 }
 
-func (x *T) doBeforce(opts interface{}, listPtr interface{}) (scope *Scope, valList interface{}, needCopy bool, err error) {
+func (x *T) doBeforce(ctx context.Context, opts any, listPtr any) (scope *Scope, valList any, needCopy bool, err error) {
 	m, err := x.validateListAndGetModel(listPtr)
 	if err != nil {
 		log.Error(err)
@@ -424,7 +467,7 @@ func (x *T) doBeforce(opts interface{}, listPtr interface{}) (scope *Scope, valL
 	} else {
 		valList = listPtr
 	}
-	scope, err = x.processOpts(x.Scope(), opts)
+	scope, err = x.processOpts(x.Scope(ctx), opts)
 	if err != nil {
 		log.Error(err)
 		return
@@ -432,7 +475,7 @@ func (x *T) doBeforce(opts interface{}, listPtr interface{}) (scope *Scope, valL
 	return
 }
 
-func (x *T) doAfter(needCopy bool, listPtr, valList interface{}) (err error) {
+func (x *T) doAfter(needCopy bool, listPtr, valList any) (err error) {
 	if needCopy {
 		err = copier.CopyWithOption(listPtr, valList, copier.Option{IgnoreEmpty: true})
 		if err != nil {
@@ -447,8 +490,8 @@ func (x *T) doAfter(needCopy bool, listPtr, valList interface{}) (err error) {
 	return err
 }
 
-func (x *T) ListAll(opts interface{}, listPtr interface{}) error {
-	scope, valList, needCopy, err := x.doBeforce(opts, listPtr)
+func (x *T) ListAll(ctx context.Context, listPtr any, opts any) error {
+	scope, valList, needCopy, err := x.doBeforce(ctx, opts, listPtr)
 	if err != nil {
 		log.Error(err)
 		return err
@@ -463,15 +506,15 @@ func (x *T) ListAll(opts interface{}, listPtr interface{}) error {
 	return x.doAfter(needCopy, listPtr, valList)
 }
 
-func (x *T) ListWithPagination(paginate *pagination.Pagination, opts any, listPtr any) (*pagination.Pagination, error) {
-	scope, valList, needCopy, err := x.doBeforce(opts, listPtr)
+func (x *T) ListWithPagination(ctx context.Context, listPtr any, opts any, page, size uint32) (*pagination.Pagination, error) {
+	scope, valList, needCopy, err := x.doBeforce(ctx, opts, listPtr)
 	if err != nil {
 		log.Error(err)
 		return nil, err
 	}
 
 	var newPagination *pagination.Pagination
-	newPagination, err = scope.PaginationQuery(paginate, valList)
+	newPagination, err = scope.PaginationQuery(valList, page, size)
 	if err != nil {
 		return nil, err
 	}

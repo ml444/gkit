@@ -32,3 +32,13 @@ func IsNotFoundErr(err error, errCode int32) bool {
 	}
 	return false
 }
+
+var ErrUpdateRowAffectedZero = errorx.CreateError(400, errorx.ErrCodeUpdateRowAffectedZeroSys, "update row affected zero") //nolint:gochecknoglobals
+
+func IsUpdateRowAffectedZero(err error) bool {
+	var Err *errorx.Error
+	if errors.As(err, &Err) {
+		return Err.GetErrorCode() == errorx.ErrCodeUpdateRowAffectedZeroSys
+	}
+	return false
+}

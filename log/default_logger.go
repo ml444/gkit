@@ -63,7 +63,7 @@ func (l *DefaultLogger) Log(lvl LogLevel, value string) {
 		return
 	}
 	_, _ = l.writer.WriteString(ColorLevel(lvl))
-	_, _ = l.writer.WriteString(value)
+	_, _ = l.writer.WriteString(value + "\n")
 }
 func (l *DefaultLogger) GetLoggerName() string {
 	return l.name

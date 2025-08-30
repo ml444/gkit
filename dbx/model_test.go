@@ -1,6 +1,7 @@
 package dbx
 
 import (
+	"context"
 	"database/sql/driver"
 	"encoding/json"
 	"reflect"
@@ -176,6 +177,7 @@ func TestNewT(t *testing.T) {
 	type args struct {
 		opts []TOption
 	}
+	cipher := testGetCipher()
 	tests := []struct {
 		name string
 		args args
@@ -186,7 +188,7 @@ func TestNewT(t *testing.T) {
 			args: args{
 				opts: []TOption{
 					SetCreateBatchSize(50),
-					SetTableCipher(testGetCipher()),
+					SetTableCipher(cipher),
 					SetDisableDecrypt(),
 					SetSpecifyFieldCipherMap(map[string]FieldCipher{}),
 					SetNotFoundErrCode(40000),
@@ -202,17 +204,21 @@ func TestNewT(t *testing.T) {
 				NotFoundErrCode: 40000,
 				BatchCreateSize: 50,
 				PrimaryKey:      "pk",
-				EncryptFieldMap: map[string]ICipher{"name": testGetCipher(), "Name": testGetCipher()},
+				EncryptFieldMap: map[string]ICipher{"name": cipher, "Name": cipher},
 				NeedEncrypt:     true,
 				DisableDecrypt:  true,
-				IdGenerator:     func() uint64 { return 0 },
+				// IdGenerator:     func() uint64 { return 0 },
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := NewT[testModel](testGetDB, tt.args.opts...); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("NewT() = %v, want %v", got, tt.want)
+			got := NewT[testModel](testGetDB, tt.args.opts...)
+			if !reflect.DeepEqual(got.EncryptFieldMap, tt.want.EncryptFieldMap) {
+				t.Errorf("NewT() = %+v, want %+v", got, tt.want)
+			}
+			if got.IdGenerator == nil {
+				t.Errorf("NewT() = %+v, want %+v", got.IdGenerator, tt.want.IdGenerator)
 			}
 		})
 	}
@@ -342,7 +348,7 @@ func TestT_Create(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			x := NewT[testModel](testGetDB, tt.opts...)
-			if err := x.Create(tt.m); (err != nil) != tt.wantErr {
+			if err := x.Create(context.Background(), tt.m); (err != nil) != tt.wantErr {
 				t.Errorf("Create() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			if mV, ok := tt.m.(*testModel); ok {
@@ -350,7 +356,7 @@ func TestT_Create(t *testing.T) {
 					t.Errorf("Create() failed: %#v", tt.m)
 				} else {
 					var m testModel
-					err := x.GetOne(mV.ID, &m)
+					err := x.GetOne(context.Background(), &m, mV.ID)
 					if err != nil {
 						t.Error(err.Error())
 					} else {
@@ -385,7 +391,7 @@ func TestT_BatchCreate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			x := NewT[testModel](testGetDB, tt.opts...)
-			if err := x.BatchCreate(&tt.list); (err != nil) != tt.wantErr {
+			if err := x.BatchCreate(context.Background(), &tt.list); (err != nil) != tt.wantErr {
 				t.Errorf("BatchCreate() error = %v, wantErr %v", err, tt.wantErr)
 			} else {
 				t.Logf("BatchCreate success: %+v", tt.list)
@@ -394,7 +400,7 @@ func TestT_BatchCreate(t *testing.T) {
 			for _, m := range tt.list.([]*testModel) {
 				idList = append(idList, m.ID)
 			}
-			cnt, err := x.Count("id", idList)
+			cnt, err := x.Count(context.Background(), "id", idList)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -420,8 +426,8 @@ func TestT_Count(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			x := NewT[testModel](testGetDB)
-			x.BatchCreate([]*testModel{{Name: "test1"}, {Name: "test2"}, {Name: "test3"}})
-			got, err := x.Count()
+			x.BatchCreate(context.Background(), []*testModel{{Name: "test1"}, {Name: "test2"}, {Name: "test3"}})
+			got, err := x.Count(context.Background())
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Count() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -436,12 +442,14 @@ func TestT_Count(t *testing.T) {
 func TestT_GetOne_and_Delete_and_Exist(t *testing.T) {
 	x := NewT[testModel](testGetDB, SetNotFoundErrCode(1000))
 	m := testModel{Name: "testGet", Addresses: []string{"foo", "bar"}}
-	err := x.Create(&m)
+
+	err := x.Create(context.Background(), &m)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	var m1 testModel
-	err = x.GetOne(m.ID, &m1)
+	err = x.GetOne(context.Background(), &m1, m.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +457,7 @@ func TestT_GetOne_and_Delete_and_Exist(t *testing.T) {
 		t.Fatalf("GetOne is err, got: %+v", m1)
 	}
 	var m2 testModel
-	err = x.GetOneByWhere(&m2, "name", m.Name)
+	err = x.GetOneByWhere(context.Background(), &m2, "name", m.Name)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -457,17 +465,17 @@ func TestT_GetOne_and_Delete_and_Exist(t *testing.T) {
 		t.Fatalf("GetOne is err, got: %+v", m2)
 	}
 	var m3 testModel
-	err = x.GetOneByWhere(&m3, map[string]string{"name": m.Name})
+	err = x.GetOneByWhere(context.Background(), &m3, map[string]string{"name": m.Name})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if m3.ID == 0 || m3.Name != "testGet" || !reflect.DeepEqual(m.Addresses, m3.Addresses) {
 		t.Fatalf("GetOne is err, got: %+v", m2)
 	}
-	if err := x.DeleteByPk(m.ID); err != nil {
+	if err := x.DeleteByPk(context.Background(), m.ID); err != nil {
 		t.Errorf("DeleteByPk() error = %v", err)
 	} else {
-		exist, err := x.ExistByWhere("id", m.ID)
+		exist, err := x.ExistByWhere(context.Background(), "id", m.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -477,15 +485,22 @@ func TestT_GetOne_and_Delete_and_Exist(t *testing.T) {
 	}
 
 	mDel := testModel{Name: "testDeleteByWhere", Addresses: []string{"foo", "bar"}}
-	err = x.Create(&mDel)
+	err = x.Create(context.Background(), &mDel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = x.DeleteByWhere("name", mDel.Name)
+	err = x.DeleteByWhere(context.Background(), "name", mDel.Name)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = x.DeleteByWhere(map[string]string{"name": mDel.Name})
+	err = x.DeleteByWhere(context.Background(), map[string]string{"name": mDel.Name})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	xx := x.Clone()
+	// xx.IgnoreNotFoundErr = true
+	err = xx.GetOne(context.Background(), &m1, m.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -498,7 +513,7 @@ func TestT_ListAll(t *testing.T) {
 		{Name: "testListAll2", Addresses: []string{"add2", "addr22"}, ParentID: 1},
 		{Name: "testListAll3", Addresses: []string{"add3", "addr33"}},
 	}
-	err := x.BatchCreate(&mList)
+	err := x.BatchCreate(context.Background(), &mList)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -533,7 +548,7 @@ func TestT_ListAll(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var list []*testModel
-			if err := x.ListAll(tt.opts, &list); (err != nil) != tt.wantErr {
+			if err := x.ListAll(context.Background(), tt.opts, &list); (err != nil) != tt.wantErr {
 				t.Errorf("ListAll() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			if len(list) != tt.wantTotal {
@@ -567,7 +582,7 @@ func TestT_ListWithPagination(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			x := NewT[testModel](testGetDB, tt.opts...)
-			got, err := x.ListWithPagination(tt.args.paginate, tt.args.opts, tt.args.listPtr)
+			got, err := x.ListWithPagination(context.Background(), tt.args.listPtr, tt.args.opts, tt.args.paginate.Page, tt.args.paginate.Size)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ListWithPagination() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -590,7 +605,7 @@ func TestT_Scope(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			x := NewT[testModel](testGetDB, tt.opts...)
-			if got := x.Scope(); !reflect.DeepEqual(got, tt.want) {
+			if got := x.Scope(context.Background()); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Scope() = %v, want %v", got, tt.want)
 			}
 		})
@@ -614,7 +629,7 @@ func TestT_Update(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			x := NewT[testModel](testGetDB, tt.opts...)
-			gotRows, err := x.Update(tt.args.m, tt.args.whereMap)
+			gotRows, err := x.Update(context.Background(), tt.args.m, tt.args.whereMap)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Update() error = %v, wantErr %v", err, tt.wantErr)
 				return

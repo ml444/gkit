@@ -15,6 +15,11 @@ extend google.protobuf.MessageOptions {
     repeated IndexClause index_clauses = 1173;
 }
 
+message TableNameOptions {
+    optional string table_name = 1;
+    optional string sub_table_name_format = 2;
+}
+
 enum IndexOpKind {
     USE = 0;
     FORCE = 1;

@@ -102,6 +102,7 @@ func {{$svrType}}_{{.Name}}{{.Num}}_HTTP_Handler(srv {{$svrType}}HTTPServer, mws
 			ctx.ReturnError(err)
 			return
 		}
+		out.(*{{ .Output }}).{{ .FieldToRspHeaders }} = nil
                 {{- end }}
                 {{- if or .FieldToRspBody }}
 		w.Write(out.(*{{ .Output }}).{{ .FieldToRspBody }})

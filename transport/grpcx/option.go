@@ -3,6 +3,7 @@ package grpcx
 import (
 	"crypto/tls"
 
+	"github.com/ml444/gkit/middleware"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
@@ -61,6 +62,12 @@ func Credentials(creds credentials.TransportCredentials) ServerOption {
 func TLSConfig(c *tls.Config) ServerOption {
 	return func(s *Server) {
 		s.tlsConf = c
+	}
+}
+
+func Middlewares(middlewares ...middleware.Middleware) ServerOption {
+	return func(s *Server) {
+		s.middlewares = append(s.middlewares, middlewares...)
 	}
 }
 

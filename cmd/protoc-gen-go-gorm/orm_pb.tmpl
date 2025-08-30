@@ -13,7 +13,7 @@ import (
 
 {{ range .Messages }}
 	{{ if .Opts.TableName }}
-func (x *{{ .Name }}) TableName() string {
+func (x {{ .Name }}) TableName() string {
 	return "{{ .Opts.TableName }}"
 }
 
@@ -30,7 +30,7 @@ func (x *{{ .Name }}) ToORM() dbx.ITModel {
 	}
 }
 
-func (x *T{{ .Name }}) TableName() string {
+func (x T{{ .Name }}) TableName() string {
 	return "{{ .Opts.TableName }}"
 }
 	{{ end }}

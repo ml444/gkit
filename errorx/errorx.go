@@ -266,7 +266,8 @@ func FromError(err error) *Error {
 
 // ErrorIs returns true if err is an *Error and its ErrorCode matches errCode.
 func ErrorIs(err error, errCode int32) bool {
-	e, ok := err.(*Error)
+	var e *Error
+	ok := errors.As(err, &e)
 	if ok {
 		eCode := e.GetErrorCode()
 		if eCode == errCode {

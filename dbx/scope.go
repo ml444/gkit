@@ -1,10 +1,10 @@
 package dbx
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
-	"net/http"
 	"reflect"
 	"strings"
 	"time"
@@ -32,19 +32,19 @@ type ModelBase interface {
 
 type ProtoUpsertedAt interface {
 	ProtoReflect() protoreflect.Message
-	GetCreatedAt() uint32
-	GetUpdatedAt() uint32
+	GetCreatedAt() int64
+	GetUpdatedAt() int64
 	ProtoDeletedAt
 	// GetDeletedAt() uint32
 	// ProtoReflect() protoreflect.Message
 }
 
 type ProtoUpdatedAt interface {
-	GetUpdatedAt() uint32
+	GetUpdatedAt() int64
 }
 
 type ProtoDeletedAt interface {
-	GetDeletedAt() uint32
+	GetDeletedAt() int64
 }
 
 type ITable interface {
@@ -97,7 +97,7 @@ func NewScopeOfPure(db *gorm.DB, model interface{}) *Scope {
 }
 
 func (s *Scope) SetNotFoundErr(notFoundErrCode int32) *Scope {
-	s.NotFoundErr = errorx.NewWithStatus(http.StatusNotFound, notFoundErrCode)
+	s.NotFoundErr = errorx.New(notFoundErrCode)
 	return s
 }
 
@@ -158,14 +158,36 @@ func (s *Scope) Update(v interface{}, conds ...interface{}) error {
 		}
 	}
 	if len(conds) > 0 {
-		s.DB.Where(conds[0], conds[1:]...)
+		s.Where(conds[0], conds[1:]...)
 	}
 	s.DB.Updates(v)
 	if s.DB.Error != nil {
 		return s.DB.Error
 	}
+	s.RowsAffected = s.DB.RowsAffected
 	if s.RowsAffected == 0 {
 		log.Warnf("model: %v, RowsAffected: 0", v)
+	}
+	return nil
+}
+
+// UpdateColumnWithIncr increments a column's value by the specified argument.
+func (s *Scope) UpdateColumnWithIncr(field string, v int64) error {
+	if v == 0 {
+		return nil
+	}
+	var tx *gorm.DB
+	if v > 0 {
+		tx = s.DB.UpdateColumn(field, gorm.Expr(fmt.Sprintf("COALESCE(%s, 0) + ?", field), v))
+	} else {
+		tx = s.DB.UpdateColumn(field, gorm.Expr(fmt.Sprintf("COALESCE(%s, 0) - ?", field), -v))
+	}
+	if tx.Error != nil {
+		return tx.Error
+	}
+	if tx.RowsAffected == 0 {
+		log.Warnf("model: %v, RowsAffected: 0", v)
+		return ErrUpdateRowAffectedZero
 	}
 	return nil
 }
@@ -173,9 +195,9 @@ func (s *Scope) Update(v interface{}, conds ...interface{}) error {
 func (s *Scope) Delete(conds ...interface{}) error {
 	if _, ok := s.model.(ProtoDeletedAt); ok {
 		if len(conds) > 1 {
-			s.DB.Where(conds[0], conds[1:])
+			s.Where(conds[0], conds[1:])
 		}
-		return s.DB.UpdateColumn(ProtoMessageFieldDeletedAt, time.Now().Unix()).Error
+		return s.UpdateColumn(ProtoMessageFieldDeletedAt, time.Now().Unix()).Error
 	}
 	return s.DB.Delete(s.model, conds).Error
 }
@@ -189,7 +211,7 @@ func (s *Scope) First(dest interface{}, conds ...interface{}) error {
 		if s.NotFoundErr != nil {
 			return s.NotFoundErr
 		}
-		return GetNotFoundErr(err)
+		return err
 	}
 	return err
 }
@@ -213,22 +235,22 @@ func (s *Scope) Find(dest interface{}, conds ...interface{}) error {
 }
 
 func (s *Scope) Select(fields ...string) *Scope {
-	s.DB.Select(fields)
+	s.DB = s.DB.Select(fields)
 	return s
 }
 
 func (s *Scope) Like(field string, value string) *Scope {
-	s.DB.Where(fmt.Sprintf("%s LIKE ?", field), "%"+value+"%")
+	s.Where(fmt.Sprintf("%s LIKE ?", field), "%"+value+"%")
 	return s
 }
 
 func (s *Scope) LikePrefix(field string, value string) *Scope {
-	s.DB.Where(fmt.Sprintf("%s LIKE ?", field), value+"%")
+	s.Where(fmt.Sprintf("%s LIKE ?", field), value+"%")
 	return s
 }
 
 func (s *Scope) Where(query interface{}, args ...interface{}) *Scope {
-	s.DB.Where(query, args...)
+	s.DB = s.DB.Where(query, args...)
 	return s
 }
 
@@ -244,6 +266,7 @@ type QueryOpts struct {
 	isOrLikePrefix bool
 	GroupBys       []string
 	OrderBys       []OrderColumn
+	OrderBy        string
 }
 
 func (s *Scope) Query(opts *QueryOpts) *Scope {
@@ -289,6 +312,9 @@ func (s *Scope) Query(opts *QueryOpts) *Scope {
 	if len(opts.OrderBys) > 0 {
 		s.Orders(opts.OrderBys...)
 	}
+	if opts.OrderBy != "" {
+		s.Order(opts.OrderBy)
+	}
 	return s
 }
 
@@ -301,7 +327,7 @@ func (s *Scope) In(field string, values interface{}) *Scope {
 	if !isNonEmptySlice(values) {
 		return s
 	}
-	s.DB.Where(fmt.Sprintf("%s IN ?", field), values)
+	s.Where(fmt.Sprintf("%s IN ?", field), values)
 	return s
 }
 
@@ -309,53 +335,53 @@ func (s *Scope) NotIn(field string, values interface{}) *Scope {
 	if !isNonEmptySlice(values) {
 		return s
 	}
-	s.DB.Where(fmt.Sprintf("%s NOT IN ?", field), values)
+	s.Where(fmt.Sprintf("%s NOT IN ?", field), values)
 	return s
 }
 
 // Ne :Where("field != ?", arg)
 func (s *Scope) Ne(field string, arg interface{}) *Scope {
-	s.DB.Where(fmt.Sprintf("%s != ?", field), arg)
+	s.Where(fmt.Sprintf("%s != ?", field), arg)
 	return s
 }
 
 func (s *Scope) Eq(field string, arg interface{}) *Scope {
-	s.DB.Where(fmt.Sprintf("%s = ?", field), arg)
+	s.Where(fmt.Sprintf("%s = ?", field), arg)
 	return s
 }
 
 func (s *Scope) Gt(field string, arg interface{}) *Scope {
-	s.DB.Where(fmt.Sprintf("%s > ?", field), arg)
+	s.Where(fmt.Sprintf("%s > ?", field), arg)
 	return s
 }
 
 func (s *Scope) Gte(field string, arg interface{}) *Scope {
-	s.DB.Where(fmt.Sprintf("%s >= ?", field), arg)
+	s.Where(fmt.Sprintf("%s >= ?", field), arg)
 	return s
 }
 
 func (s *Scope) Lt(field string, arg interface{}) *Scope {
-	s.DB.Where(fmt.Sprintf("%s < ?", field), arg)
+	s.Where(fmt.Sprintf("%s < ?", field), arg)
 	return s
 }
 
 func (s *Scope) Lte(field string, arg interface{}) *Scope {
-	s.DB.Where(fmt.Sprintf("%s <= ?", field), arg)
+	s.Where(fmt.Sprintf("%s <= ?", field), arg)
 	return s
 }
 
 func (s *Scope) Between(field string, arg1, arg2 interface{}) *Scope {
-	s.DB.Where(fmt.Sprintf("%s BETWEEN ? AND ?", field), arg1, arg2)
+	s.Where(fmt.Sprintf("%s BETWEEN ? AND ?", field), arg1, arg2)
 	return s
 }
 
 func (s *Scope) NotBetween(field string, arg1, arg2 interface{}) *Scope {
-	s.DB.Where(fmt.Sprintf("%s NOT BETWEEN ? AND ?", field), arg1, arg2)
+	s.Where(fmt.Sprintf("%s NOT BETWEEN ? AND ?", field), arg1, arg2)
 	return s
 }
 
 func (s *Scope) Or(query interface{}, args ...interface{}) *Scope {
-	s.DB.Or(query, args...)
+	s.DB = s.DB.Or(query, args...)
 	return s
 }
 
@@ -367,7 +393,7 @@ func (s *Scope) MultiOr(opts map[string]interface{}) *Scope {
 		values = append(values, value)
 	}
 
-	s.DB.Where(strings.Join(orQueryList, " OR "), values...)
+	s.Where(strings.Join(orQueryList, " OR "), values...)
 	return s
 }
 
@@ -383,9 +409,10 @@ func (s *Scope) MultiOrLike(opts map[string]string, isPrefix bool) *Scope {
 		}
 	}
 
-	s.DB.Where(strings.Join(orQueryList, " OR "), values...)
+	s.Where(strings.Join(orQueryList, " OR "), values...)
 	return s
 }
+
 
 // Order db.Order("name DESC")
 func (s *Scope) Order(value string) *Scope {
@@ -412,7 +439,7 @@ func (s *Scope) Orders(values ...OrderColumn) *Scope {
 }
 
 func (s *Scope) Group(name string) *Scope {
-	s.DB.Group(name)
+	s.DB = s.DB.Group(name)
 	return s
 }
 
@@ -429,12 +456,12 @@ func (s *Scope) Groups(names ...string) *Scope {
 }
 
 func (s *Scope) Having(query interface{}, args ...interface{}) *Scope {
-	s.DB.Having(query, args...)
+	s.DB = s.DB.Having(query, args...)
 	return s
 }
 
 func (s *Scope) Joins(query string, args ...interface{}) *Scope {
-	s.DB.Joins(query, args...)
+	s.DB = s.DB.Joins(query, args...)
 	return s
 }
 
@@ -454,12 +481,12 @@ func (s *Scope) Limit(limit int) *Scope {
 }
 
 func (s *Scope) Omit(value ...string) *Scope {
-	s.DB.Omit(value...)
+	s.DB = s.DB.Omit(value...)
 	return s
 }
 
-func (s *Scope) Clause(value ...clause.Expression) *Scope {
-	s.DB.Clauses(value...)
+func (s *Scope) Clauses(value ...clause.Expression) *Scope {
+	s.DB = s.DB.Clauses(value...)
 	return s
 }
 
@@ -469,17 +496,17 @@ func (s *Scope) ReturnColumns(columns ...string) *Scope {
 	for _, col := range columns {
 		cols = append(cols, clause.Column{Name: col})
 	}
-	s.DB.Clauses(clause.Returning{Columns: cols})
+	s.Clauses(clause.Returning{Columns: cols})
 	return s
 }
 
 func (s *Scope) Unscoped() *Scope {
-	s.DB.Unscoped()
+	s.DB = s.DB.Unscoped()
 	return s
 }
 
 func (s *Scope) Preload(query string, args ...interface{}) *Scope {
-	s.DB.Preload(query, args...)
+	s.DB = s.DB.Preload(query, args...)
 	return s
 }
 
@@ -488,7 +515,13 @@ func (s *Scope) Association(value string) *Scope {
 	return s
 }
 
-func (s *Scope) Transaction(fc func(tx *gorm.DB) error, opts ...*sql.TxOptions) *Scope {
-	s.DB.Transaction(fc, opts...)
+func (s *Scope) Transaction(fc func(tx *gorm.DB) error, opts ...*sql.TxOptions) error {
+	return s.DB.Transaction(fc, opts...)
+}
+
+func (s *Scope) WithContext(ctx context.Context) *Scope {
+	if ctx != nil {
+		s.DB = s.DB.WithContext(ctx)
+	}
 	return s
 }
