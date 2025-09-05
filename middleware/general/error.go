@@ -64,7 +64,7 @@ func ClientErrorInterceptor(ctx context.Context, method string, req, reply inter
 		details := st.Details()
 		for _, detail := range details {
 			if pbErr, ok := detail.(*errorx.Error); ok {
-				return errorx.CreateError(pbErr.StatusCode, pbErr.ErrorCode, pbErr.Message)
+				return errorx.CreateError(pbErr.Status, pbErr.Code, pbErr.Message)
 			}
 		}
 	}

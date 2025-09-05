@@ -138,7 +138,7 @@ func (c *routerCoder) ErrorEncoder() ErrorEncoder {
 			return
 		}
 		w.Header().Set("Content-Type", joinContentType(codec.Name()))
-		w.WriteHeader(int(ex.StatusCode))
+		w.WriteHeader(int(ex.Status))
 		_, _ = w.Write(body)
 	}
 }
@@ -165,11 +165,11 @@ func DefaultResponseDecoder(_ context.Context, rsp *http.Response, v interface{}
 	if rsp.StatusCode >= 400 {
 		e := new(errorx.Error)
 		if err = coderByContentType(rsp.Header.Get("Content-Type")).Unmarshal(data, e); err == nil {
-			e.StatusCode = int32(rsp.StatusCode)
+			e.Status = int32(rsp.StatusCode)
 			return e
 		} else {
-			e.StatusCode = int32(rsp.StatusCode)
-			e.ErrorCode = errorx.ErrCodeInvalidReqSys
+			e.Status = int32(rsp.StatusCode)
+			e.Code = errorx.ErrCodeInvalidReqSys
 			e.Message = string(data)
 			return e
 		}

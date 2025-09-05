@@ -15,7 +15,7 @@ func BadRequest(message string) *Error {
 // IsBadRequest determines if err is an error which indicates a BadRequest error.
 // It supports wrapped errors.
 func IsBadRequest(err error) bool {
-	return StatusCode(err) == http.StatusBadRequest
+	return Status(err) == http.StatusBadRequest
 }
 
 // Unauthorized new Unauthorized error that is mapped to a 401 response.
@@ -26,7 +26,7 @@ func Unauthorized(message string) *Error {
 // IsUnauthorized determines if err is an error which indicates an Unauthorized error.
 // It supports wrapped errors.
 func IsUnauthorized(err error) bool {
-	return StatusCode(err) == http.StatusUnauthorized
+	return Status(err) == http.StatusUnauthorized
 }
 
 // Forbidden new Forbidden error that is mapped to a 403 response.
@@ -37,7 +37,7 @@ func Forbidden(message string) *Error {
 // IsForbidden determines if err is an error which indicates a Forbidden error.
 // It supports wrapped errors.
 func IsForbidden(err error) bool {
-	return StatusCode(err) == http.StatusForbidden
+	return Status(err) == http.StatusForbidden
 }
 
 // NotFound new NotFound error that is mapped to a 404 response.
@@ -48,7 +48,7 @@ func NotFound(message string) *Error {
 // IsNotFound determines if err is an error which indicates an NotFound error.
 // It supports wrapped errors.
 func IsNotFound(err error) bool {
-	return StatusCode(err) == http.StatusNotFound
+	return Status(err) == http.StatusNotFound
 }
 
 // Conflict new Conflict error that is mapped to a 409 response.
@@ -59,7 +59,7 @@ func Conflict(message string) *Error {
 // IsConflict determines if err is an error which indicates a Conflict error.
 // It supports wrapped errors.
 func IsConflict(err error) bool {
-	return StatusCode(err) == http.StatusConflict
+	return Status(err) == http.StatusConflict
 }
 
 // InternalServer new InternalServer error that is mapped to a 500 response.
@@ -70,7 +70,7 @@ func InternalServer(message string) *Error {
 // IsInternalServer determines if err is an error which indicates an Internal error.
 // It supports wrapped errors.
 func IsInternalServer(err error) bool {
-	return StatusCode(err) == http.StatusInternalServerError
+	return Status(err) == http.StatusInternalServerError
 }
 
 // ServiceUnavailable new ServiceUnavailable error that is mapped to an HTTP 503 response.
@@ -81,7 +81,7 @@ func ServiceUnavailable(message string) *Error {
 // IsServiceUnavailable determines if err is an error which indicates an Unavailable error.
 // It supports wrapped errors.
 func IsServiceUnavailable(err error) bool {
-	return StatusCode(err) == http.StatusInternalServerError
+	return Status(err) == http.StatusInternalServerError
 }
 
 // GatewayTimeout new GatewayTimeout error that is mapped to an HTTP 504 response.
@@ -92,7 +92,7 @@ func GatewayTimeout(message string) *Error {
 // IsGatewayTimeout determines if err is an error which indicates a GatewayTimeout error.
 // It supports wrapped errors.
 func IsGatewayTimeout(err error) bool {
-	return StatusCode(err) == 504
+	return Status(err) == 504
 }
 
 // ClientClosed new ClientClosed error that is mapped to an HTTP 499 response.
@@ -103,5 +103,5 @@ func ClientClosed(message string) *Error {
 // IsClientClosed determines if err is an error which indicates a IsClientClosed error.
 // It supports wrapped errors.
 func IsClientClosed(err error) bool {
-	return StatusCode(err) == 499
+	return Status(err) == 499
 }

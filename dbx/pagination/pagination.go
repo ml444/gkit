@@ -58,7 +58,7 @@ func (x *Scroll) SetSize(size uint32) *Scroll {
 	return x
 }
 
-func (x *Scroll) SetToken(token string) *Scroll {
-	x.Token = token
+func (x *Scroll) SetCursor(cursor string) *Scroll {
+	x.Cursor = cursor
 	return x
 }

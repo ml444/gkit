@@ -9,10 +9,10 @@ const (
 var {{ .EnumName }}Map = map[int32]*errorx.ErrCodeDetail{
 {{- range $i, $f := .Fields }}
 	{{ $f.Name }}: &errorx.ErrCodeDetail{
-		StatusCode: {{ $f.Status }},
-		ErrorCode:  {{ $f.ErrCode }},
-		Message:    "{{ $f.Message }}",
-		Polyglot:   map[string]string{
+		Status:   {{ $f.Status }},
+		Code:     {{ $f.ErrCode }},
+		Message:  "{{ $f.Message }}",
+		Polyglot: map[string]string{
 			{{- range $key, $value := $f.Polyglot }}
 			"{{ $key }}": "{{ $value }}",
 			{{- end }}
