@@ -22,6 +22,7 @@ func bytesUnmarshal(buf []byte, x interface{}) error {
 	return json.Unmarshal(buf, x)
 }
 `
+
 const BytesTmpl = `
 {{ if not .IsIgnore -}}
 func (x *{{ .SerializerTypeName }}) Scan(src interface{}) error {

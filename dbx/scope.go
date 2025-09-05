@@ -267,6 +267,7 @@ type QueryOpts struct {
 	GroupBys       []string
 	OrderBys       []OrderColumn
 	OrderBy        string
+	Exp            []interface{}
 }
 
 func (s *Scope) Query(opts *QueryOpts) *Scope {
@@ -314,6 +315,9 @@ func (s *Scope) Query(opts *QueryOpts) *Scope {
 	}
 	if opts.OrderBy != "" {
 		s.Order(opts.OrderBy)
+	}
+	if len(opts.Exp) > 0 {
+		s.Where(opts.Exp[0], opts.Exp[1:]...)
 	}
 	return s
 }
@@ -412,7 +416,6 @@ func (s *Scope) MultiOrLike(opts map[string]string, isPrefix bool) *Scope {
 	s.Where(strings.Join(orQueryList, " OR "), values...)
 	return s
 }
-
 
 // Order db.Order("name DESC")
 func (s *Scope) Order(value string) *Scope {

@@ -10,8 +10,8 @@ option objc_class_prefix = "GkitErrors";
 
 
 message ErrorInfo {
-  int32 status_code = 1;
-  int32 error_code = 2;
+  int32 status = 1;
+  int32 code = 2;
   string message = 3;
   map<string, string> metadata = 4;
 };

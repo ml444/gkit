@@ -25,7 +25,7 @@ func (x *Pagination) SetNextPage() (ok bool) {
 		x.Page = 1
 	}
 	x.Page += 1
-	if x.Page*x.Size >= x.Total {
+	if int64(x.Page*x.Size) >= x.Total {
 		ok = false
 	}
 	return ok

@@ -13,7 +13,6 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/ml444/gkit/dbx/pagination"
-	"github.com/ml444/gkit/errorx"
 	"github.com/ml444/gkit/log"
 )
 

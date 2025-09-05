@@ -22,7 +22,7 @@ func GetNotFoundErr(err error) *errorx.Error {
 func IsNotFoundErr(err error, errCode int32) bool {
 	var Err *errorx.Error
 	if errors.As(err, &Err) {
-		eCode := Err.GetErrorCode()
+		eCode := Err.GetCode()
 		if eCode == errorx.ErrCodeRecordNotFoundSys || eCode == errCode {
 			return true
 		}
@@ -38,7 +38,9 @@ var ErrUpdateRowAffectedZero = errorx.CreateError(400, errorx.ErrCodeUpdateRowAf
 func IsUpdateRowAffectedZero(err error) bool {
 	var Err *errorx.Error
 	if errors.As(err, &Err) {
-		return Err.GetErrorCode() == errorx.ErrCodeUpdateRowAffectedZeroSys
+		return Err.GetCode() == errorx.ErrCodeUpdateRowAffectedZeroSys
 	}
 	return false
 }
+
+

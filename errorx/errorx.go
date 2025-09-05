@@ -11,10 +11,10 @@ import (
 )
 
 type ErrCodeDetail struct {
-	StatusCode int32
-	ErrorCode  int32
-	Message    string
-	Polyglot   map[string]string
+	Status   int32
+	Code     int32
+	Message  string
+	Polyglot map[string]string
 }
 
 var (
@@ -31,8 +31,8 @@ func RegisterError(codeMap map[int32]*ErrCodeDetail) {
 	lock.Lock()
 	defer lock.Unlock()
 	for k, detail := range codeMap {
-		if detail.StatusCode == 0 {
-			detail.StatusCode = DefaultStatusCode
+		if detail.Status == 0 {
+			detail.Status = DefaultStatusCode
 		}
 		errCodeMap[k] = detail
 	}
@@ -46,13 +46,13 @@ type Error struct {
 
 func (e *Error) Error() string {
 	if e.cause != nil && len(e.Metadata) != 0 {
-		return fmt.Sprintf("error: [%d: %d] '%s' metadata=%v cause=%s", e.StatusCode, e.ErrorCode, e.Message, e.Metadata, e.cause)
+		return fmt.Sprintf("error: [%d: %d] '%s' metadata=%v cause=%s", e.Status, e.Code, e.Message, e.Metadata, e.cause)
 	} else if e.cause != nil {
-		return fmt.Sprintf("error: [%d: %d] '%s' cause=%s", e.StatusCode, e.ErrorCode, e.Message, e.cause)
+		return fmt.Sprintf("error: [%d: %d] '%s' cause=%s", e.Status, e.Code, e.Message, e.cause)
 	} else if len(e.Metadata) != 0 {
-		return fmt.Sprintf("error: [%d: %d] '%s' metadata=%v", e.StatusCode, e.ErrorCode, e.Message, e.Metadata)
+		return fmt.Sprintf("error: [%d: %d] '%s' metadata=%v", e.Status, e.Code, e.Message, e.Metadata)
 	} else {
-		return fmt.Sprintf("error: [%d: %d] '%s'", e.StatusCode, e.ErrorCode, e.Message)
+		return fmt.Sprintf("error: [%d: %d] '%s'", e.Status, e.Code, e.Message)
 	}
 }
 
@@ -66,21 +66,21 @@ func (e *Error) Unwrap() error { return e.cause }
 
 func (e *Error) Is(err error) bool {
 	if se := new(Error); errors.As(err, &se) {
-		return se.StatusCode == e.StatusCode && se.ErrorCode == e.ErrorCode
+		return se.Status == e.Status && se.Code == e.Code
 	}
 	return false
 }
 
 func (e *Error) IsErrCode(errCode int32) bool {
-	return e.ErrorCode == errCode
+	return e.Code == errCode
 }
 
-func (e *Error) GetStatusCode() int32 {
-	return e.ErrorInfo.StatusCode
+func (e *Error) GetStatus() int32 {
+	return e.ErrorInfo.Status
 }
 
-func (e *Error) GetErrorCode() int32 {
-	return e.ErrorInfo.ErrorCode
+func (e *Error) GetCode() int32 {
+	return e.ErrorInfo.Code
 }
 
 func (e *Error) WithCause(cause error) *Error {
@@ -100,7 +100,7 @@ func (e *Error) ConvertMsgByLang(langs ...string) {
 	if len(langs) == 0 {
 		return
 	}
-	detail, ok := errCodeMap[e.ErrorCode]
+	detail, ok := errCodeMap[e.Code]
 	if !ok || len(detail.Polyglot) == 0 {
 		return
 	}
@@ -117,7 +117,7 @@ func (e *Error) ConvertMsgByLang(langs ...string) {
 }
 
 func (e *Error) GRPCStatus() *status.Status {
-	s, _ := status.New(ToGRPCCode(int(e.StatusCode)), e.Message).
+	s, _ := status.New(ToGRPCCode(int(e.Status)), e.Message).
 		WithDetails(&errdetails.ErrorInfo{
 			Reason:   e.Message,
 			Metadata: e.Metadata,
@@ -138,7 +138,7 @@ func pickMsg(detail *ErrCodeDetail) string {
 func getErrDetail(errCode int32) *ErrCodeDetail {
 	detail, ok := errCodeMap[errCode]
 	if !ok {
-		detail = &ErrCodeDetail{StatusCode: DefaultStatusCode}
+		detail = &ErrCodeDetail{Status: DefaultStatusCode}
 	}
 	return detail
 }
@@ -147,9 +147,9 @@ func New(errCode int32) *Error {
 	detail := getErrDetail(errCode)
 	return &Error{
 		ErrorInfo: ErrorInfo{
-			ErrorCode:  errCode,
-			StatusCode: detail.StatusCode,
-			Message:    pickMsg(detail),
+			Code:    errCode,
+			Status:  detail.Status,
+			Message: pickMsg(detail),
 		},
 	}
 }
@@ -159,9 +159,9 @@ func NewWithStatus(statusCode int32, errCode int32) *Error {
 	detail := getErrDetail(errCode)
 	return &Error{
 		ErrorInfo: ErrorInfo{
-			ErrorCode:  errCode,
-			StatusCode: statusCode,
-			Message:    pickMsg(detail),
+			Code:    errCode,
+			Status:  statusCode,
+			Message: pickMsg(detail),
 		},
 	}
 }
@@ -171,9 +171,9 @@ func NewWithMsg(errCode int32, msg string) *Error {
 	detail := getErrDetail(errCode)
 	return &Error{
 		ErrorInfo: ErrorInfo{
-			ErrorCode:  errCode,
-			StatusCode: detail.StatusCode,
-			Message:    msg,
+			Code:    errCode,
+			Status:  detail.Status,
+			Message: msg,
 		},
 	}
 }
@@ -182,9 +182,9 @@ func NewWithMsg(errCode int32, msg string) *Error {
 func CreateError(statusCode int32, errCode int32, message string) *Error {
 	return &Error{
 		ErrorInfo: ErrorInfo{
-			StatusCode: statusCode,
-			ErrorCode:  errCode,
-			Message:    message,
+			Status:  statusCode,
+			Code:    errCode,
+			Message: message,
 		},
 	}
 }
@@ -197,13 +197,13 @@ func Errorf(statusCode int32, errCode int32, format string, a ...interface{}) er
 	return CreateError(statusCode, errCode, fmt.Sprintf(format, a...))
 }
 
-// StatusCode returns the http code for an error.
+// Status returns the http code for an error.
 // It supports wrapped errorx.
-func StatusCode(err error) int {
+func Status(err error) int {
 	if err == nil {
 		return 200 //nolint:gomnd
 	}
-	return int(FromError(err).StatusCode)
+	return int(FromError(err).Status)
 }
 
 // ErrCode returns the reason for a particular error.
@@ -212,7 +212,7 @@ func ErrCode(err error) int32 {
 	if err == nil {
 		return ErrCodeUnknown
 	}
-	return FromError(err).ErrorCode
+	return FromError(err).Code
 }
 
 // Clone deep clone error to a new error.
@@ -227,10 +227,10 @@ func Clone(err *Error) *Error {
 	return &Error{
 		cause: err.cause,
 		ErrorInfo: ErrorInfo{
-			StatusCode: err.StatusCode,
-			ErrorCode:  err.ErrorCode,
-			Message:    err.Message,
-			Metadata:   metadata,
+			Status:   err.Status,
+			Code:     err.Code,
+			Message:  err.Message,
+			Metadata: metadata,
 		},
 	}
 }
@@ -255,8 +255,8 @@ func FromError(err error) *Error {
 	for _, detail := range gs.Details() {
 		if ErrInfo, ok := detail.(*ErrorInfo); ok {
 			return CreateError(
-				ErrInfo.StatusCode,
-				ErrInfo.ErrorCode,
+				ErrInfo.Status,
+				ErrInfo.Code,
 				ErrInfo.Message,
 			).WithMetadata(ErrInfo.Metadata)
 		}
@@ -264,12 +264,12 @@ func FromError(err error) *Error {
 	return ret
 }
 
-// ErrorIs returns true if err is an *Error and its ErrorCode matches errCode.
+// ErrorIs returns true if err is an *Error and its Code matches errCode.
 func ErrorIs(err error, errCode int32) bool {
 	var e *Error
 	ok := errors.As(err, &e)
 	if ok {
-		eCode := e.GetErrorCode()
+		eCode := e.GetCode()
 		if eCode == errCode {
 			return true
 		}

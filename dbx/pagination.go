@@ -36,7 +36,7 @@ func (s *Scope) PaginationQuery(list interface{}, page, size uint32) (*paginatio
 	p := pagination.Pagination{
 		Page:  opt.Page,
 		Size:  opt.Size,
-		Total: uint32(total),
+		Total: total,
 	}
 	return &p, nil
 }
@@ -86,9 +86,13 @@ func getLimit(size uint32) int {
 	}
 	return limit
 }
+
+
 func getOffset(page, size uint32) int {
 	if page <= 1 {
 		return 0
 	}
-	return int(size * (page - 1))
+	
+return int(size * (page - 1))
 }
+

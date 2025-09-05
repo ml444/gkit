@@ -49,7 +49,7 @@ func TestScope_PaginationQuery(t *testing.T) {
 				t.Errorf("Scope.PaginationQuery() = %v, want %v", got, tt.want)
 			}
 			if !got.SkipCount && got.Total > 0 {
-				if got.Total > got.Size && len(*tt.args.list) != int(got.Size) {
+				if got.Total > int64(got.Size) && len(*tt.args.list) != int(got.Size) {
 					t.Errorf("find err: list len: %d, want: %d", len(*tt.args.list), got.Size)
 				}
 			}
