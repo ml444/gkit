@@ -4,7 +4,7 @@
 // versions:
 // 	protoc-gen-go v1.36.6
 // 	protoc        v6.30.2
-// source: errorx.proto
+// source: errorx/errorx.proto
 
 package errorx
 
@@ -35,7 +35,7 @@ type ErrorInfo struct {
 
 func (x *ErrorInfo) Reset() {
 	*x = ErrorInfo{}
-	mi := &file_errorx_proto_msgTypes[0]
+	mi := &file_errorx_errorx_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -47,7 +47,7 @@ func (x *ErrorInfo) String() string {
 func (*ErrorInfo) ProtoMessage() {}
 
 func (x *ErrorInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_errorx_proto_msgTypes[0]
+	mi := &file_errorx_errorx_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -60,7 +60,7 @@ func (x *ErrorInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ErrorInfo.ProtoReflect.Descriptor instead.
 func (*ErrorInfo) Descriptor() ([]byte, []int) {
-	return file_errorx_proto_rawDescGZIP(), []int{0}
+	return file_errorx_errorx_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *ErrorInfo) GetStatus() int32 {
@@ -91,11 +91,11 @@ func (x *ErrorInfo) GetMetadata() map[string]string {
 	return nil
 }
 
-var File_errorx_proto protoreflect.FileDescriptor
+var File_errorx_errorx_proto protoreflect.FileDescriptor
 
-const file_errorx_proto_rawDesc = "" +
+const file_errorx_errorx_proto_rawDesc = "" +
 	"\n" +
-	"\ferrorx.proto\x12\x06errors\"\xcb\x01\n" +
+	"\x13errorx/errorx.proto\x12\x06errors\"\xcb\x01\n" +
 	"\tErrorInfo\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\x05R\x06status\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\x05R\x04code\x12\x18\n" +
@@ -108,23 +108,23 @@ const file_errorx_proto_rawDesc = "" +
 	"GkitErrorsb\x06proto3"
 
 var (
-	file_errorx_proto_rawDescOnce sync.Once
-	file_errorx_proto_rawDescData []byte
+	file_errorx_errorx_proto_rawDescOnce sync.Once
+	file_errorx_errorx_proto_rawDescData []byte
 )
 
-func file_errorx_proto_rawDescGZIP() []byte {
-	file_errorx_proto_rawDescOnce.Do(func() {
-		file_errorx_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_errorx_proto_rawDesc), len(file_errorx_proto_rawDesc)))
+func file_errorx_errorx_proto_rawDescGZIP() []byte {
+	file_errorx_errorx_proto_rawDescOnce.Do(func() {
+		file_errorx_errorx_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_errorx_errorx_proto_rawDesc), len(file_errorx_errorx_proto_rawDesc)))
 	})
-	return file_errorx_proto_rawDescData
+	return file_errorx_errorx_proto_rawDescData
 }
 
-var file_errorx_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
-var file_errorx_proto_goTypes = []any{
+var file_errorx_errorx_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_errorx_errorx_proto_goTypes = []any{
 	(*ErrorInfo)(nil), // 0: errors.ErrorInfo
 	nil,               // 1: errors.ErrorInfo.MetadataEntry
 }
-var file_errorx_proto_depIdxs = []int32{
+var file_errorx_errorx_proto_depIdxs = []int32{
 	1, // 0: errors.ErrorInfo.metadata:type_name -> errors.ErrorInfo.MetadataEntry
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
@@ -133,26 +133,26 @@ var file_errorx_proto_depIdxs = []int32{
 	0, // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_errorx_proto_init() }
-func file_errorx_proto_init() {
-	if File_errorx_proto != nil {
+func init() { file_errorx_errorx_proto_init() }
+func file_errorx_errorx_proto_init() {
+	if File_errorx_errorx_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_errorx_proto_rawDesc), len(file_errorx_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_errorx_errorx_proto_rawDesc), len(file_errorx_errorx_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_errorx_proto_goTypes,
-		DependencyIndexes: file_errorx_proto_depIdxs,
-		MessageInfos:      file_errorx_proto_msgTypes,
+		GoTypes:           file_errorx_errorx_proto_goTypes,
+		DependencyIndexes: file_errorx_errorx_proto_depIdxs,
+		MessageInfos:      file_errorx_errorx_proto_msgTypes,
 	}.Build()
-	File_errorx_proto = out.File
-	file_errorx_proto_goTypes = nil
-	file_errorx_proto_depIdxs = nil
+	File_errorx_errorx_proto = out.File
+	file_errorx_errorx_proto_goTypes = nil
+	file_errorx_errorx_proto_depIdxs = nil
 }
