@@ -32,7 +32,7 @@ func Benchmark_isNonEmptySlice(b *testing.B) {
 }
 
 func TestScope_Incr(t *testing.T) {
-	s := NewScope(testDB(), &testUser{})
+	s := NewScope(testGetDB(), &testUser{})
 	username := "TestScope_Incr"
 	// create user
 	u := &testUser{Name: username, Age: 10}
@@ -61,7 +61,7 @@ func TestScope_Incr(t *testing.T) {
 	t.Logf("==after user: %v", user1)
 
 	// incr age -2
-	err = NewScope(testDB(), &testUser{}).Eq("id", u.ID).UpdateColumnWithIncr("age", -2)
+	err = NewScope(testGetDB(), &testUser{}).Eq("id", u.ID).UpdateColumnWithIncr("age", -2)
 	if err != nil {
 		t.Fatal(err)
 	}

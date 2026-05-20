@@ -171,6 +171,18 @@ func (s *Scope) Update(v interface{}, conds ...interface{}) error {
 	return nil
 }
 
+func (s *Scope) UpdateColumn(field string, value interface{}) error {
+	s.DB = s.DB.UpdateColumn(field, value)
+	if s.DB.Error != nil {
+		return s.DB.Error
+	}
+	s.RowsAffected = s.DB.RowsAffected
+	if s.RowsAffected == 0 {
+		log.Warnf("value: %v, RowsAffected: 0", value)
+	}
+	return nil
+}
+
 // UpdateColumnWithIncr increments a column's value by the specified argument.
 func (s *Scope) UpdateColumnWithIncr(field string, v int64) error {
 	if v == 0 {
@@ -197,7 +209,7 @@ func (s *Scope) Delete(conds ...interface{}) error {
 		if len(conds) > 1 {
 			s.Where(conds[0], conds[1:])
 		}
-		return s.UpdateColumn(ProtoMessageFieldDeletedAt, time.Now().Unix()).Error
+		return s.UpdateColumn(ProtoMessageFieldDeletedAt, time.Now().Unix())
 	}
 	return s.DB.Delete(s.model, conds).Error
 }
@@ -218,16 +230,14 @@ func (s *Scope) First(dest interface{}, conds ...interface{}) error {
 
 func (s *Scope) Exist(conds ...interface{}) (bool, error) {
 	if len(conds) > 0 {
-		s.Where(conds[0], conds[1:])
+		s.Where(conds[0], conds[1:]...)
 	}
-	count, err := s.Count()
-	if err != nil {
-		return false, err
+	var one int
+	tx := s.DB.Select("1").Limit(1).Scan(&one)
+	if tx.Error != nil {
+		return false, tx.Error
 	}
-	if count <= 0 {
-		return false, nil
-	}
-	return true, nil
+	return tx.RowsAffected > 0, nil
 }
 
 func (s *Scope) Find(dest interface{}, conds ...interface{}) error {
@@ -262,8 +272,8 @@ type QueryOpts struct {
 	Or             map[string]interface{}
 	OrLike         map[string]string
 	OrBetween      map[string][2]interface{}
-	isLikePrefix   bool
-	isOrLikePrefix bool
+	IsLikePrefix   bool
+	IsOrLikePrefix bool
 	GroupBys       []string
 	OrderBys       []OrderColumn
 	OrderBy        string
@@ -284,7 +294,7 @@ func (s *Scope) Query(opts *QueryOpts) *Scope {
 	}
 	if len(opts.Like) > 0 {
 		for field, value := range opts.Like {
-			if opts.isLikePrefix {
+			if opts.IsLikePrefix {
 				s.LikePrefix(field, value)
 			} else {
 				s.Like(field, value)
@@ -295,7 +305,7 @@ func (s *Scope) Query(opts *QueryOpts) *Scope {
 		s.MultiOr(opts.Or)
 	}
 	if len(opts.OrLike) > 0 {
-		s.MultiOrLike(opts.OrLike, opts.isOrLikePrefix)
+		s.MultiOrLike(opts.OrLike, opts.IsOrLikePrefix)
 	}
 	if len(opts.OrBetween) > 0 {
 		var queryList []string
@@ -513,9 +523,9 @@ func (s *Scope) Preload(query string, args ...interface{}) *Scope {
 	return s
 }
 
-func (s *Scope) Association(value string) *Scope {
-	s.DB.Association(value)
-	return s
+// Association returns the GORM association handler for the named relation.
+func (s *Scope) Association(value string) *gorm.Association {
+	return s.DB.Association(value)
 }
 
 func (s *Scope) Transaction(fc func(tx *gorm.DB) error, opts ...*sql.TxOptions) error {

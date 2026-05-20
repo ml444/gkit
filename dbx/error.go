@@ -3,7 +3,9 @@ package dbx
 import (
 	"errors"
 	"net/http"
+	"strings"
 
+	mysqlDriver "github.com/go-sql-driver/mysql"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -43,4 +45,21 @@ func IsUpdateRowAffectedZero(err error) bool {
 	return false
 }
 
+const mysqlDuplicateEntryCode uint16 = 1062
 
+func IsDuplicateErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	var mysqlErr *mysqlDriver.MySQLError
+	if errors.As(err, &mysqlErr) {
+		return mysqlErr.Number == mysqlDuplicateEntryCode
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "Duplicate entry") || // MySQL
+		strings.Contains(msg, "duplicate key") || // PostgreSQL
+		strings.Contains(msg, "UNIQUE constraint failed") { // SQLite
+		return true
+	}
+	return false
+}

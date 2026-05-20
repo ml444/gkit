@@ -15,10 +15,9 @@ import (
 )
 
 /*
-var dbUser = dbx.NewT[user.ModelUser](dbx.DB, dbx.WithNotFoundErrCode(user.ErrNotFoundUser),
-	dbx.WithTableCipher(config.GetDefaultAESCipher()),
-	dbx.WithNeedDecrypt(true), // 业务层透明，无需业务层关心解密逻辑
-	dbx.WithSpecifyFieldCipherMap(config.GetTableFieldsCipher(new(user.ModelUser).TableName())),
+var dbUser = dbx.NewT[user.ModelUser](db, dbx.SetNotFoundErrCode(user.ErrNotFoundUser),
+	dbx.SetTableCipher(config.GetDefaultAESCipher()),
+	dbx.SetSpecifyFieldCipherMap(config.GetTableFieldsCipher(new(user.ModelUser).TableName())),
 )
 */
 
@@ -157,7 +156,7 @@ func testGetDB() *gorm.DB {
 			panic(err)
 		}
 		tx = db
-		db.AutoMigrate(&testOrmModel{})
+		db.AutoMigrate(&testOrmModel{}, &testUser{}, &testKind{})
 	}
 	return tx
 }
@@ -499,10 +498,12 @@ func TestT_GetOne_and_Delete_and_Exist(t *testing.T) {
 	}
 
 	xx := x.Clone()
-	// xx.IgnoreNotFoundErr = true
 	err = xx.GetOne(context.Background(), &m1, m.ID)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("expected not found error for soft-deleted record")
+	}
+	if !IsNotFoundErr(err, 1000) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -548,7 +549,7 @@ func TestT_ListAll(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var list []*testModel
-			if err := x.ListAll(context.Background(), tt.opts, &list); (err != nil) != tt.wantErr {
+			if err := x.ListAll(context.Background(), &list, tt.opts); (err != nil) != tt.wantErr {
 				t.Errorf("ListAll() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			if len(list) != tt.wantTotal {
@@ -686,5 +687,49 @@ func Test_camelToSnake(t *testing.T) {
 				t.Errorf("camelToSnake() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestT_SetGenerateIDFunc(t *testing.T) {
+	var nextID uint64 = 9000
+	x := NewT[testModel](testGetDB, SetGenerateIDFunc(func() uint64 {
+		nextID++
+		return nextID
+	}))
+	m := testModel{Name: "id-gen-test"}
+	if err := x.Create(context.Background(), &m); err != nil {
+		t.Fatal(err)
+	}
+	if m.ID != 9001 {
+		t.Fatalf("expected generated id 9001, got %d", m.ID)
+	}
+}
+
+func TestScope_ScrollQuery(t *testing.T) {
+	x := NewT[testModel](testGetDB)
+	names := []string{"scroll-a", "scroll-b", "scroll-c"}
+	for _, name := range names {
+		if err := x.Create(context.Background(), &testModel{Name: name}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var list []*testOrmModel
+	scroll, err := x.Scope(context.Background()).Order("id ASC").ScrollQuery(&list, "", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(list))
+	}
+	if scroll.Cursor == "" {
+		t.Fatal("expected cursor for next page")
+	}
+	var list2 []*testOrmModel
+	_, err = x.Scope(context.Background()).Order("id ASC").ScrollQuery(&list2, scroll.Cursor, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list2) == 0 {
+		t.Fatal("expected more rows after cursor")
 	}
 }

@@ -38,6 +38,11 @@ type ITModel interface {
 
 type GenerateIDFunc func() uint64
 
+type cryptoField struct {
+	index  int
+	cipher ICipher
+}
+
 type T struct {
 	getDB             func() *gorm.DB
 	model             any
@@ -47,12 +52,18 @@ type T struct {
 	NotFoundErrCode   int32
 	BatchCreateSize   int
 	PrimaryKey        string
+	primaryKeyIndex   int
 
 	// encrypt config
-	EncryptFieldMap map[string]ICipher // {dbFieldName:structFieldName}
-	// tableEncryptor  ICipher
-	NeedEncrypt    bool
-	DisableDecrypt bool
+	EncryptFieldMap map[string]ICipher // db or struct field name -> cipher
+	encryptDBFields map[string]ICipher // db column name -> cipher (for map queries)
+	cryptoFields    []cryptoField      // struct field indices for encryption
+	NeedEncrypt     bool
+	DisableDecrypt  bool
+
+	modelType    reflect.Type
+	ormModelType reflect.Type
+	needORMCopy  bool
 
 	IdGenerator GenerateIDFunc
 }
@@ -85,6 +96,7 @@ func NewT[M any](fn func() *gorm.DB, opts ...TOption) *T {
 		log.Warn("no fields was found that needed to be encrypted")
 		t.NeedEncrypt = false
 	}
+	t.rebuildFieldCache()
 
 	return &t
 }
@@ -100,6 +112,7 @@ func (x *T) init() {
 	}
 
 	var pkList []string
+	x.primaryKeyIndex = -1
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 
@@ -112,7 +125,8 @@ func (x *T) init() {
 			continue
 		}
 		// Handle primary key
-		if strings.Contains(strings.ToLower(gormTag), "primaryKey") {
+		if strings.Contains(gormTag, "primaryKey") {
+			x.primaryKeyIndex = i
 			jsonTag := field.Tag.Get("json")
 			if jsonTag != "" {
 				pkList = append(pkList, strings.Split(jsonTag, ",")[0])
@@ -128,6 +142,63 @@ func (x *T) init() {
 	}
 }
 
+func (x *T) rebuildFieldCache() {
+	ormT := reflect.TypeOf(x.ormModel)
+	if ormT.Kind() == reflect.Ptr {
+		ormT = ormT.Elem()
+	}
+	modelT := reflect.TypeOf(x.model)
+	if modelT.Kind() == reflect.Ptr {
+		modelT = modelT.Elem()
+	}
+	x.ormModelType = ormT
+	x.modelType = modelT
+	x.needORMCopy = x.forceTModel && modelT != ormT
+
+	x.cryptoFields = nil
+	x.encryptDBFields = make(map[string]ICipher)
+	if ormT.Kind() != reflect.Struct {
+		return
+	}
+
+	seenIndex := make(map[int]ICipher)
+	for i := 0; i < ormT.NumField(); i++ {
+		field := ormT.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+		dbFieldName := field.Name
+		if jsonTag := field.Tag.Get("json"); jsonTag != "" {
+			dbFieldName = strings.Split(jsonTag, ",")[0]
+		} else {
+			dbFieldName = camelToSnake(field.Name)
+		}
+
+		cipher, ok := x.EncryptFieldMap[field.Name]
+		if !ok {
+			cipher, ok = x.EncryptFieldMap[dbFieldName]
+		}
+		if !ok {
+			continue
+		}
+		if _, exists := seenIndex[i]; !exists {
+			seenIndex[i] = cipher
+			x.cryptoFields = append(x.cryptoFields, cryptoField{index: i, cipher: cipher})
+		}
+		x.encryptDBFields[dbFieldName] = cipher
+	}
+
+	for name, cipher := range x.EncryptFieldMap {
+		if _, ok := x.encryptDBFields[name]; ok {
+			continue
+		}
+		if _, ok := ormT.FieldByName(name); ok {
+			continue
+		}
+		x.encryptDBFields[name] = cipher
+	}
+}
+
 func camelToSnake(s string) string {
 	var result strings.Builder
 	for i, r := range s {
@@ -139,8 +210,8 @@ func camelToSnake(s string) string {
 	return result.String()
 }
 
-func (x *T) Clone() *T {
-	return &T{
+func (x *T) Clone(opts ...TOption) *T {
+	t := &T{
 		getDB:             x.getDB,
 		model:             x.model,
 		ormModel:          x.ormModel,
@@ -149,22 +220,30 @@ func (x *T) Clone() *T {
 		NotFoundErrCode:   x.NotFoundErrCode,
 		BatchCreateSize:   x.BatchCreateSize,
 		PrimaryKey:        x.PrimaryKey,
+		primaryKeyIndex:   x.primaryKeyIndex,
 		EncryptFieldMap:   x.EncryptFieldMap,
+		encryptDBFields:   x.encryptDBFields,
+		cryptoFields:      x.cryptoFields,
 		NeedEncrypt:       x.NeedEncrypt,
 		DisableDecrypt:    x.DisableDecrypt,
+		modelType:         x.modelType,
+		ormModelType:      x.ormModelType,
+		needORMCopy:       x.needORMCopy,
 		IdGenerator:       x.IdGenerator,
 	}
+	for _, opt := range opts {
+		opt(t)
+	}
+	if len(opts) > 0 {
+		t.rebuildFieldCache()
+	}
+	return t
 }
 
 func (x *T) getModel() any {
-	var mT reflect.Type
+	mT := x.modelType
 	if x.forceTModel {
-		mT = reflect.TypeOf(x.ormModel)
-	} else {
-		mT = reflect.TypeOf(x.model)
-	}
-	if mT.Kind() == reflect.Ptr {
-		mT = mT.Elem()
+		mT = x.ormModelType
 	}
 	return reflect.New(mT).Interface()
 }
@@ -174,9 +253,7 @@ func (x *T) Scope(ctx context.Context) *Scope {
 }
 
 func (x *T) Create(ctx context.Context, m any, omitFields ...string) (err error) {
-	err = x.CheckAndCrypto(m, cipherKindEncrypt, true)
-	if err != nil {
-		log.Errorf("err: %v\n", err)
+	if err = x.CheckAndCrypto(m, cipherKindEncrypt, true); err != nil {
 		return err
 	}
 	scope := x.Scope(ctx)
@@ -186,9 +263,7 @@ func (x *T) Create(ctx context.Context, m any, omitFields ...string) (err error)
 	if x.forceTModel {
 		if im, ok := (m).(IModel); ok {
 			ormModel := im.ToORM()
-			err = scope.Create(ormModel)
-			if err != nil {
-				log.Errorf("err: %v\n", err)
+			if err = scope.Create(ormModel); err != nil {
 				return err
 			}
 			return copier.Copy(m, ormModel)
@@ -198,9 +273,7 @@ func (x *T) Create(ctx context.Context, m any, omitFields ...string) (err error)
 }
 
 func (x *T) BatchCreate(ctx context.Context, list any, omitFields ...string) (err error) {
-	err = x.CheckAndCrypto(list, cipherKindEncrypt, true)
-	if err != nil {
-		log.Errorf("err: %v\n", err)
+	if err = x.CheckAndCrypto(list, cipherKindEncrypt, true); err != nil {
 		return err
 	}
 	listV := reflect.Indirect(reflect.ValueOf(list))
@@ -214,17 +287,19 @@ func (x *T) BatchCreate(ctx context.Context, list any, omitFields ...string) (er
 	switch listV.Kind() {
 	case reflect.Array, reflect.Slice:
 		mT := listV.Type().Elem()
-		if x.forceTModel && mT == reflect.TypeOf(x.model) {
-			ormList := reflect.New(reflect.SliceOf(reflect.TypeOf(x.ormModel)))
+		elemType := mT
+		if elemType.Kind() == reflect.Ptr {
+			elemType = elemType.Elem()
+		}
+		if x.forceTModel && elemType == x.modelType {
+			ormElemType := reflect.TypeOf(x.ormModel)
+			ormList := reflect.MakeSlice(reflect.SliceOf(ormElemType), listV.Len(), listV.Len())
 			for i := 0; i < listV.Len(); i++ {
 				ormElement := listV.Index(i).Interface().(IModel).ToORM()
-				newOrmList := reflect.Append(ormList.Elem(), reflect.ValueOf(ormElement))
-				ormList.Elem().Set(newOrmList)
+				ormList.Index(i).Set(reflect.ValueOf(ormElement))
 			}
 			valList := ormList.Interface()
-			err = scope.CreateInBatches(valList, x.BatchCreateSize)
-			if err != nil {
-				log.Errorf("err: %v\n", err)
+			if err = scope.CreateInBatches(valList, x.BatchCreateSize); err != nil {
 				return err
 			}
 			return copier.Copy(list, valList)
@@ -236,9 +311,7 @@ func (x *T) BatchCreate(ctx context.Context, list any, omitFields ...string) (er
 }
 
 func (x *T) Save(ctx context.Context, m any, omitFields ...string) (err error) {
-	err = x.CheckAndCrypto(m, cipherKindEncrypt, true)
-	if err != nil {
-		log.Errorf("err: %v\n", err)
+	if err = x.CheckAndCrypto(m, cipherKindEncrypt, true); err != nil {
 		return err
 	}
 	scope := x.Scope(ctx)
@@ -248,9 +321,7 @@ func (x *T) Save(ctx context.Context, m any, omitFields ...string) (err error) {
 	if x.forceTModel {
 		if im, ok := (m).(IModel); ok {
 			ormModel := im.ToORM()
-			err = scope.Save(ormModel)
-			if err != nil {
-				log.Errorf("err: %v\n", err)
+			if err = scope.Save(ormModel); err != nil {
 				return err
 			}
 			return copier.Copy(m, ormModel)
@@ -260,16 +331,12 @@ func (x *T) Save(ctx context.Context, m any, omitFields ...string) (err error) {
 }
 
 func (x *T) Update(ctx context.Context, m any, query any, args ...any) (rows int64, err error) {
-	err = x.CheckAndCrypto(m, cipherKindEncrypt, false)
-	if err != nil {
-		log.Errorf("err: %v\n", err)
+	if err = x.CheckAndCrypto(m, cipherKindEncrypt, false); err != nil {
 		return 0, err
 	}
 	scope := x.Scope(ctx)
 	if query != nil {
-		err = x.CheckAndCrypto(query, cipherKindEncrypt, false)
-		if err != nil {
-			log.Errorf("err: %v\n", err)
+		if err = x.CheckAndCrypto(query, cipherKindEncrypt, false); err != nil {
 			return 0, err
 		}
 		scope = scope.Where(query, args...)
@@ -286,9 +353,7 @@ func (x *T) UpdateByPk(ctx context.Context, m any, pk any, selectFields ...strin
 	if x.PrimaryKey == "" {
 		return 0, errors.New("unable to find a unique primary key field")
 	}
-	err = x.CheckAndCrypto(m, cipherKindEncrypt, false)
-	if err != nil {
-		log.Errorf("err: %v\n", err)
+	if err = x.CheckAndCrypto(m, cipherKindEncrypt, false); err != nil {
 		return 0, err
 	}
 	scope := x.Scope(ctx)
@@ -312,20 +377,28 @@ func (x *T) DeleteByPk(ctx context.Context, pk any) error {
 }
 
 func (x *T) DeleteByWhere(ctx context.Context, query any, args ...any) error {
-	err := x.CheckAndCrypto(query, cipherKindEncrypt, false)
-	if err != nil {
-		log.Errorf("err: %v\n", err)
+	if err := x.CheckAndCrypto(query, cipherKindEncrypt, false); err != nil {
 		return err
 	}
 	return x.Scope(ctx).Where(query, args...).Delete()
 }
 
 func (x *T) ExistByWhere(ctx context.Context, args ...any) (bool, error) {
-	count, err := x.Count(ctx, args...)
+	scope := x.Scope(ctx)
+	if len(args) == 0 {
+		return scope.Exist()
+	}
+	query := args[0]
+	args = args[1:]
+	err := x.CheckAndCrypto(query, cipherKindEncrypt, false)
 	if err != nil {
 		return false, err
 	}
-	return count > 0, nil
+	scope, err = x.processOpts(scope, query, args...)
+	if err != nil {
+		return false, err
+	}
+	return scope.Exist()
 }
 
 func (x *T) Count(ctx context.Context, args ...any) (int64, error) {
@@ -334,9 +407,7 @@ func (x *T) Count(ctx context.Context, args ...any) (int64, error) {
 	}
 	query := args[0]
 	args = args[1:]
-	err := x.CheckAndCrypto(query, cipherKindEncrypt, false)
-	if err != nil {
-		log.Errorf("err: %v\n", err)
+	if err := x.CheckAndCrypto(query, cipherKindEncrypt, false); err != nil {
 		return 0, err
 	}
 	return x.Scope(ctx).Where(query, args...).Count()
@@ -350,33 +421,28 @@ func (x *T) GetOne(ctx context.Context, m any, pk any) (err error) {
 }
 
 func (x *T) GetOneByWhere(ctx context.Context, m any, query any, args ...any) (err error) {
-	tx := x.Scope(ctx)
+	scope := x.Scope(ctx)
 	if x.IgnoreNotFoundErr {
-		tx.IgnoreNotFoundErr()
+		scope.IgnoreNotFoundErr()
 	}
 	if query != nil {
-		err = x.CheckAndCrypto(query, cipherKindEncrypt, false)
-		if err != nil {
+		if scope, err = x.processOpts(scope, query, args...); err != nil {
 			return err
 		}
-		tx = tx.Where(query, args...)
 	}
 	if !x.IgnoreNotFoundErr && x.NotFoundErrCode != 0 {
-		tx = tx.SetNotFoundErr(x.NotFoundErrCode)
+		scope = scope.SetNotFoundErr(x.NotFoundErrCode)
 	}
 	if im, ok := (m).(IModel); ok && x.forceTModel {
 		mV := im.ToORM()
-		err = tx.First(mV)
-		if err != nil {
-			log.Errorf("err: %v\n", err)
+		if err = scope.First(mV); err != nil {
 			return err
 		}
 		err = copier.Copy(m, mV)
 	} else {
-		err = tx.First(m)
+		err = scope.First(m)
 	}
 	if err != nil {
-		log.Errorf("err: %v\n", err)
 		return err
 	}
 	if !x.DisableDecrypt {
@@ -402,7 +468,7 @@ func (x *T) validateListAndGetModel(listPtr any) (any, error) {
 	return m, nil
 }
 
-func (x *T) processOpts(scope *Scope, opts any) (*Scope, error) {
+func (x *T) processOpts(scope *Scope, opts any, args ...any) (*Scope, error) {
 	if opts == nil {
 		return scope, nil
 	}
@@ -435,6 +501,14 @@ func (x *T) processOpts(scope *Scope, opts any) (*Scope, error) {
 			}
 			return scope.Where(o), nil
 		}
+	case string:
+		if o != "" {
+			encArgs, encErr := x.encryptQueryArgs(args)
+			if encErr != nil {
+				return scope, encErr
+			}
+			return scope.Where(o, encArgs...), nil
+		}
 	default:
 		optsV := reflect.ValueOf(opts)
 		if optsV.Kind() == reflect.Map {
@@ -453,14 +527,13 @@ func (x *T) processOpts(scope *Scope, opts any) (*Scope, error) {
 	return scope, nil
 }
 
-func (x *T) doBeforce(ctx context.Context, opts any, listPtr any) (scope *Scope, valList any, needCopy bool, err error) {
-	m, err := x.validateListAndGetModel(listPtr)
-	if err != nil {
+func (x *T) doBefore(ctx context.Context, opts any, listPtr any) (scope *Scope, valList any, needCopy bool, err error) {
+	if _, err = x.validateListAndGetModel(listPtr); err != nil {
 		log.Error(err)
 		return
 	}
 
-	if x.forceTModel && !reflect.DeepEqual(m, x.ormModel) {
+	if x.needORMCopy {
 		needCopy = true
 		valList = reflect.New(reflect.SliceOf(reflect.TypeOf(x.ormModel))).Interface()
 	} else {
@@ -490,7 +563,7 @@ func (x *T) doAfter(needCopy bool, listPtr, valList any) (err error) {
 }
 
 func (x *T) ListAll(ctx context.Context, listPtr any, opts any) error {
-	scope, valList, needCopy, err := x.doBeforce(ctx, opts, listPtr)
+	scope, valList, needCopy, err := x.doBefore(ctx, opts, listPtr)
 	if err != nil {
 		log.Error(err)
 		return err
@@ -506,7 +579,7 @@ func (x *T) ListAll(ctx context.Context, listPtr any, opts any) error {
 }
 
 func (x *T) ListWithPagination(ctx context.Context, listPtr any, opts any, page, size uint32) (*pagination.Pagination, error) {
-	scope, valList, needCopy, err := x.doBeforce(ctx, opts, listPtr)
+	scope, valList, needCopy, err := x.doBefore(ctx, opts, listPtr)
 	if err != nil {
 		log.Error(err)
 		return nil, err
@@ -521,7 +594,7 @@ func (x *T) ListWithPagination(ctx context.Context, listPtr any, opts any, page,
 }
 
 func (x *T) CheckAndCrypto(m any, kind cipherKind, isCreate bool) error {
-	if m == nil || (len(x.EncryptFieldMap) == 0 && !isCreate) {
+	if m == nil || (len(x.cryptoFields) == 0 && len(x.encryptDBFields) == 0 && !isCreate) {
 		return nil
 	}
 	mV := reflect.ValueOf(m)
@@ -531,14 +604,14 @@ func (x *T) CheckAndCrypto(m any, kind cipherKind, isCreate bool) error {
 
 	switch mV.Kind() {
 	case reflect.Struct:
-		if isCreate && x.IdGenerator != nil && x.PrimaryKey != "" {
-			pkValue := mV.FieldByName(x.PrimaryKey)
-			if pkValue.IsZero() && pkValue.CanSet() {
+		if isCreate && x.IdGenerator != nil && x.primaryKeyIndex >= 0 {
+			pkValue := mV.Field(x.primaryKeyIndex)
+			if pkValue.IsValid() && pkValue.IsZero() && pkValue.CanSet() && pkValue.Kind() == reflect.Uint64 {
 				pkValue.SetUint(x.IdGenerator())
 			}
 		}
-		for fieldName, cipher := range x.EncryptFieldMap {
-			fieldValue := mV.FieldByName(fieldName)
+		for _, cf := range x.cryptoFields {
+			fieldValue := mV.Field(cf.index)
 			if fieldValue.Kind() == reflect.Interface {
 				fieldValue = fieldValue.Elem()
 			}
@@ -546,13 +619,13 @@ func (x *T) CheckAndCrypto(m any, kind cipherKind, isCreate bool) error {
 				continue
 			}
 			if fieldValue.CanSet() {
-				cryptoFunc := cipher.Encrypt
+				cryptoFunc := cf.cipher.Encrypt
 				if kind == cipherKindDecrypt {
-					cryptoFunc = cipher.Decrypt
+					cryptoFunc = cf.cipher.Decrypt
 				}
 				encryptedValue, err := cryptoFunc(fieldValue.Interface())
 				if err != nil {
-					println("crypto field err: ", err.Error())
+					log.Errorf("crypto field err: %v", err)
 					return err
 				}
 				fieldValue.Set(reflect.ValueOf(encryptedValue))
@@ -569,7 +642,7 @@ func (x *T) CheckAndCrypto(m any, kind cipherKind, isCreate bool) error {
 		if isCreate && x.IdGenerator != nil && x.PrimaryKey != "" {
 			mV.SetMapIndex(reflect.ValueOf(x.PrimaryKey), reflect.ValueOf(x.IdGenerator()))
 		}
-		for dbField, cipher := range x.EncryptFieldMap {
+		for dbField, cipher := range x.encryptDBFields {
 			fieldValue := mV.MapIndex(reflect.ValueOf(dbField))
 			if fieldValue.Kind() == reflect.Interface {
 				fieldValue = fieldValue.Elem()
@@ -584,7 +657,7 @@ func (x *T) CheckAndCrypto(m any, kind cipherKind, isCreate bool) error {
 			}
 			encryptedValue, err := cryptoFunc(fieldValue.Interface())
 			if err != nil {
-				println("crypto field err: ", err.Error())
+				log.Errorf("crypto field err: %v", err)
 				return err
 			}
 			mV.SetMapIndex(reflect.ValueOf(dbField), reflect.ValueOf(encryptedValue))
@@ -592,6 +665,42 @@ func (x *T) CheckAndCrypto(m any, kind cipherKind, isCreate bool) error {
 	}
 
 	return nil
+}
+
+func (x *T) encryptQueryArgs(args []any) ([]any, error) {
+	if len(args) == 0 || len(x.encryptDBFields) == 0 {
+		return args, nil
+	}
+	ciphers := x.uniqueCiphers()
+	if len(ciphers) != 1 {
+		return args, nil
+	}
+	cipher := ciphers[0]
+	out := make([]any, len(args))
+	for i, arg := range args {
+		out[i] = arg
+		if s, ok := arg.(string); ok && s != "" {
+			enc, err := cipher.Encrypt(s)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = enc
+		}
+	}
+	return out, nil
+}
+
+func (x *T) uniqueCiphers() []ICipher {
+	seen := make(map[ICipher]struct{})
+	var ciphers []ICipher
+	for _, c := range x.encryptDBFields {
+		if _, ok := seen[c]; ok {
+			continue
+		}
+		seen[c] = struct{}{}
+		ciphers = append(ciphers, c)
+	}
+	return ciphers
 }
 
 // TOption is a function that takes a pointer to a T and modifies it.
@@ -635,7 +744,7 @@ func SetTableCipher(tableCipher ICipher) TOption {
 				if len(ss) == 2 && strings.TrimSpace(ss[0]) == "encrypt" {
 					isTrue, err := strconv.ParseBool(ss[1])
 					if err != nil {
-						println(err.Error())
+						log.Errorf("parse encrypt tag: %v", err)
 						continue
 					}
 					if !isTrue {
@@ -711,5 +820,11 @@ func SetPrimaryKey(pk string) TOption {
 func SetGenerateIDFunc(idFunc GenerateIDFunc) TOption {
 	return func(t *T) {
 		t.IdGenerator = idFunc
+	}
+}
+
+func SetIgnoreNotFoundErr() TOption {
+	return func(t *T) {
+		t.IgnoreNotFoundErr = true
 	}
 }

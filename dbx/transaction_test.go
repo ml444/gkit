@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"testing"
 
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -77,15 +76,7 @@ type testKind struct {
 }
 
 func testDB() *gorm.DB {
-	if tx == nil {
-		db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
-		if err != nil {
-			panic(err)
-		}
-		tx = db
-		db.AutoMigrate(&testUser{}, &testKind{})
-	}
-	return tx
+	return testGetDB()
 }
 
 func TestTxCreateMultiModels(t *testing.T) {
@@ -103,7 +94,7 @@ func TestTxCreateMultiModels(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			if err := TxCreateMultiModels(ctx, tt.args.db, &testUser{1, "far", 18}, &testKind{1, "foo"}); (err != nil) != tt.wantErr {
+			if err := TxCreateMultiModels(ctx, tt.args.db, &testUser{Name: "far", Age: 18}, &testKind{Kind: "foo"}); (err != nil) != tt.wantErr {
 				t.Errorf("ScopeTxGo() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
