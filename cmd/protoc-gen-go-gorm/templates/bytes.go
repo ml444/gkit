@@ -1,6 +1,7 @@
 package templates
 
 var BytesImports = []string{
+	"encoding/json",
 	"fmt",
 	"database/sql/driver",
 

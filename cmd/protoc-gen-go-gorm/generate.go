@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"text/template"
 
 	"google.golang.org/protobuf/compiler/protogen"
@@ -25,6 +26,13 @@ const (
 //go:embed orm_pb.tmpl
 var serializerTemplate string
 
+var (
+	baseTmpl     *template.Template
+	baseTmplOnce sync.Once
+	baseTmplErr  error
+	execTmpl     *template.Template
+)
+
 func protocVersion(gen *protogen.Plugin) string {
 	v := gen.Request.GetCompilerVersion()
 	if v == nil {
@@ -37,7 +45,7 @@ func protocVersion(gen *protogen.Plugin) string {
 	return fmt.Sprintf("v%d.%d.%d%s", v.GetMajor(), v.GetMinor(), v.GetPatch(), suffix)
 }
 
-func generateFile(gen *protogen.Plugin, file *protogen.File) *protogen.GeneratedFile {
+func generateFile(gen *protogen.Plugin, file *protogen.File, fieldFuncs map[string]bool) *protogen.GeneratedFile {
 	if len(file.Messages) == 0 {
 		return nil
 	}
@@ -54,36 +62,41 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) *protogen.Generated
 	}
 	g.P()
 	g.P("package ", file.GoPackageName)
-	err := genContent(file, g)
-	if err != nil {
+	if err := genContent(file, g, fieldFuncs); err != nil {
 		gen.Error(err)
 	}
 	return g
 }
 
-func Render(tpl *template.Template) func(tmplName string, data interface{}) (string, error) {
-	return func(tmplName string, data interface{}) (string, error) {
-		var b bytes.Buffer
-		err := tpl.ExecuteTemplate(&b, tmplName, data)
-		return b.String(), err
-	}
+func getBaseTemplate() (*template.Template, error) {
+	baseTmplOnce.Do(func() {
+		baseTmpl = template.New("serializer").Funcs(template.FuncMap{
+			"render": func(tmplName string, data interface{}) (string, error) {
+				var b bytes.Buffer
+				err := execTmpl.ExecuteTemplate(&b, tmplName, data)
+				return b.String(), err
+			},
+			"SnakeToCamel":       orm.SnakeToCamel,
+			"JoinStringsByCamel": orm.JoinStringsByCamel,
+		})
+		baseTmpl, baseTmplErr = baseTmpl.Parse(strings.TrimSpace(serializerTemplate))
+	})
+	return baseTmpl, baseTmplErr
 }
 
-func genContent(file *protogen.File, g *protogen.GeneratedFile) error {
-	var err error
-	tmpl := template.New("serializer")
-	funcMap := template.FuncMap{
-		"render":             Render(tmpl),
-		"SnakeToCamel":       orm.SnakeToCamel,
-		"JoinStringsByCamel": orm.JoinStringsByCamel,
-	}
-	tmpl.Funcs(funcMap)
-	tmpl, err = tmpl.Parse(strings.TrimSpace(serializerTemplate))
+func genContent(file *protogen.File, g *protogen.GeneratedFile, fieldFuncs map[string]bool) error {
+	base, err := getBaseTemplate()
 	if err != nil {
 		return err
 	}
+	tmpl, err := base.Clone()
+	if err != nil {
+		return err
+	}
+	execTmpl = tmpl
+
 	var messages []*orm.MessageDesc
-	parseMessages(g, file.Messages, &messages)
+	parseMessages(g, file.Messages, fieldFuncs, &messages)
 	if len(messages) == 0 {
 		return nil
 	}
@@ -102,17 +115,9 @@ func genContent(file *protogen.File, g *protogen.GeneratedFile) error {
 			commonMap[key] = str
 		}
 	}
-	var imports []string
-	for key := range importMap {
-		imports = append(imports, key)
-	}
-	var commons []string
-	for _, v := range commonMap {
-		commons = append(commons, v)
-	}
-	sort.Slice(imports, func(i, j int) bool {
-		return imports[i] < imports[j]
-	})
+
+	imports := sortedKeys(importMap)
+	commons := sortedCommons(commonMap)
 	fd := &orm.FileDesc{
 		PackageName: string(file.GoPackageName),
 		Imports:     imports,
@@ -120,23 +125,70 @@ func genContent(file *protogen.File, g *protogen.GeneratedFile) error {
 		Commons:     commons,
 	}
 
-	// register template
-	for name, tpl := range tmplMap {
-		template.Must(tmpl.New(name).Parse(tpl))
+	serializerNames := sortedMapKeys(tmplMap)
+	for _, name := range serializerNames {
+		template.Must(tmpl.New(name).Parse(tmplMap[name]))
 	}
 	return tmpl.Execute(g, fd)
 }
 
-func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, result *[]*orm.MessageDesc) {
+func sortedKeys(m map[string]bool) []string {
+	return sortedMapKeysBool(m)
+}
+
+func sortedMapKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedMapKeysBool(m map[string]bool) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedCommons(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, m[k])
+	}
+	return out
+}
+
+func appendImports(dst *[]string, imports ...string) {
+	seen := make(map[string]bool, len(*dst))
+	for _, imp := range *dst {
+		seen[imp] = true
+	}
+	for _, imp := range imports {
+		if !seen[imp] {
+			seen[imp] = true
+			*dst = append(*dst, imp)
+		}
+	}
+}
+
+func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, fieldFuncs map[string]bool, result *[]*orm.MessageDesc) {
 	for _, message := range messages {
 		if message.Desc.Options().(*descriptorpb.MessageOptions).GetDeprecated() {
-			g.P("//")
 			g.P(deprecationComment)
 		}
-		if message.Desc.Options().(*descriptorpb.MessageOptions) == nil {
-			continue
-		}
 		if enable, ok := proto.GetExtension(message.Desc.Options(), orm.E_Enable).(bool); !ok || !enable {
+			if len(message.Messages) > 0 {
+				parseMessages(g, message.Messages, fieldFuncs, result)
+			}
 			continue
 		}
 		msgDesc := orm.MessageDesc{
@@ -145,21 +197,14 @@ func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, resu
 			Fields:  make([]*orm.ORMField, 0),
 			UtilMap: map[string]string{},
 		}
-		// parse message options
 		if tableName, ok := proto.GetExtension(message.Desc.Options(), orm.E_TableName).(string); ok && tableName != "" {
 			msgDesc.Opts.TableName = tableName
 		}
 		if indexClauses, ok := proto.GetExtension(message.Desc.Options(), orm.E_IndexClauses).([]*orm.IndexClause); ok && indexClauses != nil {
 			msgDesc.Opts.IndexClauses = indexClauses
-			msgDesc.Imports = append(msgDesc.Imports, "gorm.io/gorm/clause", "gorm.io/hints")
+			appendImports(&msgDesc.Imports, "gorm.io/gorm/clause", "gorm.io/hints")
 		}
-		//if forceIdx, ok := proto.GetExtension(message.Desc.Options(), orm.E_ForceIndex).(string); ok && forceIdx != "" {
-		//	msgDesc.Opts.ForceIndex = forceIdx
-		//}
-		//if ignoreIdx, ok := proto.GetExtension(message.Desc.Options(), orm.E_IgnoreIndex).(string); ok && ignoreIdx != "" {
-		//	msgDesc.Opts.IgnoreIndex = ignoreIdx
-		//}
-		// parse message fields
+
 		for _, field := range message.Fields {
 			tags, ok := proto.GetExtension(field.Desc.Options(), orm.E_Tags).(*orm.ORMTags)
 			if !ok || tags == nil {
@@ -174,12 +219,12 @@ func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, resu
 				OldType:   oldType,
 				ORMTag:    orm.JoinTags(string(field.Desc.Name()), tagStr),
 			}
-			msgDesc.ForceORM = forceORM
+			if forceORM {
+				msgDesc.ForceORM = msgDesc.ForceORM || forceORM
+			}
 			msgDesc.Fields = append(msgDesc.Fields, ormField)
-			if len(NeedGenerateFunctionFields) > 0 {
-				if ok1 := NeedGenerateFunctionFields[fieldName]; ok1 {
-					msgDesc.NeedGenFuncFields = append(msgDesc.NeedGenFuncFields, ormField)
-				}
+			if len(fieldFuncs) > 0 && fieldFuncs[fieldName] {
+				msgDesc.NeedGenFuncFields = append(msgDesc.NeedGenFuncFields, ormField)
 			}
 
 			typ := ""
@@ -196,13 +241,13 @@ func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, resu
 				SerializerTypeName: sType,
 				FieldType:          ormField.NewType,
 			}
-
 			if tags.IgnoreMigration != nil && *tags.IgnoreMigration {
 				sd.IsIgnore = true
 			}
 			if tags.IgnoreAll != nil && *tags.IgnoreAll {
 				sd.IsIgnore = true
 			}
+
 			var imports []string
 			needGenSerializer := true
 			switch strings.ToLower(typ) {
@@ -247,41 +292,32 @@ func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, resu
 					imports = templates.SpecialBytesImports
 					sd.Tmpl = templates.SpecialBytesTmpl
 				} else if field.Desc.Kind() == protoreflect.MessageKind || field.Desc.Kind() == protoreflect.GroupKind {
-					sd.SerializerName = "special_json"
-					imports = templates.SpecialJsonImports
-					sd.Tmpl = templates.SpecialJsonTmpl
+					msgDesc.UtilMap["jsonMarshal"] = templates.JsonUtils
+					imports = templates.JsonImports
+					sd.Tmpl = templates.JsonTmpl
+					sd.SerializerName = "json"
 				} else {
 					needGenSerializer = false
 				}
 			default:
 				needGenSerializer = false
-				//if field.Desc.Kind() == protoreflect.BytesKind {
-				//	sd.SerializerName = "special_bytes"
-				//	sd.FieldType = goType(field)
-				//	imports = templates.SpecialBytesImports
-				//	sd.Tmpl = templates.SpecialBytesTmpl
-				//} else {
-				//	sd.SerializerName = "special_json"
-				//	sd.FieldType = goType(field)
-				//	imports = templates.SpecialJsonImports
-				//	sd.Tmpl = templates.SpecialJsonTmpl
-				//}
 			}
 			if needGenSerializer {
-				// replace field type
 				if field.Desc.HasPresence() {
 					ormField.NewType = "*" + sType
 				} else {
 					ormField.NewType = sType
 				}
-
 				msgDesc.SerializeFields = append(msgDesc.SerializeFields, &sd)
-				msgDesc.Imports = append(msgDesc.Imports, imports...)
+				appendImports(&msgDesc.Imports, imports...)
+				msgDesc.ForceORM = true
 			}
 		}
-		*result = append(*result, &msgDesc)
+		if len(msgDesc.Fields) > 0 {
+			*result = append(*result, &msgDesc)
+		}
 		if len(message.Messages) > 0 {
-			parseMessages(g, message.Messages, result)
+			parseMessages(g, message.Messages, fieldFuncs, result)
 		}
 	}
 }
@@ -336,12 +372,6 @@ func kindToGoType(kind protoreflect.Kind) string {
 		return "string"
 	case protoreflect.BytesKind:
 		return "[]byte"
-	// case protoreflect.MessageKind:
-	//	return "struct"
-	// case protoreflect.GroupKind:
-	//	return "struct"
-	// case protoreflect.EnumKind:
-	//	return "enum"
 	default:
 		return ""
 	}

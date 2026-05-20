@@ -12,7 +12,9 @@ extend google.protobuf.MessageOptions {
     // option (orm.table_name) = "my_table_name";
     optional string table_name = 1172;
 
-    repeated IndexClause index_clauses = 1173;
+    optional string table_comment = 1173;
+
+    repeated IndexClause index_clauses = 1174;
 }
 
 message TableNameOptions {

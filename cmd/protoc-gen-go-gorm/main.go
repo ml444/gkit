@@ -8,17 +8,29 @@ import (
 	"google.golang.org/protobuf/types/pluginpb"
 )
 
-var needGenFieldFunc = flag.String("field_func", "CreatedAt,UpdatedAt,DeletedAt", "Specifies which fields in the model's structure need to generate field functions")
-var NeedGenerateFunctionFields map[string]bool
+var needGenFieldFunc = flag.String(
+	"field_func",
+	"",
+	"Comma-separated TModel field names to generate getters for (optional; proto getters are preferred for dbx)",
+)
+
+func parseFieldFuncFlag() map[string]bool {
+	if needGenFieldFunc == nil || *needGenFieldFunc == "" {
+		return nil
+	}
+	out := make(map[string]bool)
+	for _, v := range strings.Split(*needGenFieldFunc, ",") {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			out[v] = true
+		}
+	}
+	return out
+}
 
 func main() {
 	flag.Parse()
-	if needGenFieldFunc != nil && *needGenFieldFunc != "" {
-		NeedGenerateFunctionFields = make(map[string]bool)
-		for _, v := range strings.Split(*needGenFieldFunc, ",") {
-			NeedGenerateFunctionFields[v] = true
-		}
-	}
+	fieldFuncs := parseFieldFuncFlag()
 
 	protogen.Options{
 		ParamFunc: flag.CommandLine.Set,
@@ -28,7 +40,7 @@ func main() {
 			if !f.Generate {
 				continue
 			}
-			generateFile(gen, f)
+			generateFile(gen, f, fieldFuncs)
 		}
 		return nil
 	})

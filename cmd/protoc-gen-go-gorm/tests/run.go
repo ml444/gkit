@@ -13,21 +13,17 @@ import (
 )
 
 func initDb() (*gorm.DB, error) {
-	var err error
-	// pwd := os.Getenv("DB_PWD")
-	// DBURI := fmt.Sprintf("root:%s@tcp(192.168.64.9:3306)/test_orm?charset=utf8mb4&parseTime=True&loc=Local", pwd)
 	DBURI := os.Getenv("SERVICE_DB_URI")
 	if DBURI == "" {
-		println("not found db uri")
-		return nil, errors.New("not found dbURI")
+		return nil, errors.New("SERVICE_DB_URI is required for integration test")
 	}
 	db, err := gorm.Open(mysql.Open(DBURI), &gorm.Config{Logger: logger.Default.LogMode(logger.Info)})
 	if err != nil {
 		return nil, err
 	}
 	err = db.AutoMigrate(
-		&user.ModelUser{},
-		&user.ModelRecord{},
+		&user.TUser{},
+		&user.TRecord{},
 	)
 	if err != nil {
 		return nil, err
@@ -40,8 +36,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	println(db.Error)
-	u := user.ModelUser{
+
+	u := user.User{
 		IsValidated: true,
 		Name:        "test1",
 		Age:         new(uint32),
@@ -66,38 +62,35 @@ func main() {
 			"foo": 123,
 			"Bar": 456,
 		},
-		ClientLoginInfo: user.User_ClientLoginInfo{
-			1: &user.UserInfo{LoginCount: 123},
+		ClientLoginInfo: map[int32]*user.UserInfo{
+			1: {LoginCount: 123},
 		},
-		IgnoreData: user.User_IgnoreData{
-			2: &user.UserInfo{LoginCount: 234, LastLoginIp: "172.123.1.11"},
+		IgnoreData: map[uint64]*user.UserInfo{
+			2: {LoginCount: 234, LastLoginIp: "172.123.1.11"},
 		},
 		State: 2,
-		// Phone: new(string),
 	}
-	err = db.Create(&u).Error
+	tu := u.ToORM().(*user.TUser)
+	err = db.Create(tu).Error
 	if err != nil {
-		println(err.Error())
-		return
+		panic(err)
 	}
 
-	fmt.Println(u.Name)
+	fmt.Println(tu.Name)
 
-	var m user.ModelUser
-	err = db.Where("id", u.Id).First(&m).Error
+	var loaded user.TUser
+	err = db.Where("id", tu.Id).First(&loaded).Error
 	if err != nil {
-		println(err.Error())
-		return
+		panic(err)
 	}
-	fmt.Printf("%+v \n", m.ToSource())
+	fmt.Printf("%+v\n", loaded.ToSource())
 
-	var uu []*user.ModelUser
-	err = db.Clauses(m.UseIndex2IdxName()).Where("name LIKE 'test%'").Where("deleted_at > ?", 0).Find(&uu).Error
+	var uu []*user.TUser
+	err = db.Clauses(loaded.UseIndex2IdxName()).Where("name LIKE 'test%'").Where("deleted_at > ?", 0).Find(&uu).Error
 	if err != nil {
-		println(err.Error())
-		return
+		panic(err)
 	}
 	if len(uu) == 0 {
-		panic("error")
+		panic("expected at least one row")
 	}
 }

@@ -17,6 +17,10 @@ func (x {{ .Name }}) TableName() string {
 	return "{{ .Opts.TableName }}"
 }
 
+func (x T{{ .Name }}) TableName() string {
+	return "{{ .Opts.TableName }}"
+}
+	{{ end }}
 
 func (x *{{ .Name }}) ToORM() dbx.ITModel {
 	return &T{{ .Name }}{
@@ -29,11 +33,6 @@ func (x *{{ .Name }}) ToORM() dbx.ITModel {
 {{ end }}
 	}
 }
-
-func (x T{{ .Name }}) TableName() string {
-	return "{{ .Opts.TableName }}"
-}
-	{{ end }}
 
 type T{{ .Name }} struct {
 	{{ range .Fields }}
@@ -59,17 +58,10 @@ func (x *T{{ .Name }}) ToSource() dbx.IModel {
         {{ end }}
 	}
 }
-{{ $existSerializationField := gt (len .SerializeFields) 0 }}
-func (x *T{{ .Name }}) ExistSerializationField() bool {
-	{{- if $existSerializationField }}
-	return true
-    {{- else }}
-	return false
-    {{ end -}}
-}
 
+// ForceTModel reports whether dbx must convert through T{{ .Name }} for GORM.
 func (x *T{{ .Name }}) ForceTModel() bool {
-		{{ if or .ForceORM $existSerializationField }}
+		{{- if .ForceORM }}
 	return true
         {{- else }}
 	return false

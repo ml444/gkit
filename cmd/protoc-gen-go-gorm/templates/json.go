@@ -31,6 +31,8 @@ func (x *{{ .SerializerTypeName }}) Scan(src interface{}) error {
 	switch buf := src.(type) {
 	case []byte:
 		return jsonUnmarshal(buf, x)
+	case string:
+		return jsonUnmarshal([]byte(buf), x)
 	default:
 		return fmt.Errorf("{{ .SerializerTypeName }} unsupported type [%s] to scan", buf)
 	}
