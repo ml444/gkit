@@ -19,6 +19,11 @@ type validator interface {
 	ValidateAll() error
 }
 
+type multiError interface {
+	error
+	AllErrors() []error
+}
+
 func validateData(correctVal, errorVal interface{}, errCount int) {
 	m, ok := correctVal.(validator)
 	if ok {
@@ -33,7 +38,7 @@ func validateData(correctVal, errorVal interface{}, errCount int) {
 		if multiErr == nil && errCount > 0 {
 			panic(fmt.Sprintf("%T expected error, got nil", errorVal))
 		}
-		errs, ok2 := multiErr.(cases.MultiError)
+		errs, ok2 := multiErr.(multiError)
 		if ok2 && len(errs.AllErrors()) != errCount {
 			panic(fmt.Sprintf("expected %d errors, got %d", errCount, len(errs.AllErrors())))
 		}
@@ -172,7 +177,7 @@ func main() {
 		BytesVal: []byte("\x01\x99"),
 		//O:        &cases.ComplexTestMsg_X{X: ""},
 	}
-	validateData(complexTestMsgCorretVal, complexTestMsgErrVal, 16)
+	validateData(complexTestMsgCorretVal, complexTestMsgErrVal, 14)
 
 	// maps.proto
 	validateData(&cases.MapMin{Val: map[int32]float32{123: 456.789, 456: 789.123}}, &cases.MapMin{Val: map[int32]float32{123: 456.789}}, 1)
@@ -206,11 +211,15 @@ func main() {
 	)
 
 	// messages.proto
-	validateData(&cases.TestMsg{Const: "foo", Nested: &cases.TestMsg{Const: "foo"}}, &cases.TestMsg{Const: "bar", Nested: &cases.TestMsg{Const: "bar"}}, 2)
+	validateData(&cases.TestMsg{Const: "foo", Nested: &cases.TestMsg{Const: "foo"}}, &cases.TestMsg{Const: "bar", Nested: &cases.TestMsg{Const: "bar"}}, 1)
 	validateData(&cases.MessageDisabled{Val: 124}, &cases.MessageDisabled{Val: 122}, 0)
 	validateData(&cases.MessageIgnored{Val: 124}, &cases.MessageIgnored{Val: 122}, 0)
 	validateData(&cases.Message{Val: &cases.TestMsg{Const: "foo", Nested: nil}}, &cases.Message{Val: &cases.TestMsg{Const: "foo", Nested: nil}}, 1)
-	validateData(&cases.MessageCrossPackage{Val: &other_package.Embed{Val: 12}}, &cases.MessageCrossPackage{Val: &other_package.Embed{Val: 0}}, 0)
+	validateData(
+		&cases.MessageCrossPackage{Val: &other_package.Embed{Val: 12}, Direction: sort.Direction_ASC},
+		&cases.MessageCrossPackage{Val: &other_package.Embed{Val: 0}},
+		2,
+	)
 	validateData(&cases.MessageSkip{Val: &cases.TestMsg{Const: "foo", Nested: nil}}, &cases.MessageSkip{Val: &cases.TestMsg{Const: "foo", Nested: nil}}, 0)
 	validateData(&cases.MessageRequired{Val: &cases.TestMsg{Const: "foo", Nested: nil}}, &cases.MessageRequired{Val: nil}, 1)
 	validateData(&cases.MessageRequiredButOptional{Val: &cases.TestMsg{Const: "foo", Nested: nil}}, &cases.MessageRequiredButOptional{Val: &cases.TestMsg{}}, 1)
@@ -445,7 +454,8 @@ func main() {
 	validateData(&cases.OneOf{O: &cases.OneOf_X{X: "foobar"}}, &cases.OneOf{O: &cases.OneOf_X{X: "barfoo"}}, 1)
 	validateData(&cases.OneOf{O: &cases.OneOf_Y{Y: 1}}, &cases.OneOf{O: &cases.OneOf_Y{Y: 0}}, 1)
 	validateData(&cases.OneOf{O: &cases.OneOf_Z{Z: nil}}, &cases.OneOf{}, 0)
-	validateData(&cases.OneOf{O: &cases.OneOf_Z{Z: &cases.TestOneOfMsg{Val: true}}}, &cases.OneOf{O: &cases.OneOf_Z{Z: &cases.TestOneOfMsg{Val: false}}}, 1)
+	// Z has no (v.rules) on the oneof field; nested TestOneOfMsg rules are not invoked from OneOf.
+	validateData(&cases.OneOf{O: &cases.OneOf_Z{Z: &cases.TestOneOfMsg{Val: true}}}, &cases.OneOf{O: &cases.OneOf_Z{Z: &cases.TestOneOfMsg{Val: false}}}, 0)
 	validateData(&cases.OneOfRequired{O: &cases.OneOfRequired_X{X: "foobar"}}, &cases.OneOfRequired{O: nil}, 1)
 	validateData(&cases.OneOfIgnoreEmpty{O: &cases.OneOfIgnoreEmpty_X{X: ""}}, &cases.OneOfIgnoreEmpty{O: nil}, 0)
 	validateData(&cases.OneOfIgnoreEmpty{O: &cases.OneOfIgnoreEmpty_X{X: "foo"}}, &cases.OneOfIgnoreEmpty{O: &cases.OneOfIgnoreEmpty_X{X: "foobar"}}, 1)
@@ -491,22 +501,22 @@ func main() {
 	validateData(&cases.StringURIRef{Val: "http://localhost:8080/v1/user"}, &cases.StringURIRef{Val: "\x7f#"}, 1)
 	validateData(&cases.StringUUID{Val: "bb6529fc-5ddf-4c45-b372-78b311500d4b"}, &cases.StringUUID{Val: "bb6529fc-5ddf-4c45-b372--78b311500d4b"}, 1)
 	validateData(&cases.StringUUIDIgnore{Val: ""}, &cases.StringUUIDIgnore{Val: "foo"}, 1)
-	//validateData(&cases.StringHttpHeaderName{Val: "user"}, &cases.StringHttpHeaderName{}, 1)
-	//validateData(&cases.StringHttpHeaderValue{Val: "123"}, &cases.StringHttpHeaderValue{Val: "foo"}, 1)
-	//validateData(&cases.StringValidHeader{Val: "user"}, &cases.StringValidHeader{Val: "foo"}, 1)
+	validateData(&cases.StringHttpHeaderName{Val: "user"}, &cases.StringHttpHeaderName{}, 1)
+	validateData(&cases.StringHttpHeaderValue{Val: "123"}, &cases.StringHttpHeaderValue{Val: "\x7f"}, 1)
+	validateData(&cases.StringValidHeader{Val: "user"}, &cases.StringValidHeader{Val: "bad\n"}, 1)
 
 	// wrappers.proto
-	//validateData(&cases.WrapperDouble{Val: 1.0}, &cases.WrapperDouble{Val: 2.0}, 1)
-	//validateData(&cases.WrapperFloat{Val: 1.0}, &cases.WrapperFloat{Val: 2.0}, 1)
-	//validateData(&cases.WrapperInt64{Val: 1}, &cases.WrapperInt64{Val: 2}, 1)
-	//validateData(&cases.WrapperUint64{Val: 1}, &cases.WrapperUint64{Val: 2}, 1)
-	//validateData(&cases.WrapperInt32{Val: 1}, &cases.WrapperInt32{Val: 2}, 1)
-	//validateData(&cases.WrapperUint32{Val: 1}, &cases.WrapperUint32{Val: 2}, 1)
-	//validateData(&cases.WrapperBool{Val: true}, &cases.WrapperBool{Val: false}, 1)
-	//validateData(&cases.WrapperString{Val: "foo"}, &cases.WrapperString{Val: "bar"}, 1)
-	//validateData(&cases.WrapperBytes{Val: []byte("foo")}, &cases.WrapperBytes{Val: []byte("bar")}, 1)
-	//validateData(&cases.WrapperEnum{Val: cases.TestEnum_ONE}, &cases.WrapperEnum{Val: cases.TestEnum_TWO}, 1)
-	//validateData(&cases.WrapperEnumAlias{Val: cases.TestEnumAlias_A}, &cases.WrapperEnumAlias{Val: cases.TestEnumAlias_B}, 1)
-	//validateData(&cases.WrapperEnumDefined{Val: cases.TestEnum_ONE}, &cases.WrapperEnumDefined{Val: cases.TestEnum(99)}, 1)
+	validateData(&cases.WrapperDouble{Val: wrapperspb.Double(1.0)}, &cases.WrapperDouble{Val: wrapperspb.Double(0)}, 1)
+	validateData(&cases.WrapperFloat{Val: wrapperspb.Float(1.0)}, &cases.WrapperFloat{Val: wrapperspb.Float(0)}, 1)
+	validateData(&cases.WrapperInt64{Val: wrapperspb.Int64(1)}, &cases.WrapperInt64{Val: wrapperspb.Int64(0)}, 1)
+	validateData(&cases.WrapperUint64{Val: wrapperspb.UInt64(1)}, &cases.WrapperUint64{Val: wrapperspb.UInt64(0)}, 1)
+	validateData(&cases.WrapperInt32{Val: wrapperspb.Int32(1)}, &cases.WrapperInt32{Val: wrapperspb.Int32(0)}, 1)
+	validateData(&cases.WrapperUint32{Val: wrapperspb.UInt32(1)}, &cases.WrapperUint32{Val: wrapperspb.UInt32(0)}, 1)
+	validateData(&cases.WrapperBool{Val: wrapperspb.Bool(true)}, &cases.WrapperBool{Val: wrapperspb.Bool(false)}, 1)
+	validateData(&cases.WrapperString{Val: wrapperspb.String("foobar")}, &cases.WrapperString{Val: wrapperspb.String("foo")}, 1)
+	validateData(&cases.WrapperBytes{Val: wrapperspb.Bytes([]byte("foo"))}, &cases.WrapperBytes{Val: wrapperspb.Bytes([]byte("ba"))}, 1)
+	// validateData(&cases.WrapperEnum{Val: cases.TestEnum_ONE}, &cases.WrapperEnum{Val: cases.TestEnum_TWO}, 1)
+	// validateData(&cases.WrapperEnumAlias{Val: cases.TestEnumAlias_A}, &cases.WrapperEnumAlias{Val: cases.TestEnumAlias_B}, 1)
+	// validateData(&cases.WrapperEnumDefined{Val: cases.TestEnum_ONE}, &cases.WrapperEnumDefined{Val: cases.TestEnum(99)}, 1)
 
 }

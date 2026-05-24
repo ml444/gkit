@@ -27,7 +27,7 @@ func enumNamesMap(values []*protogen.EnumValue) (m map[int32]string) {
 func enumList(f protogen.Field, list []int32) string {
 	stringList := make([]string, 0, len(list))
 	if enum := f.Enum; enum != nil {
-		names := enumNamesMap(enum.Values)
+		names := cachedEnumNamesMap(string(enum.Desc.FullName()), enum.Values)
 		for _, n := range list {
 			stringList = append(stringList, names[n])
 		}
@@ -42,33 +42,9 @@ func enumList(f protogen.Field, list []int32) string {
 // enumVal - if type is ENUM, enum value is returned
 func enumVal(f protogen.Field, val int32) string {
 	if enum := f.Enum; enum != nil {
-		return enumNamesMap(enum.Values)[val]
+		return cachedEnumNamesMap(string(enum.Desc.FullName()), enum.Values)[val]
 	}
 	return fmt.Sprint(val)
-}
-
-func externalEnums(file protoreflect.FileDescriptor) []protoreflect.EnumDescriptor {
-	var out []protoreflect.EnumDescriptor
-	msgDescriper := file.Messages()
-	for i := 0; i < msgDescriper.Len(); i++ {
-		msg := msgDescriper.Get(i)
-		fieldsDescriptor := msg.Fields()
-		for j := 0; j < fieldsDescriptor.Len(); j++ {
-			field := fieldsDescriptor.Get(j)
-			var en protoreflect.EnumDescriptor
-			if field.Kind() == protoreflect.EnumKind {
-				en = field.Enum()
-			}
-			if field.IsList() {
-				en = field.Enum()
-			}
-			if en != nil && en.ParentFile().FullName() != msg.ParentFile().FullName() {
-				out = append(out, en)
-			}
-		}
-	}
-
-	return out
 }
 
 func EnumName(enum protoreflect.EnumDescriptor) string {
@@ -91,24 +67,37 @@ func EnumName(enum protoreflect.EnumDescriptor) string {
 	}
 }
 
-var StdPkg = map[string]int{
-	"bytes":   0,
-	"errors":  0,
-	"fmt":     0,
-	"net":     0,
-	"mail":    0,
-	"url":     0,
-	"regexp":  0,
-	"sort":    0,
-	"strings": 0,
-	"time":    0,
-	"utf8":    0,
-	"anypb":   0,
-}
+var StdPkg = map[string]int{}
+
+var CurrentProtoPkgName string
 
 // map[pkgPath]pkgName
 var ExtraPkg = map[string]string{}
 var ExtraPkgPath = map[string]string{}
+
+// enumNameCache maps enum full name to value->name map (per file).
+var enumNameCache map[string]map[int32]string
+
+func cachedEnumNamesMap(enumFullName string, values []*protogen.EnumValue) map[int32]string {
+	if m, ok := enumNameCache[enumFullName]; ok {
+		return m
+	}
+	m := enumNamesMap(values)
+	enumNameCache[enumFullName] = m
+	return m
+}
+
+// AllocPkgAlias returns a unique Go package alias, renaming on collision with stdlib names.
+func AllocPkgAlias(pkgName string) string {
+	if cnt, ok := StdPkg[pkgName]; ok {
+		alias := fmt.Sprintf("%s%d", pkgName, cnt+1)
+		StdPkg[alias] = 0
+		StdPkg[pkgName] = cnt + 1
+		return alias
+	}
+	StdPkg[pkgName] = 0
+	return pkgName
+}
 
 func GetImports(fileDesc protoreflect.FileDescriptor) map[string]string {
 	ExtraPkg["_"] = "v"
@@ -124,15 +113,12 @@ func GetImports(fileDesc protoreflect.FileDescriptor) map[string]string {
 			continue
 		}
 		pkgName := string(imp.Package().Name())
-		if pkgName == "v" || pkgName == "protobuf" {
+		if pkgName == "v" || pkgName == "protobuf" || pkgName == CurrentProtoPkgName{
 			continue
 		}
 
 		if fp.GoPackage != nil {
-			if cnt, ok1 := StdPkg[pkgName]; ok1 {
-				pkgName = fmt.Sprintf("%s%d", pkgName, cnt+1)
-				StdPkg[pkgName] = cnt + 1
-			}
+			pkgName = AllocPkgAlias(pkgName)
 			pkgPath := strings.SplitN(*fp.GoPackage, ";", 2)[0]
 			ExtraPkgPath[pkgName] = pkgPath
 			ExtraPkg[string(imp.FullName())] = pkgName

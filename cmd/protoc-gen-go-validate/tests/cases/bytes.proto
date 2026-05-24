@@ -5,7 +5,7 @@ option go_package = "github.com/ml444/gkit/cmd/protoc-gen-go-validate/tests/case
 import "v/v.proto";
 
 message BytesNone        { bytes val = 1; }
-message BytesConst       { bytes val = 1 [(v.rules).bytes.const = "foo"]; }
+message BytesConst       { bytes val = 1 [(v.rules).bytes.const = "foo", (v.rules).errcode = 1234]; }
 message BytesIn          { bytes val = 1 [(v.rules).bytes = {in: ["bar", "baz"]}]; }
 message BytesNotIn       { bytes val = 1 [(v.rules).bytes = {not_in: ["fizz", "buzz"]}]; }
 message BytesLen         { bytes val = 1 [(v.rules).bytes.len = 3]; }

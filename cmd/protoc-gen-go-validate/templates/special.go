@@ -4,7 +4,7 @@ const HostTpl = `
 	func {{GetAliasName}}_validateHostname(host string) error {
 		s := strings.ToLower(strings.TrimSuffix(host, "."))
 
-		if len(host) > 253 {
+		if len(s) > 253 {
 			return errors.New("hostname cannot exceed 253 characters")
 		}
 
@@ -56,10 +56,9 @@ const EmailTpl = `
 
 const UuidTpl = `
 	func {{GetAliasName}}_validateUuid(uuid string) error {
-		if matched := _uuidPattern.MatchString(uuid); !matched {
+		if matched := {{GetAliasName}}_uuidPattern.MatchString(uuid); !matched {
 			return errors.New("invalid uuid format")
 		}
-
 		return nil
 	}
 `

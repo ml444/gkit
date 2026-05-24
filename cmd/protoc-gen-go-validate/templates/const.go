@@ -1,15 +1,23 @@
 package templates
 
 const ConstTpl = `{{ $f := .Field }}{{ $r := .Rules }}
-	{{ if $r.Const }}
+	{{- if $r.Const }}
 		if {{ .GetAccessor }} != {{ lit $r.GetConst }} {
 			{{- if isEnum $f }}
-			err := {{ err .Field "value must equal " (enumVal $f $r.GetConst) }}
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				"[{{ $f.GoName }}] value must equal {{ enumVal $f $r.GetConst }}",
+				nil,
+			)
 			{{- else }}
-			err := {{ err .Field "value must equal " $r.GetConst }}
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				fmt.Sprintf("[{{ $f.GoName }}] value must equal %s", {{ lit $r.GetConst }}),
+				nil,
+			)
 			{{- end }}
 			if !all { return err }
 			errors = append(errors, err)
 		}
-	{{ end }}
+	{{- end }}
 `

@@ -4,8 +4,8 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"sort"
 	"strings"
-	"text/template"
 	"unicode"
 
 	"github.com/ml444/gkit/cmd/protoc-gen-go-errcode/err"
@@ -14,6 +14,7 @@ import (
 
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/descriptorpb"
 
 	"github.com/ml444/gkit/cmd/protoc-gen-go-validate/ctx"
 	"github.com/ml444/gkit/cmd/protoc-gen-go-validate/funcs"
@@ -23,10 +24,7 @@ import (
 //go:embed validate.tmpl
 var validateTemplate string
 
-const (
-	Version            = "1.0.0"
-	deprecationComment = "// Deprecated: Do not use."
-)
+const Version = "1.0.0"
 
 func generateFile(gen *protogen.Plugin, file *protogen.File) *protogen.GeneratedFile {
 	if len(file.Messages) == 0 {
@@ -46,21 +44,21 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) *protogen.Generated
 	g.P("package ", file.GoPackageName)
 	g.P()
 
-	//if !redeclaredList {
-	//	g.P(templates.CommonDefTmpl)
-	//}
-	generateFileContent(file, g)
+	dirs := strings.Split(file.GeneratedFilenamePrefix, "/")
+	fileName := dirs[len(dirs)-1]
+	funcs.ResetFileState(fileName, string(file.GoPackageName))
+
+	if err := generateFileContent(gen, file, g, fileName); err != nil {
+		gen.Error(err)
+		return nil
+	}
 	return g
 }
 
-func generateFileContent(file *protogen.File, g *protogen.GeneratedFile) {
-	var err error
+func generateFileContent(gen *protogen.Plugin, file *protogen.File, g *protogen.GeneratedFile, fileName string) error {
 	if len(file.Messages) == 0 {
-		return
+		return nil
 	}
-	dirs := strings.Split(file.GeneratedFilenamePrefix, "/")
-	fileName := dirs[len(dirs)-1]
-	funcs.FileAlias = fileName
 
 	validateCtx := &ctx.ValidateCtx{
 		FileAliasName: fileName,
@@ -71,7 +69,7 @@ func generateFileContent(file *protogen.File, g *protogen.GeneratedFile) {
 	needWKn := &ctx.NeedWellKnown{}
 	importMap := make(map[string]string)
 	for _, message := range file.Messages {
-		need, msgCtx, imports := genMessage(message, needWKn)
+		need, msgCtx, imports := genMessage(file, message, needWKn)
 		if !need {
 			continue
 		}
@@ -80,28 +78,104 @@ func generateFileContent(file *protogen.File, g *protogen.GeneratedFile) {
 			importMap[imp.Path] = imp.Alias
 		}
 	}
-	// TODO sort import
-	for path, alias := range importMap {
-		validateCtx.Imports = append(validateCtx.Imports, &ctx.ImportCtx{Alias: alias, Path: path})
+	validateCtx.Messages = flattenMessages(validateCtx.Messages)
+	trackStdImports(validateCtx, needWKn)
+
+	paths := make([]string, 0, len(importMap))
+	for path := range importMap {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		validateCtx.Imports = append(validateCtx.Imports, &ctx.ImportCtx{Alias: importMap[path], Path: path})
 	}
 	validateCtx.Imports = append(validateCtx.Imports, &ctx.ImportCtx{Alias: "", Path: "github.com/ml444/gkit/errorx"})
 	validateCtx.NeedWellKnow = needWKn
 
-	tmpl := template.New("file")
-	Register(tmpl)
-	tmpl, err = tmpl.New("validate").Parse(strings.TrimSpace(validateTemplate))
+	tmpl, err := getFileTemplate()
 	if err != nil {
-		panic(err.Error())
+		return fmt.Errorf("parse validate template: %w", err)
 	}
 	buf := new(bytes.Buffer)
-	err = tmpl.Lookup("validate").Execute(buf, validateCtx)
-	if err != nil {
-		panic(err.Error())
+	if err := tmpl.Lookup("validate").Execute(buf, validateCtx); err != nil {
+		return fmt.Errorf("execute validate template for %s: %w", file.Desc.Path(), err)
 	}
-	_, err = g.Write(buf.Bytes())
-	if err != nil {
-		panic(err.Error())
+	if _, err := g.Write(buf.Bytes()); err != nil {
+		return fmt.Errorf("write validate output for %s: %w", file.Desc.Path(), err)
 	}
+	return nil
+}
+
+func flattenMessages(msgs []*ctx.MessageCtx) []*ctx.MessageCtx {
+	var out []*ctx.MessageCtx
+	for _, m := range msgs {
+		out = append(out, m)
+		if len(m.SubMessageCtxs) > 0 {
+			out = append(out, flattenMessages(m.SubMessageCtxs)...)
+		}
+	}
+	return out
+}
+
+func trackStdImports(vctx *ctx.ValidateCtx, wk *ctx.NeedWellKnown) {
+	needs := &ctx.NeedStdImports{
+		Errors:  len(vctx.Messages) > 0,
+		Fmt:     len(vctx.Messages) > 0,
+		Strings: len(vctx.Messages) > 0,
+	}
+	if wk.Email || wk.Hostname {
+		needs.Errors = true
+		needs.Strings = true
+		needs.Fmt = true
+	}
+	if wk.Email {
+		needs.Mail = true
+	}
+	if wk.Hostname || wk.UUID {
+		needs.Regexp = true
+	}
+	if wk.UUID {
+		needs.Regexp = true
+		needs.Strings = true
+	}
+	for _, msg := range vctx.Messages {
+		for _, f := range msg.Fields {
+			trackFieldStdImports(needs, f)
+		}
+	}
+	vctx.NeedStdImports = needs
+}
+
+func trackFieldStdImports(needs *ctx.NeedStdImports, f *ctx.FieldCtx) {
+	switch f.TmplName {
+	case "string":
+		needs.Utf8 = true
+		needs.Strings = true
+		needs.Regexp = true
+		needs.Net = true
+		needs.Url = true
+	case "bytes":
+		needs.Bytes = true
+	case "map", "repeated":
+		needs.Sort = true
+	case "duration", "timestamp":
+		needs.Time = true
+	}
+	if f.Rules != nil {
+		if hasRuleField(f.Rules, "Pattern") || hasRuleField(f.Rules, "In") || hasRuleField(f.Rules, "NotIn") {
+			needs.Regexp = true
+		}
+		if sr, ok := f.Rules.(*v.StringRules); ok && sr.GetWellKnownRegex() != v.KnownRegex_UNKNOWN {
+			needs.Regexp = true
+		}
+	}
+}
+
+func hasRuleField(msg proto.Message, name string) bool {
+	if msg == nil {
+		return false
+	}
+	return funcs.Has(msg, name)
 }
 
 func getErrCodeBegin(file *protogen.File) int32 {
@@ -115,7 +189,7 @@ func getErrCodeBegin(file *protogen.File) int32 {
 	return 0
 }
 
-func genMessage(message *protogen.Message, needWKn *ctx.NeedWellKnown) (bool, *ctx.MessageCtx, []*ctx.ImportCtx) {
+func genMessage(file *protogen.File, message *protogen.Message, needWKn *ctx.NeedWellKnown) (bool, *ctx.MessageCtx, []*ctx.ImportCtx) {
 	var imports []*ctx.ImportCtx
 	msgCtx := &ctx.MessageCtx{
 		Desc:           message.Desc,
@@ -151,6 +225,18 @@ func genMessage(message *protogen.Message, needWKn *ctx.NeedWellKnown) (bool, *c
 			importCtx := fieldCtx.ImpCtx()
 			if importCtx != nil {
 				imports = append(imports, importCtx)
+			}
+			if imp := importCtxForEnum(field.Enum, file); imp != nil {
+				imports = append(imports, imp)
+				funcs.ExtraPkg[string(field.Enum.Desc.ParentFile().FullName())] = imp.Alias
+				funcs.ExtraPkgPath[imp.Alias] = imp.Path
+			}
+			if field.Message != nil {
+				if imp := importCtxForMessage(field.Message, file); imp != nil {
+					imports = append(imports, imp)
+					funcs.ExtraPkg[string(field.Message.Desc.ParentFile().FullName())] = imp.Alias
+					funcs.ExtraPkgPath[imp.Alias] = imp.Path
+				}
 			}
 			if rule.Errcode != nil {
 				fieldCtx.ErrCode = *rule.Errcode
@@ -199,26 +285,11 @@ func genMessage(message *protogen.Message, needWKn *ctx.NeedWellKnown) (bool, *c
 				}
 				handleOneOfs(field, &fieldCtx, msgCtx)
 			}
-
-			//if field.Desc.Kind() == protoreflect.MessageKind {
-			//	fieldCtx := ctx.FieldCtx{
-			//		Desc:  field.Desc,
-			//		Rules: &v.MessageRules{},
-			//		Field: field,
-			//		Name:  field.GoName,
-			//		Type:  field.Desc.Kind().String(),
-			//		//Required: *messageRule.Required,
-			//		//Skip:     *messageRule.Skip,
-			//		TmplName: "message",
-			//		Err:      nil,
-			//	}
-			//	msgCtx.NonOneOfFields = append(msgCtx.NonOneOfFields, &fieldCtx)
-			//}
 		}
 	}
 
 	for _, msg := range message.Messages {
-		need, subMsgCtx, subImports := genMessage(msg, needWKn)
+		need, subMsgCtx, subImports := genMessage(file, msg, needWKn)
 		if !need {
 			continue
 		}
@@ -226,20 +297,6 @@ func genMessage(message *protogen.Message, needWKn *ctx.NeedWellKnown) (bool, *c
 		imports = append(imports, subImports...)
 	}
 	return needGen, msgCtx, imports
-	//if needGen {
-	//	buf := new(bytes.Buffer)
-	//	err := tmpl.Lookup("validate").Execute(buf, msgCtx)
-	//	if err != nil {
-	//		panic(err.Error())
-	//	}
-	//	_, err = g.Write(buf.Bytes())
-	//	if err != nil {
-	//		panic(err.Error())
-	//	}
-	//	for _, msg := range message.Messages {
-	//		genMessage(tmpl, file, g, msg)
-	//	}
-	//}
 }
 
 func isOptional(field *protogen.Field) bool {
@@ -257,20 +314,7 @@ func isOptional(field *protogen.Field) bool {
 }
 
 func needWellKnown(f protoreflect.FieldDescriptor, rules *v.FieldRules, wk *ctx.NeedWellKnown) {
-	var strRules *v.StringRules
-	switch {
-	case f.IsList() && f.Kind() == protoreflect.StringKind:
-		strRules = rules.GetRepeated().GetItems().GetString_()
-	case f.IsMap():
-		if f.MapKey().Kind() == protoreflect.StringKind {
-			strRules = rules.GetMap().GetKeys().GetString_()
-		}
-		if f.MapValue().Kind() == protoreflect.StringKind {
-			strRules = rules.GetMap().GetValues().GetString_()
-		}
-	case f.Kind() == protoreflect.StringKind:
-		strRules = rules.GetString_()
-	}
+	strRules := collectStringRules(f, rules)
 	if strRules != nil {
 		if strRules.GetEmail() {
 			wk.Email = true
@@ -284,6 +328,32 @@ func needWellKnown(f protoreflect.FieldDescriptor, rules *v.FieldRules, wk *ctx.
 	}
 }
 
+func collectStringRules(f protoreflect.FieldDescriptor, rules *v.FieldRules) *v.StringRules {
+	if rules == nil {
+		return nil
+	}
+	switch {
+	case f.IsList() && f.Kind() == protoreflect.StringKind:
+		if r := rules.GetRepeated(); r != nil && r.GetItems() != nil {
+			return r.GetItems().GetString_()
+		}
+	case f.IsMap():
+		if r := rules.GetMap(); r != nil {
+			if f.MapKey().Kind() == protoreflect.StringKind && r.GetKeys() != nil {
+				return r.GetKeys().GetString_()
+			}
+			if f.MapValue().Kind() == protoreflect.StringKind && r.GetValues() != nil {
+				return r.GetValues().GetString_()
+			}
+		}
+	case f.Kind() == protoreflect.StringKind:
+		return rules.GetString_()
+	default:
+		return rules.GetString_()
+	}
+	return nil
+}
+
 func handleOneOfs(field *protogen.Field, fieldCtx *ctx.FieldCtx, msgData *ctx.MessageCtx) {
 	oneOf, ok := msgData.RealOneOfs[field.Oneof.GoName]
 	if !ok {
@@ -292,9 +362,6 @@ func handleOneOfs(field *protogen.Field, fieldCtx *ctx.FieldCtx, msgData *ctx.Me
 			Field:  field,
 			Name:   field.Oneof.GoName,
 			Type:   string(field.Oneof.Desc.Name()),
-			// Required: *messageRule.Required,
-			// Skip:     *messageRule.Skip,
-			// TmplName: ruleType,
 		}
 	}
 	required, ok := proto.GetExtension(field.Oneof.Desc.Options(), v.E_Required).(bool)
@@ -303,6 +370,52 @@ func handleOneOfs(field *protogen.Field, fieldCtx *ctx.FieldCtx, msgData *ctx.Me
 	}
 	oneOf.Fields = append(oneOf.Fields, fieldCtx)
 	msgData.RealOneOfs[oneOf.Name] = oneOf
+}
+
+func importCtxForEnum(enum *protogen.Enum, current *protogen.File) *ctx.ImportCtx {
+	if enum == nil {
+		return nil
+	}
+	impPath := enum.GoIdent.GoImportPath
+	if impPath == "" || impPath == current.GoImportPath {
+		return nil
+	}
+	alias := funcs.AllocPkgAlias(goPackageAlias(enum.Desc.ParentFile()))
+	return &ctx.ImportCtx{
+		Alias: alias,
+		Path:  string(impPath),
+	}
+}
+
+func importCtxForMessage(msg *protogen.Message, current *protogen.File) *ctx.ImportCtx {
+	if msg == nil {
+		return nil
+	}
+	impPath := msg.GoIdent.GoImportPath
+	if impPath == "" || impPath == current.GoImportPath {
+		return nil
+	}
+	alias := funcs.AllocPkgAlias(goPackageAlias(msg.Desc.ParentFile()))
+	return &ctx.ImportCtx{
+		Alias: alias,
+		Path:  string(impPath),
+	}
+}
+
+func goPackageAlias(fileDesc protoreflect.FileDescriptor) string {
+	opts, ok := fileDesc.Options().(*descriptorpb.FileOptions)
+	if !ok || opts.GoPackage == nil {
+		return string(fileDesc.Package())
+	}
+	parts := strings.SplitN(*opts.GoPackage, ";", 2)
+	if len(parts) == 2 && parts[1] != "" {
+		return parts[1]
+	}
+	base := parts[0]
+	if i := strings.LastIndex(base, "/"); i >= 0 {
+		return base[i+1:]
+	}
+	return base
 }
 
 func protocVersion(gen *protogen.Plugin) string {

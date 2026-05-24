@@ -16,7 +16,7 @@
 > 
 > **变更2**: 不包含校验规则的message不生成Validate代码。
 > 
-> **修改3**: 通用的变量(uuidPattern|emailPattern...)、和类型(ValidationError｜MultiError)抽离成公共部分，不再每个message自己维护，精简代码。
+> **修改3**: 每个 proto 文件生成独立的 `{fileAlias}ValidationError`、`{fileAlias}MultiError` 及 well-known 辅助函数（如 `_uuidPattern`），避免同 package 多文件重复定义冲突；按需生成 import，减少无用依赖。
 > 
 > **修改4**: 只引用`google.golang.org/protobuf`，减少对其他包的依赖。
 >

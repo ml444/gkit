@@ -11,8 +11,8 @@ message WrapperFloat  { google.protobuf.FloatValue val = 1 [(v.rules).float.gt =
 message WrapperDouble { google.protobuf.DoubleValue val = 1 [(v.rules).double.gt = 0]; }
 message WrapperInt64  { google.protobuf.Int64Value val = 1 [(v.rules).int64.gt = 0]; }
 message WrapperInt32  { google.protobuf.Int32Value val = 1 [(v.rules).int32.gt = 0]; }
-message WrapperUInt64 { google.protobuf.UInt64Value val = 1 [(v.rules).uint64.gt = 0]; }
-message WrapperUInt32 { google.protobuf.UInt32Value val = 1 [(v.rules).uint32.gt = 0]; }
+message WrapperUint64 { google.protobuf.UInt64Value val = 1 [(v.rules).uint64.gt = 0]; }
+message WrapperUint32 { google.protobuf.UInt32Value val = 1 [(v.rules).uint32.gt = 0]; }
 message WrapperBool   { google.protobuf.BoolValue val = 1 [(v.rules).bool.const = true]; }
 message WrapperString { google.protobuf.StringValue val = 1 [(v.rules).string.suffix = "bar"]; }
 message WrapperBytes  { google.protobuf.BytesValue val = 1 [(v.rules).bytes.min_len = 3]; }

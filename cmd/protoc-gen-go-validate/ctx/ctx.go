@@ -12,13 +12,28 @@ import (
 )
 
 type ValidateCtx struct {
-	FileAliasName string
-	PackageName   string
-	Imports       []*ImportCtx
-	Messages      []*MessageCtx
-	NeedWellKnow  *NeedWellKnown
-	NeedCommon    bool
-	ErrCodeBegin  int32
+	FileAliasName  string
+	PackageName    string
+	Imports        []*ImportCtx
+	Messages       []*MessageCtx
+	NeedWellKnow   *NeedWellKnown
+	NeedStdImports *NeedStdImports
+	NeedCommon     bool
+	ErrCodeBegin   int32
+}
+
+type NeedStdImports struct {
+	Bytes   bool
+	Errors  bool
+	Fmt     bool
+	Net     bool
+	Mail    bool
+	Url     bool
+	Regexp  bool
+	Sort    bool
+	Strings bool
+	Time    bool
+	Utf8    bool
 }
 
 type NeedWellKnown struct {

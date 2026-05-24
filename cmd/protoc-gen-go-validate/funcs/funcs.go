@@ -7,10 +7,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/ml444/gkit/cmd/protoc-gen-go-validate/v"
-
 	"google.golang.org/protobuf/compiler/protogen"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -37,57 +34,6 @@ func lookup(f protogen.Field, name string) string {
 		f.GoName,
 		name,
 	)
-}
-
-func errIdxCause(field protogen.Field, idx, cause string, reason ...interface{}) string {
-	n := field.GoName
-	var fld string
-	if idx != "" {
-		fld = fmt.Sprintf(`fmt.Sprintf("%s[%%v]", %s)`, n, idx)
-		//} else if field.Desc.Index() != 0 {
-		//	fld = fmt.Sprintf(`fmt.Sprintf("%s[%%v]", %d)`, n, field.Desc.Index()) // TODO
-	} else {
-		fld = fmt.Sprintf("%q", n)
-	}
-	var errCode int32
-	rule, ok := proto.GetExtension(field.Desc.Options(), v.E_Rules).(*v.FieldRules)
-	if ok && rule.Errcode != nil {
-		errCode = *rule.Errcode
-	}
-	causeFld := ""
-	if cause != "nil" && cause != "" {
-		causeFld = fmt.Sprintf("cause: %s,", cause)
-	}
-
-	keyFld := ""
-	if field.Desc.IsMap() {
-		keyFld = "key: true,"
-	}
-
-	return fmt.Sprintf(`%s{
-		field: %s,
-		reason: %q,
-		errCode: %d,
-		%s%s
-	}`,
-		fmt.Sprintf("%sValidationError", FileAlias),
-		fld,
-		fmt.Sprint(reason...),
-		errCode,
-		causeFld,
-		keyFld)
-}
-
-func err(field protogen.Field, reason ...interface{}) string {
-	return errIdxCause(field, "", "nil", reason...)
-}
-
-func errCause(field protogen.Field, cause string, reason ...interface{}) string {
-	return errIdxCause(field, "", cause, reason...)
-}
-
-func errIdx(field protogen.Field, idx string, reason ...interface{}) string {
-	return errIdxCause(field, idx, "nil", reason...)
 }
 
 func lit(x interface{}) string {
@@ -286,20 +232,6 @@ func tsStr(ts *timestamppb.Timestamp) string {
 	return t.String()
 }
 
-func OnType(field *protogen.Field, typ string) string {
-	var fullname string
-	switch field.Desc.Kind() {
-	case protoreflect.EnumKind:
-		fullname = string(field.Desc.Enum().FullName())
-	default:
-	}
-	// pkgPath := field.GoIdent.GoImportPath.String()
-	if pkgName := getOtherPkgName(fullname); pkgName != "" {
-		return pkgName + "." + typ
-	}
-	return typ
-}
-
 func getOtherPkgName(fullName string) (pkgName string) {
 	for k, v := range ExtraPkg {
 		if strings.HasPrefix(fullName, k) {
@@ -309,19 +241,17 @@ func getOtherPkgName(fullName string) (pkgName string) {
 	return
 }
 
-func GetElemRule(field protogen.Field, rule proto.Message) (rules *v.FieldRules, err error) {
-	switch r := rule.(type) {
-	case *v.MapRules:
-		rules = r.GetValues()
-	case *v.RepeatedRules:
-		rules = r.GetItems()
-	default:
-		err = fmt.Errorf("cannot get Elem from %s", field.GoName)
-		return
-	}
-	return
-}
-
 func JoinString(ss ...string) string {
 	return strings.Join(ss, "")
+}
+
+// Fail emits validation error handling for generated validate methods.
+func Fail(errCode int32, msg string) string {
+	return fmt.Sprintf(`err := %sValidationError(%d, %s, nil)
+if !all { return err }
+errors = append(errors, err)`, FileAlias, errCode, strconvQuote(msg))
+}
+
+func strconvQuote(s string) string {
+	return fmt.Sprintf("%q", s)
 }

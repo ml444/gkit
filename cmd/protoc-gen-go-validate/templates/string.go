@@ -1,190 +1,298 @@
 package templates
 
 const StrTpl = `
-	{{ $f := .Field }}{{ $r := .Rules }}
-
-	{{ if $r.GetIgnoreEmpty }}
+	{{- $f := .Field }}{{ $r := .Rules }}
+	{{- if $r.GetIgnoreEmpty }}
 		if {{ .GetAccessor }} != "" {
-	{{ end }}
+	{{- end -}}
 
-	{{ template "const" . }}
-	{{ template "in" . }}
+	{{- template "const" . }}
+	{{- template "in" . }}
 
-	{{ if or $r.Len (and $r.MinLen $r.MaxLen (eq $r.GetMinLen $r.GetMaxLen)) }}
-		{{ if $r.Len }}
+	{{- if or $r.Len (and $r.MinLen $r.MaxLen (eq $r.GetMinLen $r.GetMaxLen)) }}
+		{{- if $r.Len }}
 		if utf8.RuneCountInString({{ .GetAccessor }}) != {{ $r.GetLen }} {
-			err := {{ err .Field "value length must be " $r.GetLen " runes" }}
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				"[{{ $f.GoName }}] value length must be {{ $r.GetLen }} runes", 
+				nil,
+			)
 			if !all { return err }
 			errors = append(errors, err)
-		{{ else }}
+		{{- else }}
 		if utf8.RuneCountInString({{ .GetAccessor }}) != {{ $r.GetMinLen }} {
-			err := {{ err .Field "value length must be " $r.GetMinLen " runes" }}
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				"[{{ $f.GoName }}] value length must be {{ $r.GetMinLen }} runes", 
+				nil,
+			)
 			if !all { return err }
 			errors = append(errors, err)
-		{{ end }}
+		{{- end }}
 	}
-	{{ else if $r.MinLen }}
-		{{ if $r.MaxLen }}
+	{{- else if $r.MinLen }}
+		{{- if $r.MaxLen }}
 			if l := utf8.RuneCountInString({{ .GetAccessor }}); l < {{ $r.GetMinLen }} || l > {{ $r.GetMaxLen }} {
-				err := {{ err .Field "value length must be between " $r.GetMinLen " and " $r.GetMaxLen " runes, inclusive" }}
+				err := {{GetAliasName}}ValidationError(
+					{{.ErrCode}}, 
+					"[{{ $f.GoName }}] value length must be between {{ $r.GetMinLen }} and {{ $r.GetMaxLen }} runes, inclusive",
+					nil,
+				)
 				if !all { return err }
 				errors = append(errors, err)
 			}
-		{{ else }}
+		{{- else }}
 			if utf8.RuneCountInString({{ .GetAccessor }}) < {{ $r.GetMinLen }} {
-				err := {{ err .Field "value length must be at least " $r.GetMinLen " runes" }}
+				err := {{GetAliasName}}ValidationError(
+					{{.ErrCode}}, 
+					"[{{ $f.GoName }}] value length must be at least {{ $r.GetMinLen }} runes",
+					nil,
+				)
 				if !all { return err }
 				errors = append(errors, err)
 			}
-		{{ end }}
-	{{ else if $r.MaxLen }}
+		{{- end }}
+	{{- else if $r.MaxLen }}
 		if utf8.RuneCountInString({{ .GetAccessor }}) > {{ $r.GetMaxLen }} {
-			err := {{ err .Field "value length must be at most " $r.GetMaxLen " runes" }}
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				"[{{ $f.GoName }}] value length must be at most {{ $r.GetMaxLen }} runes", 
+				nil,
+			)
 			if !all { return err }
 			errors = append(errors, err)
 		}
-	{{ end }}
+	{{- end -}}
 
-	{{ if or $r.LenBytes (and $r.MinBytes $r.MaxBytes (eq $r.GetMinBytes $r.GetMaxBytes)) }}
-		{{ if $r.LenBytes }}
+	{{- if or $r.LenBytes (and $r.MinBytes $r.MaxBytes (eq $r.GetMinBytes $r.GetMaxBytes)) }}
+		{{- if $r.LenBytes }}
 			if len({{ .GetAccessor }}) != {{ $r.GetLenBytes }} {
-				err := {{ err .Field "value length must be " $r.GetLenBytes " bytes" }}
+				err := {{GetAliasName}}ValidationError(
+					{{.ErrCode}}, 
+					"[{{ $f.GoName }}] value length must be {{ $r.GetLenBytes }} bytes", 
+					nil,
+				)
 				if !all { return err }
 				errors = append(errors, err)
 			}
-		{{ else }}
+		{{- else }}
 			if len({{ .GetAccessor }}) != {{ $r.GetMinBytes }} {
-				err := {{ err .Field "value length must be " $r.GetMinBytes " bytes" }}
+				err := {{GetAliasName}}ValidationError(
+					{{.ErrCode}}, 
+					"[{{ $f.GoName }}] value length must be {{ $r.GetMinBytes }} bytes", 
+					nil,
+				)
 				if !all { return err }
 				errors = append(errors, err)
 			}
-		{{ end }}
-	{{ else if $r.MinBytes }}
-		{{ if $r.MaxBytes }}
+		{{- end }}
+	{{- else if $r.MinBytes }}
+		{{- if $r.MaxBytes }}
 			if l := len({{ .GetAccessor }}); l < {{ $r.GetMinBytes }} || l > {{ $r.GetMaxBytes }} {
-					err := {{ err .Field "value length must be between " $r.GetMinBytes " and " $r.GetMaxBytes " bytes, inclusive" }}
-					if !all { return err }
-					errors = append(errors, err)
+				err := {{GetAliasName}}ValidationError(
+					{{.ErrCode}}, 
+					"[{{ $f.GoName }}] value length must be between {{ $r.GetMinBytes }} and {{ $r.GetMaxBytes }} bytes, inclusive", 
+					nil,
+				)
+				if !all { return err }
+				errors = append(errors, err)
 			}
-		{{ else }}
+		{{- else }}
 			if len({{ .GetAccessor }}) < {{ $r.GetMinBytes }} {
-				err := {{ err .Field "value length must be at least " $r.GetMinBytes " bytes" }}
+				err := {{GetAliasName}}ValidationError(	
+					{{.ErrCode}}, 
+					"[{{ $f.GoName }}] value length must be at least {{ $r.GetMinBytes }} bytes", 
+					nil,
+				)
 				if !all { return err }
 				errors = append(errors, err)
 			}
-		{{ end }}
-	{{ else if $r.MaxBytes }}
+		{{- end }}
+	{{- else if $r.MaxBytes }}
 		if len({{ .GetAccessor }}) > {{ $r.GetMaxBytes }} {
-			err := {{ err .Field "value length must be at most " $r.GetMaxBytes " bytes" }}
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				"[{{ $f.GoName }}] value length must be at most {{ $r.GetMaxBytes }} bytes", 
+				nil,
+			)
 			if !all { return err }
 			errors = append(errors, err)
 		}
-	{{ end }}
+	{{- end -}}
 
-	{{ if $r.Prefix }}
+	{{- if $r.Prefix }}
 		if !strings.HasPrefix({{ .GetAccessor }}, {{ lit $r.GetPrefix }}) {
-			err := {{ err .Field "value does not have prefix " (lit $r.GetPrefix) }}
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				fmt.Sprintf("[{{ $f.GoName }}] value does not have prefix '%s'", {{ lit $r.GetPrefix }}), 
+				nil,
+			)
 			if !all { return err }
 			errors = append(errors, err)
 		}
-	{{ end }}
+	{{- end -}}
 
-	{{ if $r.Suffix }}
+	{{- if $r.Suffix }}
 		if !strings.HasSuffix({{ .GetAccessor }}, {{ lit $r.GetSuffix }}) {
-			err := {{ err .Field "value does not have suffix " (lit $r.GetSuffix) }}
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				fmt.Sprintf("[{{ $f.GoName }}] value does not have suffix '%s'", {{ lit $r.GetSuffix }}), 
+				nil,
+			)
 			if !all { return err }
 			errors = append(errors, err)
 		}
-	{{ end }}
+	{{- end -}}
 
-	{{ if $r.Contains }}
+	{{- if $r.Contains }}
 		if !strings.Contains({{ .GetAccessor }}, {{ lit $r.GetContains }}) {
-			err := {{ err .Field "value does not contain substring " (lit $r.GetContains) }}
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				fmt.Sprintf("[{{ $f.GoName }}] value does not contain substring '%s'", {{ lit $r.GetContains }}), 
+				nil,
+			)
 			if !all { return err }
 			errors = append(errors, err)
 		}
-	{{ end }}
+	{{- end -}}
 
-	{{ if $r.NotContains }}
+	{{- if $r.NotContains }}
 		if strings.Contains({{ .GetAccessor }}, {{ lit $r.GetNotContains }}) {
-			err := {{ err .Field "value contains substring " (lit $r.GetNotContains) }}
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				fmt.Sprintf("[{{ $f.GoName }}] value contains substring '%s'", {{ lit $r.GetNotContains }}), 
+				nil,
+			)
 			if !all { return err }
 			errors = append(errors, err)
 		}
-	{{ end }}
+	{{- end -}}
 
-	{{ if $r.GetIp }}
+	{{- if $r.GetIp }}
 		if ip := net.ParseIP({{ .GetAccessor }}); ip == nil {
-			err := {{ err .Field "value must be a valid IP address" }}
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				"[{{ $f.GoName }}] value must be a valid IP address",
+				nil,
+			)
 			if !all { return err }
 			errors = append(errors, err)
 		}
-	{{ else if $r.GetIpv4 }}
+	{{- else if $r.GetIpv4 }}
 		if ip := net.ParseIP({{ .GetAccessor }}); ip == nil || ip.To4() == nil {
-			err := {{ err .Field "value must be a valid IPv4 address" }}
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				"[{{ $f.GoName }}] value must be a valid IPv4 address",
+				nil,
+			)
 			if !all { return err }
 			errors = append(errors, err)
 		}
-	{{ else if $r.GetIpv6 }}
+	{{- else if $r.GetIpv6 }}
 		if ip := net.ParseIP({{ .GetAccessor }}); ip == nil || ip.To4() != nil {
-			err := {{ err .Field "value must be a valid IPv6 address" }}
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				"[{{ $f.GoName }}] value must be a valid IPv6 address",
+				nil,
+			)
 			if !all { return err }
 			errors = append(errors, err)
 		}
-	{{ else if $r.GetEmail }}
-		if err := {{GetAliasName}}_validateEmail({{ .GetAccessor }}); err != nil {
-			err = {{ errCause .Field "err" "value must be a valid email address" }}
+	{{- else if $r.GetEmail }}
+		if e := {{GetAliasName}}_validateEmail({{ .GetAccessor }}); e != nil {
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				"[{{ $f.GoName }}] value must be a valid email address",
+				e,
+			)
 			if !all { return err }
 			errors = append(errors, err)
 		}
-	{{ else if $r.GetHostname }}
-		if err := {{GetAliasName}}_validateHostname({{ .GetAccessor }}); err != nil {
-			err = {{ errCause .Field "err" "value must be a valid hostname" }}
+	{{- else if $r.GetHostname }}
+		if e := {{GetAliasName}}_validateHostname({{ .GetAccessor }}); e != nil {
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				"[{{ $f.GoName }}] value must be a valid hostname",
+				e,
+			)
 			if !all { return err }
 			errors = append(errors, err)
 		}
-	{{ else if $r.GetAddress }}
-		if err := {{GetAliasName}}_validateHostname({{ .GetAccessor }}); err != nil {
+	{{- else if $r.GetAddress }}
+		if e := {{GetAliasName}}_validateHostname({{ .GetAccessor }}); e != nil {
 			if ip := net.ParseIP({{ .GetAccessor }}); ip == nil {
-				err := {{ err .Field "value must be a valid hostname, or ip address" }}
+				err := {{GetAliasName}}ValidationError(
+					{{.ErrCode}}, 
+					"[{{ $f.GoName }}] value must be a valid hostname, or ip address",
+					e,
+				)
 				if !all { return err }
 				errors = append(errors, err)
 			}
 		}
-	{{ else if $r.GetUri }}
-		if uri, err := url.Parse({{ .GetAccessor }}); err != nil {
-			err = {{ errCause .Field "err" "value must be a valid URI" }}
+	{{- else if $r.GetUri }}
+		if uri, e := url.Parse({{ .GetAccessor }}); e != nil {
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				"[{{ $f.GoName }}] value must be a valid URI",
+				e,
+			)
 			if !all { return err }
 			errors = append(errors, err)
 		} else if !uri.IsAbs() {
-			err := {{ err .Field "value must be absolute" }}
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				"[{{ $f.GoName }}] value must be absolute",
+				nil,
+			)
 			if !all { return err }
 			errors = append(errors, err)
 		}
-	{{ else if $r.GetUriRef }}
-		if _, err := url.Parse({{ .GetAccessor }}); err != nil {
-			err = {{ errCause .Field "err" "value must be a valid URI" }}
+	{{- else if $r.GetUriRef }}
+		if _, e := url.Parse({{ .GetAccessor }}); e != nil {
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				"[{{ $f.GoName }}] value must be a valid URI",
+				e,
+			)
 			if !all { return err }
 			errors = append(errors, err)
 		}
-	{{ else if $r.GetUuid }}
-		if err := {{GetAliasName}}_validateUuid({{ .GetAccessor }}); err != nil {
-			err = {{ errCause .Field "err" "value must be a valid UUID" }}
+	{{- else if $r.GetUuid }}
+		if e := {{GetAliasName}}_validateUuid({{ .GetAccessor }}); e != nil {
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				"[{{ $f.GoName }}] value must be a valid UUID",
+				e,
+			)
 			if !all { return err }
 			errors = append(errors, err)
 		}
-	{{ end }}
+	{{- else if $r.GetWellKnownRegex }}
+		if !{{ lookup $f "WellKnownPattern" }}.MatchString({{ .GetAccessor }}) {
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				"[{{ $f.GoName }}] {{ wellKnownRegexErrMsg $r }}",
+				nil,
+			)
+			if !all { return err }
+			errors = append(errors, err)
+		}
+	{{- end -}}
 
-	{{ if $r.Pattern }}
+	{{- if $r.Pattern }}
 		if !{{ lookup .Field "Pattern" }}.MatchString({{ .GetAccessor }}) {
-			err := {{ err .Field "value does not match regex pattern " (lit $r.GetPattern) }}
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				fmt.Sprintf("[{{ $f.GoName }}] value does not match regex pattern '%s'", {{ lit $r.GetPattern }}), 
+				nil,
+			)
 			if !all { return err }
 			errors = append(errors, err)
 		}
-	{{ end }}
+	{{- end -}}
 
-	{{ if $r.GetIgnoreEmpty }}
+	{{- if $r.GetIgnoreEmpty }}
 		}
-	{{ end }}
-
+	{{- end }}
 `

@@ -1,11 +1,15 @@
 package templates
 
 const RequiredTpl = `
-	{{ if .Rules.GetRequired }}
+	{{- if .Rules.GetRequired }}
 		if {{ .GetAccessor }} == nil {
-			err := {{ err .Field "value is required" }}
+			err := {{GetAliasName}}ValidationError(
+				{{.ErrCode}}, 
+				"[{{ .Field.GoName }}] value is required",
+				nil,
+			)
 			if !all { return err }
 			errors = append(errors, err)
 		}
-	{{ end }}
+	{{- end }}
 `

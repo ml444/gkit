@@ -1,18 +1,38 @@
 
 import (
+{{- if .NeedStdImports.Bytes }}
 	"bytes"
+{{- end }}
+{{- if .NeedStdImports.Errors }}
 	"errors"
+{{- end }}
+{{- if .NeedStdImports.Fmt }}
 	"fmt"
+{{- end }}
+{{- if .NeedStdImports.Net }}
 	"net"
+{{- end }}
+{{- if .NeedStdImports.Mail }}
 	"net/mail"
+{{- end }}
+{{- if .NeedStdImports.Url }}
 	"net/url"
+{{- end }}
+{{- if .NeedStdImports.Regexp }}
 	"regexp"
+{{- end }}
+{{- if .NeedStdImports.Sort }}
 	"sort"
+{{- end }}
+{{- if .NeedStdImports.Strings }}
 	"strings"
+{{- end }}
+{{- if .NeedStdImports.Time }}
 	"time"
+{{- end }}
+{{- if .NeedStdImports.Utf8 }}
 	"unicode/utf8"
-
-	// "google.golang.org/protobuf/types/known/anypb"
+{{- end }}
 
 	{{ range .Imports -}}
 	{{- if .Alias -}}
@@ -23,25 +43,48 @@ import (
 	{{- end }}
 )
 
+{{- if or .NeedStdImports.Bytes .NeedStdImports.Errors .NeedStdImports.Fmt .NeedStdImports.Net .NeedStdImports.Regexp .NeedStdImports.Strings .NeedStdImports.Sort .NeedStdImports.Time .NeedStdImports.Utf8 }}
 // ensure the imports are used
 var (
+{{- if .NeedStdImports.Bytes }}
 	_ = bytes.MinRead
+{{- end }}
+{{- if .NeedStdImports.Errors }}
 	_ = errors.New("")
+{{- end }}
+{{- if .NeedStdImports.Fmt }}
 	_ = fmt.Print
+{{- end }}
+{{- if .NeedStdImports.Utf8 }}
 	_ = utf8.UTFMax
+{{- end }}
+{{- if .NeedStdImports.Regexp }}
 	_ = (*regexp.Regexp)(nil)
+{{- end }}
+{{- if .NeedStdImports.Strings }}
 	_ = (*strings.Reader)(nil)
+{{- end }}
+{{- if .NeedStdImports.Net }}
 	_ = net.IPv4len
+{{- end }}
+{{- if .NeedStdImports.Time }}
 	_ = time.Duration(0)
+{{- end }}
+{{- if .NeedStdImports.Url }}
 	_ = (*url.URL)(nil)
+{{- end }}
+{{- if .NeedStdImports.Mail }}
 	_ = (*mail.Address)(nil)
-	//_ = anypb.Any{}
+{{- end }}
+{{- if .NeedStdImports.Sort }}
 	_ = sort.Sort
+{{- end }}
 )
+{{- end }}
 
 {{- if .NeedWellKnow.UUID }}
 // define the regex for a UUID once up-front
-var _uuidPattern = regexp.MustCompile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+var {{GetAliasName}}_uuidPattern = regexp.MustCompile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 {{ template "uuid" . }}
 {{ end }}
@@ -61,48 +104,20 @@ var _uuidPattern = regexp.MustCompile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F
 {{ end }}
 
 {{- $VErrName := JoinString .FileAliasName "ValidationError"}}
-{{- $MErrName := JoinString .FileAliasName "MultiError"}}
-// {{$VErrName}} is the validation error
-// returned by .Validate if the designated constraints aren't met.
-type {{$VErrName}} struct {
-	field   string
-	reason  string
-	errCode int32
-	cause   error
-	key     bool
-}
-
-// Field function returns field value.
-func (e {{$VErrName}}) Field() string { return e.field }
-
-func (e {{$VErrName}}) Reason() string { return e.reason }
-
-func (e {{$VErrName}}) Cause() error { return e.cause }
-
-func (e {{$VErrName}}) Key() bool { return e.key }
-
-func (e {{$VErrName}}) ErrorName() string { return "{{$VErrName}}" }
-
-// Error satisfies the builtin error interface
-func (e {{$VErrName}}) Error() string {
-	if e.errCode != 0 {
-		return errorx.New(e.errCode).Error()
-	} else {
-		cause := ""
-		if e.cause != nil {
-			cause = fmt.Sprintf(" | caused by: %v", e.cause)
-		}
-
-		key := ""
-		if e.key {
-			key = "key for "
-		}
-
-		msg := fmt.Sprintf("invalid %s .%s: %s%s", key, e.field, e.reason, cause)
-		return errorx.CreateError(400, {{ .ErrCodeBegin }}, msg).Error()
+func {{$VErrName}}(errCode int32, msg string, cause error) error {
+{{- if ne .ErrCodeBegin 0 }}
+	if errCode == 0 {
+		errCode = {{ .ErrCodeBegin }}
 	}
+{{- end }}
+	err := errorx.CreateError(400, errCode, msg)
+	if cause != nil {
+		err = err.WithCause(cause)
+	}
+	return err
 }
 
+{{- $MErrName := JoinString .FileAliasName "MultiError"}}
 // {{$MErrName}} is an error wrapping multiple validation errors
 // returned by .ValidateAll() if the designated constraints aren't met.
 type {{$MErrName}} []error
@@ -123,18 +138,18 @@ func (m {{$MErrName}}) AllErrors() []error { return m }
 
 {{ if not .Ignored -}}
 {{ if .Disabled -}}
-	{{ cmt "Validate is disabled for " .TypeName ". This method will always return nil." }}
+	{{/* cmt "Validate is disabled for " .TypeName ". This method will always return nil." */}}
 {{- else -}}
-	{{ cmt "Validate checks the field values on " .TypeName " with the rules defined in the proto definition for this message. If any rules are violated, the first error encountered is returned, or nil if there are no violations." }}
+	{{/* cmt "Validate checks the field values on " .TypeName " with the rules defined in the proto definition for this message. If any rules are violated, the first error encountered is returned, or nil if there are no violations." */}}
 {{- end -}}
 func (m *{{ .TypeName }}) Validate() error {
 	return m.validate(false)
 }
 
 {{ if .Disabled -}}
-	{{ cmt "ValidateAll is disabled for " .TypeName ". This method will always return nil." }}
+	{{/* cmt "ValidateAll is disabled for " .TypeName ". This method will always return nil." */}}
 {{- else -}}
-	{{ cmt "ValidateAll checks the field values on " .TypeName " with the rules defined in the proto definition for this message. If any rules are violated, the result is a list of violation errors wrapped in " .TypeName "{{$MErrName}}, or nil if none found." }}
+	{{/* cmt "ValidateAll checks the field values on " .TypeName " with the rules defined in the proto definition for this message. If any rules are violated, the result is a list of violation errors wrapped in " .TypeName "{{$MErrName}}, or nil if none found." */}}
 {{- end -}}
 func (m *{{ .TypeName }}) ValidateAll() error {
 	return m.validate(true)
@@ -142,18 +157,17 @@ func (m *{{ .TypeName }}) ValidateAll() error {
 
 {{/* Unexported function to handle validation. If the need arises to add more exported functions, please consider the functional option approach outlined in protoc-gen-validate#47. */}}
 func (m *{{ .TypeName }}) validate(all bool) error {
-	{{ if .Disabled -}}
+	{{- if .Disabled -}}
 		return nil
-	{{ else -}}
+	{{- else }}
 		if m == nil { return nil }
-
 		var errors []error
 
-		{{ range .NonOneOfFields }}
-			{{ render .TmplName . }}
-		{{ end }}
+		{{- range .NonOneOfFields }}
+			{{- render .TmplName . }}
+		{{- end -}}
 
-		{{ range $fieldName, $oneof := .RealOneOfs }}
+		{{- range $fieldName, $oneof := .RealOneOfs -}}
 			{{- if $oneof.Required }}
 			oneof{{ $oneof.Name }}Present := false
 			{{- end }}
@@ -161,10 +175,11 @@ func (m *{{ .TypeName }}) validate(all bool) error {
 				{{- range $oneof.Fields }}
 					case *{{ oneOfType .Field }}:
 						if v == nil {
-							err := {{$VErrName}}{
-								field: "{{ $oneof.Name }}",
-								reason: "oneof value cannot be a typed-nil",
-							}
+							err := {{$VErrName}}(
+								{{ .ErrCode }}, 
+								"[{{ $oneof.Name }}] oneof value cannot be a typed-nil",
+								nil,
+							)
 							if !all { return err }
 							errors = append(errors, err)
 						}
@@ -178,131 +193,142 @@ func (m *{{ .TypeName }}) validate(all bool) error {
 			}
 			{{- if $oneof.Required }}
 			if !oneof{{ $oneof.Name }}Present {
-				err := {{$VErrName}}{
-					field: "{{ $oneof.Name }}",
-					reason: "value is required",
-				}
+				err := {{$VErrName}}(
+					0, 
+					"[{{ $oneof.Name }}] value is required",
+					nil,
+				)
 				if !all { return err }
 				errors = append(errors, err)
 			}
 			{{- end }}
-		{{- end }}
+		{{- end -}}
 
-		{{ range .OptionalFields }}
+		{{- range .OptionalFields }}
 			if m.{{ .Name }} != nil {
-				{{ render .TmplName . }}
+				{{- render .TmplName . }}
 			}
-		{{ end }}
+		{{- end }}
 
 		if len(errors) > 0 {
 			return  {{$MErrName}}(errors)
 		}
-
 		return nil
-	{{ end -}}
+	{{- end -}}
 }
 
-{{ range .Fields }}{{ $f := .Field }}
-	{{ if has .Rules "In" }}{{ if .Rules.In }}
+{{- range .Fields }}
+    {{- $f := .Field }}
+	{{- if has .Rules "In" }}
+	    {{- if .Rules.In }}
 		var {{ lookup .Field "InLookup" }} = map[{{ inType .Field .Rules.In }}]struct{}{
 			{{- range .Rules.In }}
 				{{ inKey $f . }}: {},
 			{{- end }}
 		}
-	{{ end }}{{ end }}
+	    {{- end }}
+	{{- end -}}
 
-	{{ if has .Rules "NotIn" }}{{ if .Rules.NotIn }}
+	{{- if has .Rules "NotIn" }}
+	    {{- if .Rules.NotIn }}
 		var {{ lookup .Field "NotInLookup" }} = map[{{ inType .Field .Rules.NotIn }}]struct{}{
 			{{- range .Rules.NotIn }}
 				{{ inKey $f . }}: {},
 			{{- end }}
 		}
-	{{ end }}{{ end }}
+	    {{- end }}
+	{{- end -}}
 
-	{{ if has .Rules "Pattern"}}{{ if .Rules.Pattern }}
+	{{- if has .Rules "Pattern" }}
+	    {{- if .Rules.Pattern }}
 		var {{ lookup .Field "Pattern" }} = regexp.MustCompile({{ lit .Rules.GetPattern }})
-	{{ end }}{{ end }}
+	    {{- end }}
+	{{- end -}}
 
-	{{ if has .Rules "Items"}}{{ if .Rules.Items }}
-	{{ if has .Rules.Items.GetString_ "Pattern" }} {{ if .Rules.Items.GetString_.Pattern }}
+	{{- if hasWellKnownRegex .Rules }}
+		var {{ lookup .Field "WellKnownPattern" }} = regexp.MustCompile({{ wellKnownRegexLit .Rules }})
+	{{- end -}}
+
+	{{- if has .Rules "Items"}}{{ if .Rules.Items }}
+	{{- if has .Rules.Items.GetString_ "Pattern" }} {{ if .Rules.Items.GetString_.Pattern }}
 		var {{ lookup .Field "Pattern" }} = regexp.MustCompile({{ lit .Rules.Items.GetString_.GetPattern }})
-	{{ end }}{{ end }}
-	{{ end }}{{ end }}
+	{{- end }}{{ end -}}
+	{{- end }}{{ end -}}
 
-	{{ if has .Rules "Items"}}{{ if .Rules.Items }}
-	{{ if has .Rules.Items.GetString_ "In" }} {{ if .Rules.Items.GetString_.In }}
+	{{- if has .Rules "Items"}}{{ if .Rules.Items }}
+	{{- if has .Rules.Items.GetString_ "In" }} {{ if .Rules.Items.GetString_.In }}
 		var {{ lookup .Field "InLookup" }} = map[string]struct{}{
 			{{- range .Rules.Items.GetString_.In }}
 				{{ inKey $f . }}: {},
 			{{- end }}
 		}
-	{{ end }}{{ end }}
-	{{ if has .Rules.Items.GetEnum "In" }} {{ if .Rules.Items.GetEnum.In }}
+	{{- end }}{{ end }}
+	{{- if has .Rules.Items.GetEnum "In" }} {{ if .Rules.Items.GetEnum.In }}
 		var {{ lookup .Field "InLookup" }} = map[{{ inType .Field .Rules.Items.GetEnum.In }}]struct{}{
 			{{- range .Rules.Items.GetEnum.In }}
 				{{ inKey $f . }}: {},
 			{{- end }}
 		}
-	{{ end }}{{ end }}
-	{{ if has .Rules.Items.GetAny "In" }} {{ if .Rules.Items.GetAny.In }}
+	{{- end }}{{ end }}
+	{{- if has .Rules.Items.GetAny "In" }} {{ if .Rules.Items.GetAny.In }}
 		var {{ lookup .Field "InLookup" }} = map[string]struct{}{
 			{{- range .Rules.Items.GetAny.In }}
 				{{ inKey $f . }}: {},
 			{{- end }}
 		}
-	{{ end }}{{ end }}
-	{{ end }}{{ end }}
+	{{- end }}{{ end -}}
+	{{- end }}{{ end -}}
 
-	{{ if has .Rules "Items"}}{{ if .Rules.Items }}
-	{{ if has .Rules.Items.GetString_ "NotIn" }} {{ if .Rules.Items.GetString_.NotIn }}
+	{{- if has .Rules "Items"}}{{ if .Rules.Items }}
+	{{- if has .Rules.Items.GetString_ "NotIn" }} {{ if .Rules.Items.GetString_.NotIn }}
 		var {{ lookup .Field "NotInLookup" }} = map[string]struct{}{
 			{{- range .Rules.Items.GetString_.NotIn }}
 				{{ inKey $f . }}: {},
 			{{- end }}
 		}
-	{{ end }}{{ end }}
-	{{ if has .Rules.Items.GetEnum "NotIn" }} {{ if .Rules.Items.GetEnum.NotIn }}
+	{{- end }}{{ end }}
+	{{- if has .Rules.Items.GetEnum "NotIn" }} {{ if .Rules.Items.GetEnum.NotIn }}
 		var {{ lookup .Field "NotInLookup" }} = map[{{ inType .Field .Rules.Items.GetEnum.NotIn }}]struct{}{
 			{{- range .Rules.Items.GetEnum.NotIn }}
 				{{ inKey $f . }}: {},
 			{{- end }}
 		}
-	{{ end }}{{ end }}
-	{{ if has .Rules.Items.GetAny "NotIn" }} {{ if .Rules.Items.GetAny.NotIn }}
+	{{- end }}{{ end }}
+	{{- if has .Rules.Items.GetAny "NotIn" }} {{ if .Rules.Items.GetAny.NotIn }}
 		var {{ lookup .Field "NotInLookup" }} = map[string]struct{}{
 			{{- range .Rules.Items.GetAny.NotIn }}
 				{{ inKey $f . }}: {},
 			{{- end }}
 		}
-	{{ end }}{{ end }}
-	{{ end }}{{ end }}
+	{{- end }}{{ end -}}
+	{{- end }}{{ end -}}
 
-	{{ if has .Rules "Keys"}}{{ if .Rules.Keys }}
-	{{ if has .Rules.Keys.GetString_ "In" }} {{ if .Rules.Keys.GetString_.In }}
+	{{- if has .Rules "Keys"}}{{ if .Rules.Keys }}
+	{{- if has .Rules.Keys.GetString_ "In" }} {{ if .Rules.Keys.GetString_.In }}
 		var {{ lookup .Field "InLookup" }} = map[{{ inType .Field .Rules.Keys.GetString_.In }}]struct{}{
 			{{- range .Rules.Keys.GetString_.In }}
 				{{ inKey $f . }}: {},
 			{{- end }}
 		}
-	{{ end }}{{ end }}
-	{{ if has .Rules.Keys.GetString_ "NotIn" }} {{ if .Rules.Keys.GetString_.NotIn }}
+	{{- end }}{{ end }}
+	{{- if has .Rules.Keys.GetString_ "NotIn" }} {{ if .Rules.Keys.GetString_.NotIn }}
 		var {{ lookup .Field "NotInLookup" }} = map[{{ inType .Field .Rules.Keys.GetString_.NotIn }}]struct{}{
 			{{- range .Rules.Keys.GetString_.NotIn }}
 				{{ inKey $f . }}: {},
 			{{- end }}
 		}
-	{{ end }}{{ end }}
-	{{ if has .Rules.Keys.GetString_ "Pattern" }} {{ if .Rules.Keys.GetString_.Pattern }}
+	{{- end }}{{ end }}
+	{{- if has .Rules.Keys.GetString_ "Pattern" }} {{ if .Rules.Keys.GetString_.Pattern }}
 		var {{ lookup .Field "Pattern" }} = regexp.MustCompile({{ lit .Rules.Keys.GetString_.GetPattern }})
-	{{ end }}{{ end }}
-	{{ end }}{{ end }}
+	{{- end }}{{ end }}
+	{{- end }}{{ end -}}
 
-	{{ if has .Rules "Values"}}{{ if .Rules.Values }}
-	{{ if has .Rules.Values.GetString_ "Pattern" }} {{ if .Rules.Values.GetString_.Pattern }}
+	{{- if has .Rules "Values"}}{{ if .Rules.Values }}
+	{{- if has .Rules.Values.GetString_ "Pattern" }} {{ if .Rules.Values.GetString_.Pattern }}
 		var {{ lookup .Field "Pattern" }} = regexp.MustCompile({{ lit .Rules.Values.GetString_.GetPattern }})
-	{{ end }}{{ end }}
-	{{ end }}{{ end }}
+	{{- end }}{{ end }}
+	{{- end }}{{ end }}
 
-{{ end }}
+{{- end -}}
 {{- end -}}
 {{- end -}}

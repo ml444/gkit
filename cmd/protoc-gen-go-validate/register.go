@@ -8,7 +8,7 @@ import (
 )
 
 func Register(tpl *template.Template) {
-	funcMap := funcs.FuncMap
+	funcMap := copyFuncMap()
 	funcMap["render"] = funcs.Render(tpl)
 	tpl.Funcs(funcMap)
 
@@ -46,6 +46,7 @@ func Register(tpl *template.Template) {
 
 	template.Must(tpl.New("enum").Parse(templates.EnumTpl))
 	template.Must(tpl.New("repeated").Parse(templates.RepTpl))
+	template.Must(tpl.New("mapPairBody").Parse(templates.MapPairBodyTpl))
 	template.Must(tpl.New("map").Parse(templates.MapTpl))
 
 	template.Must(tpl.New("any").Parse(templates.AnyTpl))
