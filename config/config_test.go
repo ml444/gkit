@@ -1,6 +1,7 @@
 package config
 
 import (
+	"flag"
 	"os"
 	"reflect"
 	"testing"
@@ -194,5 +195,196 @@ func TestWalk(t *testing.T) {
 				t.Errorf("Walk() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+type Inner struct {
+    Name *string
+    Age  *int
+}
+
+type TestStruct struct {
+    Field1 string
+    Field2 *string
+    Slice  []string
+    Inner  *Inner
+}
+
+
+func strptr(s string) *string { return &s }
+func intptr(i int) *int       { return &i }
+
+func TestBuildMap_BasicStruct(t *testing.T) {
+	cfg := TestStruct{}
+
+	p := reflect.ValueOf(&cfg).Elem()
+	proc := &Processor{m: make(map[string]*Value)}
+
+	if err := proc.buildMap("", p); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// 验证 Field1 初始化为 ""（zero value）
+	v1 := proc.m["Field1"].value.(string)
+	if v1 != "" {
+		t.Errorf("expected Field1 zero value, got %q", v1)
+	}
+}
+
+func TestBuildMap_StringPointerInit(t *testing.T) {
+	cfg := TestStruct{Field2: nil}
+
+	p := reflect.ValueOf(&cfg).Elem()
+	proc := &Processor{m: make(map[string]*Value)}
+
+	if err := proc.buildMap("", p); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// 指针字段应该初始化，并且在 map 中值为 ""
+	v2 := proc.m["Field2"].value.(string)
+	if v2 != "" {
+		t.Errorf("expected Field2 zero string, got %q", v2)
+	}
+}
+
+func TestBuildMap_SliceString(t *testing.T) {
+	cfg := TestStruct{Slice: []string{"A", ""}}
+
+	p := reflect.ValueOf(&cfg).Elem()
+	proc := &Processor{m: make(map[string]*Value)}
+
+	if err := proc.buildMap("", p); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	gotSlice, ok := proc.m["Slice"].value.([]string)
+	if !ok {
+		t.Fatal("expected []string in map")
+	}
+
+	if gotSlice[0] != "A" || gotSlice[1] != "" {
+		t.Errorf("slice content mismatch: got %v", gotSlice)
+	}
+}
+
+func TestBuildMap_NestedStruct(t *testing.T) {
+	cfg := TestStruct{
+		Inner: &Inner{Name: strptr("X")},
+	}
+
+	p := reflect.ValueOf(&cfg).Elem()
+	proc := &Processor{m: make(map[string]*Value)}
+
+	if err := proc.buildMap("", p); err != nil {
+		t.Fatalf("unexpected error %v", err)
+	}
+
+	// Nested 字段 Field: Inner.Name
+	val, ok := proc.m["Inner"+delimiter+"Name"].value.(string)
+	if !ok {
+		t.Errorf("expected string for nested field, got %T", proc.m["Inner"+delimiter+"Name"].value)
+	}
+	if val != "X" {
+		t.Errorf("expected X, got %q", val)
+	}
+}
+
+type priorityConfig struct {
+	Debug bool `env:"name=GKIT_PRIORITY_DEBUG;default=true" flag:"name=debug;default=true;usage=debug flag"`
+}
+
+func TestInitConfig_CommandLineZeroOverridesEnv(t *testing.T) {
+	t.Setenv("GKIT_PRIORITY_DEBUG", "true")
+	cfg := &priorityConfig{}
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	err := InitConfig(
+		cfg,
+		WithFlagSet(fs),
+		WithArgs([]string{"--debug=false"}),
+	)
+	if err != nil {
+		t.Fatalf("InitConfig failed: %v", err)
+	}
+	if cfg.Debug {
+		t.Fatalf("expected command line value false to win over env, got true")
+	}
+}
+
+type envPrefixConfig struct {
+	Port int
+}
+
+func TestInitConfig_WithEnvKeyPrefix(t *testing.T) {
+	t.Setenv("APP_PORT", "9090")
+	cfg := &envPrefixConfig{}
+	err := InitConfig(cfg, WithEnvKeyPrefix("APP_"))
+	if err != nil {
+		t.Fatalf("InitConfig failed: %v", err)
+	}
+	if cfg.Port != 9090 {
+		t.Fatalf("expected Port=9090, got %d", cfg.Port)
+	}
+}
+
+type envTagEqualConfig struct {
+	Token string `env:"name=GKIT_ENV_TOKEN;default=a=b=c"`
+}
+
+func TestInitConfig_EnvDefaultSupportsEquals(t *testing.T) {
+	cfg := &envTagEqualConfig{}
+	err := InitConfig(cfg)
+	if err != nil {
+		t.Fatalf("InitConfig failed: %v", err)
+	}
+	if cfg.Token != "a=b=c" {
+		t.Fatalf("expected token default to preserve '=', got %q", cfg.Token)
+	}
+}
+
+func TestInitConfig_FileFlagIgnoreUnknownArgs(t *testing.T) {
+	cfg := &envPrefixConfig{}
+	err := InitConfig(
+		cfg,
+		WithFileFlag("config"),
+		WithArgs([]string{"--unknown=1"}),
+	)
+	if err != nil {
+		t.Fatalf("expected unknown args ignored by file flag parser, got %v", err)
+	}
+}
+
+type sameFlagConfigA struct {
+	Name string `flag:"name=name;default=alice;usage=name flag"`
+}
+
+type sameFlagConfigB struct {
+	Name string `flag:"name=name;default=bob;usage=name flag"`
+}
+
+func TestInitConfig_DuplicateFlagNameAcrossProcessors(t *testing.T) {
+	cfgA := &sameFlagConfigA{}
+	cfgB := &sameFlagConfigB{}
+
+	err := InitConfig(
+		cfgA,
+		WithFlagSet(flag.NewFlagSet("a", flag.ContinueOnError)),
+		WithArgs([]string{"--name=tom"}),
+	)
+	if err != nil {
+		t.Fatalf("InitConfig cfgA failed: %v", err)
+	}
+
+	err = InitConfig(
+		cfgB,
+		WithFlagSet(flag.NewFlagSet("b", flag.ContinueOnError)),
+		WithArgs([]string{"--name=jerry"}),
+	)
+	if err != nil {
+		t.Fatalf("InitConfig cfgB failed: %v", err)
+	}
+
+	if cfgA.Name != "tom" || cfgB.Name != "jerry" {
+		t.Fatalf("expected independent flag parsing, got cfgA=%q cfgB=%q", cfgA.Name, cfgB.Name)
 	}
 }

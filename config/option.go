@@ -1,5 +1,7 @@
 package config
 
+import "flag"
+
 type OptionFunc func(*Processor)
 
 // WithFileLoader setIntoStruct the file loader.
@@ -37,5 +39,19 @@ func WithIgnoreError(ignoreErr bool) OptionFunc {
 func WithEnvKeyPrefix(prefix string) OptionFunc {
 	return func(c *Processor) {
 		c.envKeyPrefix = prefix
+	}
+}
+
+// WithFlagSet sets a custom flag set for config parsing.
+func WithFlagSet(fs *flag.FlagSet) OptionFunc {
+	return func(c *Processor) {
+		c.flagSet = fs
+	}
+}
+
+// WithArgs overrides command-line args used by config parser.
+func WithArgs(args []string) OptionFunc {
+	return func(c *Processor) {
+		c.args = args
 	}
 }

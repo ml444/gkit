@@ -8,9 +8,8 @@ Tag of the structure). When there is no configuration in the configuration
 file, the default value will be used.
 
 Its priority for reading configuration files is: 
-`Command line > Environment variables > Configuration file > Command line default value (Tag non-zero default value) > Environment variable default value (Tag non-zero default value) > Field zero value`.
-If the value set on the command line is zero, but the value set by an 
-environment variable is not zero, the value of the environment variable is used.
+`Command line (explicit input, including zero values) > Environment variables > Configuration file > Command line default value (Tag non-zero default value) > Environment variable default value (Tag non-zero default value) > Field zero value`.
+If the command line explicitly sets a zero value, that value still takes precedence.
 Although the zero value has the lowest priority, it provides the lowest 
 guarantee (preventing nil), that is, if there is no configuration in the 
 configuration file, and there is no configuration in the command line and 

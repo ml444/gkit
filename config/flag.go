@@ -12,7 +12,7 @@ func GetTagValues(tag reflect.StructTag, key string) (bool, []string) {
 	return ok, strings.Split(tagValue, ";")
 }
 
-func parseFieldTagWithFlag(field reflect.StructField, v reflect.Value, mValue *Value, useFlag *bool) error {
+func parseFieldTagWithFlag(fs *flag.FlagSet, field reflect.StructField, v reflect.Value, mValue *Value, useFlag *bool) error {
 	tag := field.Tag
 	// Parse the tag of the field
 	ok, tagValues := GetTagValues(tag, "flag")
@@ -52,14 +52,14 @@ func parseFieldTagWithFlag(field reflect.StructField, v reflect.Value, mValue *V
 				}
 			}
 		}
-		if flag.Lookup(name) != nil {
+		if fs.Lookup(name) != nil {
 			return nil
 		}
 		var err error
 		if v.CanAddr() {
-			err = setFlag(name, usage, mValue.value, field.Type, v.Addr())
+			err = setFlag(fs, name, usage, mValue.value, field.Type, v.Addr())
 		} else {
-			err = setFlag(name, usage, mValue.value, field.Type, v)
+			err = setFlag(fs, name, usage, mValue.value, field.Type, v)
 		}
 		if err != nil {
 			return err
@@ -68,7 +68,7 @@ func parseFieldTagWithFlag(field reflect.StructField, v reflect.Value, mValue *V
 	return nil
 }
 
-func setFlag(name, usage string, defaultValue interface{}, t reflect.Type, ptr reflect.Value) error {
+func setFlag(fs *flag.FlagSet, name, usage string, defaultValue interface{}, t reflect.Type, ptr reflect.Value) error {
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
@@ -76,31 +76,31 @@ func setFlag(name, usage string, defaultValue interface{}, t reflect.Type, ptr r
 	// Convert various types through reflection and assertions
 	switch t.Kind() {
 	case reflect.Bool:
-		flag.BoolVar(ptr.Interface().(*bool), name, defaultValue.(bool), usage)
+		fs.BoolVar(ptr.Interface().(*bool), name, defaultValue.(bool), usage)
 	case reflect.String:
-		flag.StringVar(ptr.Interface().(*string), name, defaultValue.(string), usage)
+		fs.StringVar(ptr.Interface().(*string), name, defaultValue.(string), usage)
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		switch t.Kind() {
 		case reflect.Int:
-			flag.IntVar(ptr.Interface().(*int), name, defaultValue.(int), usage)
+			fs.IntVar(ptr.Interface().(*int), name, defaultValue.(int), usage)
 		case reflect.Int64:
-			flag.Int64Var(ptr.Interface().(*int64), name, defaultValue.(int64), usage)
+			fs.Int64Var(ptr.Interface().(*int64), name, defaultValue.(int64), usage)
 		default:
 			return fmt.Errorf("flag don't support this type[%s], this name of field: [%s]", t.Kind().String(), t.Name())
 		}
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		switch t.Kind() {
 		case reflect.Uint:
-			flag.UintVar(ptr.Interface().(*uint), name, defaultValue.(uint), usage)
+			fs.UintVar(ptr.Interface().(*uint), name, defaultValue.(uint), usage)
 		case reflect.Uint64:
-			flag.Uint64Var(ptr.Interface().(*uint64), name, defaultValue.(uint64), usage)
+			fs.Uint64Var(ptr.Interface().(*uint64), name, defaultValue.(uint64), usage)
 		default:
 			return fmt.Errorf("flag don't support this type[%s], skip it. FieldName: [%s]", t.Kind().String(), t.Name())
 		}
 	case reflect.Float32, reflect.Float64:
 		switch t.Kind() {
 		case reflect.Float64:
-			flag.Float64Var(ptr.Interface().(*float64), name, defaultValue.(float64), usage)
+			fs.Float64Var(ptr.Interface().(*float64), name, defaultValue.(float64), usage)
 		default:
 			return fmt.Errorf("flag don't support this type[%s], skip it. FieldName: [%s]", t.Kind().String(), t.Name())
 		}

@@ -11,6 +11,9 @@ import (
 func loadEnv(m map[string]*Value, ignoreErr bool, prefix string) error {
 	for k, v := range m {
 		envKey := prefix + k
+		if prefix != "" {
+			envKey = prefix + strings.ToUpper(strings.ReplaceAll(k, delimiter, "_"))
+		}
 		if v.nameInEnv != "" {
 			envKey = v.nameInEnv
 		}
@@ -27,6 +30,7 @@ func loadEnv(m map[string]*Value, ignoreErr bool, prefix string) error {
 			}
 			if value != nil {
 				v.value = value
+				v.kind = originEnv
 			}
 		}
 	}
@@ -34,14 +38,14 @@ func loadEnv(m map[string]*Value, ignoreErr bool, prefix string) error {
 	return nil
 }
 
-func parseFieldTagWithEnv(field reflect.StructField, v reflect.Value, mValue *Value) error {
+func parseFieldTagWithEnv(field reflect.StructField, v reflect.Value, mValue *Value, key, prefix string) error {
 	tag := field.Tag
 	// Parse the tag of the field
 	ok, tagValues := GetTagValues(tag, "env")
+	name, defaultStr := "", ""
 	if ok {
-		name, defaultStr := "", ""
 		for _, value := range tagValues {
-			sList := strings.Split(value, "=")
+			sList := strings.SplitN(value, "=", 2)
 			if len(sList) != 2 {
 				return fmt.Errorf("invalid value: %s, need format with 'key=value'", value)
 			}
@@ -52,27 +56,36 @@ func parseFieldTagWithEnv(field reflect.StructField, v reflect.Value, mValue *Va
 				defaultStr = sList[1]
 			}
 		}
-		if strValue := os.Getenv(name); strValue != "" {
-			val, err := str2Any(strValue, field.Type)
-			if err != nil {
-				return err
-			}
-			if val != nil {
-				mValue.value = val
-				v.Set(reflect.ValueOf(val))
-			}
-		} else if reflect.ValueOf(mValue.value).IsZero() && defaultStr != "" {
-			val, err := str2Any(defaultStr, field.Type)
-			if err != nil {
-				return err
-			}
-			if val != nil {
-				mValue.value = val
-				v.Set(reflect.ValueOf(val))
-			}
+	}
+	if name == "" && prefix != "" {
+		name = prefix + strings.ToUpper(strings.ReplaceAll(key, delimiter, "_"))
+	}
+	if name == "" {
+		return nil
+	}
+	var val interface{}
+	var err error
+	if strValue := os.Getenv(name); strValue != "" {
+		val, err = str2Any(strValue, field.Type)
+		if err != nil {
+			return err
 		}
-		mValue.nameInEnv = name
+	} else if ok && reflect.ValueOf(mValue.value).IsZero() && defaultStr != "" {
+		val, err = str2Any(defaultStr, field.Type)
+		if err != nil {
+			return err
+		}
+	}
+	if val != nil {
+		mValue.value = val
+		rv := reflect.ValueOf(val)
+		if rv.Type().AssignableTo(v.Type()) {
+			v.Set(rv)
+		} else if rv.Type().ConvertibleTo(v.Type()) {
+			v.Set(rv.Convert(v.Type()))
+		}
 		mValue.kind = originEnv
 	}
+	mValue.nameInEnv = name
 	return nil
 }
