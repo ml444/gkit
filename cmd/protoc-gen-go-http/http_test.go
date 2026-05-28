@@ -5,9 +5,11 @@ import (
 	"testing"
 )
 
+var testPathCfg = newPluginConfig(true, "", "", "full", "off")
+
 func TestNoParameters(t *testing.T) {
 	path := "/test/noparams"
-	m := buildPathVars(path)
+	m := buildPathVars(path, testPathCfg)
 	if !reflect.DeepEqual(m, map[string]*string{}) {
 		t.Fatalf("Map should be empty")
 	}
@@ -15,7 +17,7 @@ func TestNoParameters(t *testing.T) {
 
 func TestSingleParam(t *testing.T) {
 	path := "/test/{message.id}"
-	m := buildPathVars(path)
+	m := buildPathVars(path, testPathCfg)
 	if !reflect.DeepEqual(len(m), 1) {
 		t.Fatalf("len(m) not is 1")
 	}
@@ -26,7 +28,7 @@ func TestSingleParam(t *testing.T) {
 
 func TestTwoParametersReplacement(t *testing.T) {
 	path := "/test/{message.id}/{message.name=messages/*}"
-	m := buildPathVars(path)
+	m := buildPathVars(path, testPathCfg)
 	if len(m) != 2 {
 		t.Fatal("len(m) should be 2")
 	}
@@ -62,7 +64,7 @@ func TestReplacePath(t *testing.T) {
 
 func TestIteration(t *testing.T) {
 	path := "/test/{message.id}/{message.name=messages/*}"
-	vars := buildPathVars(path)
+	vars := buildPathVars(path, testPathCfg)
 	for v, s := range vars {
 		if s != nil {
 			path = replacePath(v, *s, path)
@@ -75,7 +77,7 @@ func TestIteration(t *testing.T) {
 
 func TestIterationMiddle(t *testing.T) {
 	path := "/test/{message.name=messages/*}/books"
-	vars := buildPathVars(path)
+	vars := buildPathVars(path, testPathCfg)
 	for v, s := range vars {
 		if s != nil {
 			path = replacePath(v, *s, path)
@@ -88,7 +90,7 @@ func TestIterationMiddle(t *testing.T) {
 
 func TestReplaceBoundary(t *testing.T) {
 	path := "/test/{message.namespace=*}/name/{message.name=*}"
-	vars := buildPathVars(path)
+	vars := buildPathVars(path, testPathCfg)
 	for v, s := range vars {
 		if s != nil {
 			path = replacePath(v, *s, path)

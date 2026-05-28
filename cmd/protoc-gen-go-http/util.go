@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"reflect"
 	"regexp"
 	"strings"
+
+	"github.com/ml444/gkit/cmd/protoc-gen-go-http/pluck"
 )
 
 func pluckFields(v interface{}) map[string]string {
@@ -28,7 +29,7 @@ func pluckFields(v interface{}) map[string]string {
 			if !field.IsValid() || !field.CanInterface() {
 				continue
 			}
-			key := dashCase(_v.Type().Field(i).Name)
+			key := pluck.ProtoFieldNameToKey(_v.Type().Field(i).Name)
 			if field.Kind() == reflect.Slice && field.Type().Elem().Kind() == reflect.String {
 				if field.Len() == 0 {
 					continue
@@ -48,21 +49,10 @@ func pluckFields(v interface{}) map[string]string {
 	return m
 }
 
-func dashCase(s string) string {
-	b := strings.Builder{}
-	for i := 0; i < len(s); i++ {
-		v := s[i]
-		if i != 0 && v >= 'A' && v <= 'Z' {
-			b.WriteByte('-')
-		}
-		b.WriteByte(v)
-	}
-	return b.String()
-}
 
-func buildPathVars(path string) (res map[string]*string) {
+func buildPathVars(path string, cfg pluginConfig) (res map[string]*string) {
 	if strings.HasSuffix(path, "/") {
-		fmt.Fprintf(os.Stderr, "\u001B[31mWARN\u001B[m: Path %s should not end with \"/\" \n", path)
+		_ = cfg.warn("path %s should not end with \"/\"", path)
 	}
 	pattern := regexp.MustCompile(`(?i){([a-z.0-9_\s]*)=?([^{}]*)}`)
 	matches := pattern.FindAllStringSubmatch(path, -1)

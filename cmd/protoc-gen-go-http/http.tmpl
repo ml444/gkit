@@ -15,21 +15,28 @@ type {{.ServiceType}}HTTPServer interface {
 }
 
 func Register{{.ServiceType}}HTTPServer(s *httpx.Server, srv {{.ServiceType}}HTTPServer) {
+	Register{{.ServiceType}}HTTPServerWithPrefix(s, "", srv)
+}
+
+func Register{{.ServiceType}}HTTPServerWithPrefix(s *httpx.Server, prefix string, srv {{.ServiceType}}HTTPServer) {
 	r := s.GetRouter()
 	{{- range .Methods}}
-	r.{{.Method}}("{{.Path}}", {{$svrType}}_{{.Name}}{{.Num}}_HTTP_Handler(srv, s.Middlewares()...))
+	r.{{.Method}}(httpx.JoinPath(prefix, "{{.Path}}"), {{$svrType}}_{{.Name}}{{.Num}}_HTTP_Handler(srv, s.Middlewares()...))
 	{{- end}}
 }
 
 {{range .Methods}}
+{{- if .HasRawResponse }}
+// +gkit:http_raw
+{{- end }}
 func {{$svrType}}_{{.Name}}{{.Num}}_HTTP_Handler(srv {{$svrType}}HTTPServer, mws ...middleware.Middleware) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var in {{.Input}}
-        ctx := httpx.NewCtx(w, r)
+		ctx := httpx.NewCtx(w, r)
 		{{- if and .HasBody (eq .ReqBodyToField "") }}
 		if err := ctx.Bind(&in{{.Body}}); err != nil {
 			ctx.ReturnError(err)
-			return 
+			return
 		}
 		{{- end}}
 		if err := ctx.BindQuery(&in); err != nil {
@@ -42,98 +49,78 @@ func {{$svrType}}_{{.Name}}{{.Num}}_HTTP_Handler(srv {{$svrType}}HTTPServer, mws
 			return
 		}
 		{{- end}}
-        httpx.SetOperation(ctx,Operation{{$svrType}}{{.OriginalName}})
+		httpx.SetOperation(ctx, Operation{{$svrType}}{{.OriginalName}})
+		{{- if .ReqHeadersToField }}
+		if err := pluck.ExtractHeader(r.Header, &in.{{ .ReqHeadersToField }}); err != nil {
+			ctx.ReturnError(err)
+			return
+		}
+		{{- end }}
+		{{- if .ReqBodyToField }}
+		data, err := pluck.CopyBodyFromRequest(r)
+		if err != nil {
+			ctx.ReturnError(err)
+			return
+		}
+		in.{{ .ReqBodyToField }} = data
+		{{- end }}
 		handler := middleware.Chain(mws...)(func(ctx context.Context, req interface{}) (interface{}, error) {
-            return srv.{{.Name}}(ctx, req.(*{{ .Input }}))
-        })
-        {{ if not .HasPluck }}
-            {{- if .ResponseBody }}
-        out, err := handler(ctx, &in)
+			return srv.{{.Name}}(ctx, req.(*{{ .Input }}))
+		})
+		out, err := handler(ctx, &in)
 		if err != nil {
 			ctx.ReturnError(err)
 			return
 		}
-		ctx.Returns(out.(*{{ .Output }}){{.ResponseBody}}, err)
-            {{- else}}
-		ctx.Returns(handler(ctx, &in))
-            {{- end}}
-        {{- else }}
-{{/*        if disPluck := r.Header.Get(pluck.DisablePluckHeader); disPluck != "" {*/}}
-{{/*            {{- if or (ne .HasBody true) (ne .ReqBodyToField "") }}*/}}
-{{/*            if err := ctx.Bind(&in{{.Body}}); err != nil {*/}}
-{{/*	            ctx.ReturnError(err)*/}}
-{{/*	            return*/}}
-{{/*            }*/}}
-{{/*            {{- end}}*/}}
-{{/*		    if err := ctx.Returns(handler(ctx, &in)); err != nil {*/}}
-{{/*		    	ctx.ReturnError(err)*/}}
-{{/*		    }*/}}
-{{/*            return*/}}
-{{/*        }*/}}
-
-            {{- if .ReqHeadersToField }}
-        pluck.ExtractHeader(r.Header, &in.{{ .ReqHeadersToField }})
-            {{- end }}
-            {{- if .ReqBodyToField }}
-        data, err := pluck.CopyBodyFromRequest(r)
-		if err != nil {
+		{{- if .HasRawResponse }}
+		response.MarkHttpRaw(w)
+		rsp := out.(*{{ .Output }})
+		{{- if .RspHeaders }}
+		{{- range $k, $v := .RspHeaders }}
+		ctx.Response().Header().Set("{{$k}}", "{{$v}}")
+		{{- end}}
+		{{- end }}
+		{{- if .RspHeadersField }}
+		if err := pluck.SetResponseHeaders(ctx.Response(), rsp.{{ .RspHeadersField }}); err != nil {
 			ctx.ReturnError(err)
 			return
 		}
-        in.{{ .ReqBodyToField }} = data
-            {{- end }}
-
-            {{- if and (eq .FieldToRspHeaders "") (eq .FieldToRspBody "") }}
-		ctx.Returns(handler(ctx, &in))
-            {{- else }}
-        out, err := handler(ctx, &in)
-		if err != nil {
+		{{- end }}
+		contentType := "{{.DefaultContentType}}"
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		if err := ctx.Blob(http.StatusOK, contentType, rsp{{.ResponseBody}}); err != nil {
 			ctx.ReturnError(err)
 			return
 		}
-                {{- if .RspHeaders }}
-                {{- range $k, $v := .RspHeaders }}
-        w.Header().Set("{{$k}}", "{{$v}}")
-                {{- end}}
-                {{- end }}
-                {{- if .FieldToRspHeaders }}
-        err = pluck.SetResponseHeaders(w, out.(*{{ .Output }}).{{ .FieldToRspHeaders }})
-		if err != nil {
-			ctx.ReturnError(err)
-			return
-		}
-		out.(*{{ .Output }}).{{ .FieldToRspHeaders }} = nil
-                {{- end }}
-                {{- if or .FieldToRspBody }}
-		w.Write(out.(*{{ .Output }}).{{ .FieldToRspBody }})
-                {{- else if or .ResponseBody }}
-		w.Write(out.(*{{ .Output }}){{ .ResponseBody }})
-                {{- else }}
-		ctx.Returns(out, err)
-                {{- end }}
-            {{- end }}
-        {{- end }}
-        return
+		{{- else if .ResponseBody }}
+		ctx.Returns(out.(*{{ .Output }}){{.ResponseBody}}, nil)
+		{{- else }}
+		ctx.Returns(out, nil)
+		{{- end }}
 	}
 }
 {{end}}
 
+{{- if .GenerateClient }}
+
 type {{.ServiceType}}HTTPClient interface {
-{{- range .MethodSets}}
-	{{.Name}}(ctx context.Context, req *{{.Input}}, opts ...httpx.CallOption) (rsp *{{.Output}}, err error)
+{{- range .Methods}}
+	{{.ClientName}}(ctx context.Context, req *{{.Input}}, opts ...httpx.CallOption) (rsp *{{.Output}}, err error)
 {{- end}}
 }
 
-type {{.ServiceType}}HTTPClientImpl struct{
+type {{.ServiceType}}HTTPClientImpl struct {
 	cc *httpx.Client
 }
 
-func New{{.ServiceType}}HTTPClient (client *httpx.Client) {{.ServiceType}}HTTPClient {
+func New{{.ServiceType}}HTTPClient(client *httpx.Client) {{.ServiceType}}HTTPClient {
 	return &{{.ServiceType}}HTTPClientImpl{client}
 }
 
-{{range .MethodSets}}
-func (c *{{$svrType}}HTTPClientImpl) {{.Name}}(ctx context.Context, in *{{.Input}}, opts ...httpx.CallOption) (*{{.Output}}, error) {
+{{range .Methods}}
+func (c *{{$svrType}}HTTPClientImpl) {{.ClientName}}(ctx context.Context, in *{{.Input}}, opts ...httpx.CallOption) (*{{.Output}}, error) {
 	var err error
 	var out {{.Output}}
 	pattern := "{{.Path}}"
@@ -146,27 +133,25 @@ func (c *{{$svrType}}HTTPClientImpl) {{.Name}}(ctx context.Context, in *{{.Input
 		return nil, err
 	}
 	opts = append(opts, httpx.RequestHeader(headers))
-{{/*	opts = append(opts, httpx.RequestHeader(http.Header{*/}}
-{{/*        // pluck.DisablePluckHeader: []string{Operation{{$svrType}}{{.OriginalName}}},*/}}
-{{/*    }))*/}}
 {{- end }}
 {{- if .ReqHeaders }}
 	{{- range $k, $v := .ReqHeaders }}
 	opts = append(opts, httpx.AddRequestHeader("{{$k}}", "{{$v}}"))
 	{{- end}}
 {{- end }}
-{{- if .FieldToRspHeaders }}
+{{- if .RspHeadersField }}
 	opts = append(opts, httpx.OnResponse(func(rsp *http.Response) error {
-		return pluck.ExtractHeader(rsp.Header, out.{{.FieldToRspHeaders}})
+		return pluck.ExtractHeader(rsp.Header, out.{{.RspHeadersField}})
 	}))
 {{- end }}
-
-{{- if .ReqBodyToField }}
-	err = c.cc.Invoke(ctx, "{{.Method}}", path, in.{{.ReqBodyToField}}, &out{{.ResponseBody}}, opts...)
+{{- if .HasRawResponse }}
+	err = c.cc.Invoke(ctx, "{{.Method}}", path, {{if .ReqBodyToField}}in.{{.ReqBodyToField}}{{else if .HasBody}}in{{.Body}}{{else}}nil{{end}}, &out{{.ResponseBody}}, opts...)
+{{- else if .ReqBodyToField }}
+	err = c.cc.Invoke(ctx, "{{.Method}}", path, in.{{.ReqBodyToField}}, &out, opts...)
 {{- else if .HasBody }}
-	err = c.cc.Invoke(ctx, "{{.Method}}", path, in{{.Body}}, &out{{.ResponseBody}}, opts...)
+	err = c.cc.Invoke(ctx, "{{.Method}}", path, in{{.Body}}, &out, opts...)
 {{- else }}
-	err = c.cc.Invoke(ctx, "{{.Method}}", path, nil, &out{{.ResponseBody}}, opts...)
+	err = c.cc.Invoke(ctx, "{{.Method}}", path, nil, &out, opts...)
 {{- end }}
 	if err != nil {
 		return nil, err
@@ -174,3 +159,4 @@ func (c *{{$svrType}}HTTPClientImpl) {{.Name}}(ctx context.Context, in *{{.Input
 	return &out, err
 }
 {{end}}
+{{- end }}

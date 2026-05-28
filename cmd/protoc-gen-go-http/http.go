@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -14,24 +13,13 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
-const release = "v1.1.0"
-const deprecationComment = "// Deprecated: Do not use."
-
 const (
-	httpPackage       = protogen.GoImportPath("net/http")
-	contextPackage    = protogen.GoImportPath("context")
-	pluckPackage      = protogen.GoImportPath("github.com/ml444/gkit/cmd/protoc-gen-go-http/pluck")
-	middlewarePackage = protogen.GoImportPath("github.com/ml444/gkit/middleware")
-	// transportPackage  = protogen.GoImportPath("github.com/ml444/gkit/transport")
-	httpxPackage = protogen.GoImportPath("github.com/ml444/gkit/transport/httpx")
+	httpPackage    = protogen.GoImportPath("net/http")
+	contextPackage = protogen.GoImportPath("context")
 )
 
-var methodSets = make(map[string]int)
-
-// var hasPluck bool
-
-func generateFile(gen *protogen.Plugin, file *protogen.File, omitempty bool, omitemptyPrefix string) *protogen.GeneratedFile {
-	if len(file.Services) == 0 || (omitempty && !hasHTTPRule(file.Services)) {
+func generateFile(gen *protogen.Plugin, file *protogen.File, cfg pluginConfig) error {
+	if len(file.Services) == 0 || (cfg.omitempty && !hasHTTPRule(file.Services)) {
 		return nil
 	}
 	filename := file.GeneratedFilenamePrefix + "_http.pb.go"
@@ -48,55 +36,82 @@ func generateFile(gen *protogen.Plugin, file *protogen.File, omitempty bool, omi
 	g.P()
 	g.P("package ", file.GoPackageName)
 	g.P()
-	generateFileContent(gen, file, g, omitempty, omitemptyPrefix)
-	return g
+	return generateFileContent(gen, file, g, cfg)
 }
 
-func generateFileContent(gen *protogen.Plugin, file *protogen.File, g *protogen.GeneratedFile, omitempty bool, omitemptyPrefix string) {
+func generateFileContent(gen *protogen.Plugin, file *protogen.File, g *protogen.GeneratedFile, cfg pluginConfig) error {
 	if len(file.Services) == 0 {
-		return
+		return nil
 	}
 	g.P("var _ = new(", httpPackage.Ident("Request"), ")")
 	g.P("var _ = new(", contextPackage.Ident("Context"), ")")
-	g.P("var _ = make([]", middlewarePackage.Ident("Middleware"), ", 0)")
-	g.P("var _ = new(", httpxPackage.Ident("Server"), ")")
-	g.P("var _ = ", pluckPackage.Ident("DisablePluckHeader"))
+	g.P("var _ = make([]", cfg.middlewarePackage().Ident("Middleware"), ", 0)")
+	g.P("var _ = new(", cfg.httpxPackage().Ident("Server"), ")")
+	g.P("var _ = ", cfg.pluckPackage().Ident("DisablePluckHeader"))
 	g.P()
 
 	for _, service := range file.Services {
-		genService(gen, file, g, service, omitempty, omitemptyPrefix)
+		if err := genService(gen, file, g, service, cfg); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func genService(_ *protogen.Plugin, file *protogen.File, g *protogen.GeneratedFile, service *protogen.Service, omitempty bool, omitemptyPrefix string) {
+func genService(gen *protogen.Plugin, file *protogen.File, g *protogen.GeneratedFile, service *protogen.Service, cfg pluginConfig) error {
 	if service.Desc.Options().(*descriptorpb.ServiceOptions).GetDeprecated() {
 		g.P("//")
 		g.P(deprecationComment)
 	}
-	// HTTP Server.
 	sd := &serviceCtx{
-		ServiceType: service.GoName,
-		ServiceName: string(service.Desc.FullName()),
-		Metadata:    file.Desc.Path(),
+		ServiceType:    service.GoName,
+		ServiceName:    string(service.Desc.FullName()),
+		Metadata:       file.Desc.Path(),
+		GenerateClient: cfg.generateClient(),
+		Cfg:            cfg,
 	}
+	methodSets := make(map[string]int)
 	for _, method := range service.Methods {
 		if method.Desc.IsStreamingClient() || method.Desc.IsStreamingServer() {
+			rule, ok := proto.GetExtension(method.Desc.Options(), annotations.E_Http).(*annotations.HttpRule)
+			if rule != nil && ok {
+				return fmt.Errorf("%s: streaming RPC %q cannot have google.api.http annotation", method.Desc.FullName(), method.GoName)
+			}
 			continue
 		}
 		rule, ok := proto.GetExtension(method.Desc.Options(), annotations.E_Http).(*annotations.HttpRule)
 		if rule != nil && ok {
 			for _, bind := range rule.AdditionalBindings {
-				sd.Methods = append(sd.Methods, buildHTTPRule(g, service, method, bind, omitemptyPrefix))
+				md, err := buildHTTPRule(g, service, method, bind, cfg, methodSets)
+				if err != nil {
+					return err
+				}
+				sd.Methods = append(sd.Methods, md)
 			}
-			sd.Methods = append(sd.Methods, buildHTTPRule(g, service, method, rule, omitemptyPrefix))
-		} else if !omitempty {
-			path := fmt.Sprintf("%s/%s/%s", omitemptyPrefix, service.Desc.FullName(), method.Desc.Name())
-			sd.Methods = append(sd.Methods, buildMethodDesc(g, method, http.MethodPost, path))
+			md, err := buildHTTPRule(g, service, method, rule, cfg, methodSets)
+			if err != nil {
+				return err
+			}
+			sd.Methods = append(sd.Methods, md)
+		} else if !cfg.omitempty {
+			path := fmt.Sprintf("%s/%s/%s", cfg.omitemptyPrefix, service.Desc.FullName(), method.Desc.Name())
+			md, err := buildMethodDesc(g, method, http.MethodPost, path, cfg, methodSets)
+			if err != nil {
+				return err
+			}
+			if err := md.ParsePluck(method); err != nil {
+				return err
+			}
+			sd.Methods = append(sd.Methods, md)
 		}
 	}
 	if len(sd.Methods) != 0 {
+		if sd.hasRawHandlers() {
+			g.P("var _ = ", cfg.responsePackage().Ident("MarkHttpRaw"))
+		}
 		g.P(sd.execute())
 	}
+	return nil
 }
 
 func hasHTTPRule(services []*protogen.Service) bool {
@@ -114,7 +129,7 @@ func hasHTTPRule(services []*protogen.Service) bool {
 	return false
 }
 
-func buildHTTPRule(g *protogen.GeneratedFile, service *protogen.Service, m *protogen.Method, rule *annotations.HttpRule, omitemptyPrefix string) *methodCtx {
+func buildHTTPRule(g *protogen.GeneratedFile, service *protogen.Service, m *protogen.Method, rule *annotations.HttpRule, cfg pluginConfig, methodSets map[string]int) (*methodCtx, error) {
 	var (
 		path         string
 		method       string
@@ -146,18 +161,23 @@ func buildHTTPRule(g *protogen.GeneratedFile, service *protogen.Service, m *prot
 		method = http.MethodPost
 	}
 	if path == "" {
-		path = fmt.Sprintf("%s/%s/%s", omitemptyPrefix, service.Desc.FullName(), m.Desc.Name())
+		path = fmt.Sprintf("%s/%s/%s", cfg.omitemptyPrefix, service.Desc.FullName(), m.Desc.Name())
 	}
 	body = rule.Body
 	responseBody = rule.ResponseBody
-	md := buildMethodDesc(g, m, method, path)
+	md, err := buildMethodDesc(g, m, method, path, cfg, methodSets)
+	if err != nil {
+		return nil, err
+	}
 	if method == http.MethodGet || method == http.MethodDelete {
 		if body != "" {
-			_, _ = fmt.Fprintf(os.Stderr, "\u001B[31mWARN\u001B[m: %s %s body should not be declared.\n", method, path)
+			if err := cfg.warn("%s %s body should not be declared", method, path); err != nil {
+				return nil, err
+			}
 		}
-	} else {
-		if body == "" {
-			_, _ = fmt.Fprintf(os.Stderr, "\u001B[31mWARN\u001B[m: %s %s does not declare a body.\n", method, path)
+	} else if body == "" {
+		if err := cfg.warn("%s %s does not declare a body", method, path); err != nil {
+			return nil, err
 		}
 	}
 	if body == "*" {
@@ -168,29 +188,27 @@ func buildHTTPRule(g *protogen.GeneratedFile, service *protogen.Service, m *prot
 		bodyField := camelCaseVars(body)
 		md.Body = "." + bodyField
 		md.BodyFieldIsBytes(m.Input, body)
-		// md.ReqBodyToField = bodyField
 	} else {
 		md.HasBody = false
 	}
 	if responseBody == "*" {
 		md.ResponseBody = ""
 	} else if responseBody != "" {
-		rspBodyField := camelCaseVars(responseBody)
-		md.ResponseBody = "." + rspBodyField
-		// md.FieldToRspBody = rspBodyField
+		md.setResponseBodyField(camelCaseVars(responseBody))
 	}
-	md.ParsePluck(m)
-	return md
+	if err := md.ParsePluck(m); err != nil {
+		return nil, err
+	}
+	return md, nil
 }
 
-func buildMethodDesc(g *protogen.GeneratedFile, m *protogen.Method, method, path string) *methodCtx {
-	defer func() { methodSets[m.GoName]++ }()
+func buildMethodDesc(g *protogen.GeneratedFile, m *protogen.Method, method, path string, cfg pluginConfig, methodSets map[string]int) (*methodCtx, error) {
+	num := methodSets[m.GoName]
+	methodSets[m.GoName]++
 
-	vars := buildPathVars(path)
-
+	vars := buildPathVars(path, cfg)
 	for v, s := range vars {
 		fields := m.Input.Desc.Fields()
-
 		if s != nil {
 			path = replacePath(v, *s, path)
 		}
@@ -203,13 +221,16 @@ func buildMethodDesc(g *protogen.GeneratedFile, m *protogen.Method, method, path
 			}
 			fd := fields.ByName(protoreflect.Name(field))
 			if fd == nil {
-				fmt.Fprintf(os.Stderr, "\u001B[31mERROR\u001B[m: The corresponding field '%s' declaration in message could not be found in '%s'\n", v, path)
-				os.Exit(2)
+				return nil, fmt.Errorf("%s: path variable %q not found in request message", m.Desc.FullName(), v)
 			}
 			if fd.IsMap() {
-				fmt.Fprintf(os.Stderr, "\u001B[31mWARN\u001B[m: The field in path:'%s' shouldn't be a map.\n", v)
+				if err := cfg.warn("%s: path variable %q should not be a map", m.Desc.FullName(), v); err != nil {
+					return nil, err
+				}
 			} else if fd.IsList() {
-				fmt.Fprintf(os.Stderr, "\u001B[31mWARN\u001B[m: The field in path:'%s' shouldn't be a list.\n", v)
+				if err := cfg.warn("%s: path variable %q should not be a list", m.Desc.FullName(), v); err != nil {
+					return nil, err
+				}
 			} else if fd.Kind() == protoreflect.MessageKind || fd.Kind() == protoreflect.GroupKind {
 				fields = fd.Message().Fields()
 			}
@@ -222,14 +243,14 @@ func buildMethodDesc(g *protogen.GeneratedFile, m *protogen.Method, method, path
 	return &methodCtx{
 		Name:         m.GoName,
 		OriginalName: string(m.Desc.Name()),
-		Num:          methodSets[m.GoName],
+		Num:          num,
 		Input:        g.QualifiedGoIdent(m.Input.GoIdent),
 		Output:       g.QualifiedGoIdent(m.Output.GoIdent),
 		Comment:      comment,
 		Path:         path,
 		Method:       method,
 		HasVars:      len(vars) > 0,
-	}
+	}, nil
 }
 
 func protocVersion(gen *protogen.Plugin) string {

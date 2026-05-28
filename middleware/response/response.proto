@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package response;
+
+option go_package = "./response";
+
+import "google/protobuf/any.proto";
+
+message ApiCommonResponse {
+    int32 code = 1;
+    string message = 2;
+    google.protobuf.Any data = 3;
+}
