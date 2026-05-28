@@ -2,6 +2,8 @@ package grpcx
 
 import (
 	"crypto/tls"
+	"net"
+	"time"
 
 	"github.com/ml444/gkit/middleware"
 	"google.golang.org/grpc"
@@ -38,13 +40,14 @@ func Name(name string) ServerOption {
 	}
 }
 
+// EnableXDS uses an xDS control-plane-backed gRPC server (requires GRPC_XDS_BOOTSTRAP).
 func EnableXDS() ServerOption {
 	return func(s *Server) {
 		s.enableXDS = true
 	}
 }
 
-// EnableHealth Checks server.
+// EnableHealth registers the gRPC health service.
 func EnableHealth() ServerOption {
 	return func(s *Server) {
 		s.enableHealth = true
@@ -65,10 +68,23 @@ func TLSConfig(c *tls.Config) ServerOption {
 	}
 }
 
+// Timeout sets a deadline on unary RPC handlers (0 disables).
+func Timeout(timeout time.Duration) ServerOption {
+	return func(s *Server) {
+		s.timeout = timeout
+	}
+}
+
+// Middlewares appends service middleware (unary RPC only).
 func Middlewares(middlewares ...middleware.Middleware) ServerOption {
 	return func(s *Server) {
 		s.middlewares = append(s.middlewares, middlewares...)
 	}
+}
+
+// SetMiddlewares is an alias for Middlewares.
+func SetMiddlewares(middlewares ...middleware.Middleware) ServerOption {
+	return Middlewares(middlewares...)
 }
 
 // UnaryInterceptor returns a ServerOption that sets the UnaryServerInterceptor for the server.
@@ -85,16 +101,30 @@ func StreamInterceptor(in ...grpc.StreamServerInterceptor) ServerOption {
 	}
 }
 
-// Options with grpc options.
+// Options appends extra grpc.ServerOption values.
 func Options(opts ...grpc.ServerOption) ServerOption {
 	return func(s *Server) {
-		s.grpcOpts = opts
+		s.grpcOpts = append(s.grpcOpts, opts...)
 	}
 }
 
-// DisableTransportCtx cancel default Transport context handling
+// Listener sets a pre-created listener (also used to derive endpoint).
+func Listener(lis net.Listener) ServerOption {
+	return func(s *Server) {
+		s.listener = lis
+	}
+}
+
+// DisableTransportCtx cancel default Transport context handling.
 func DisableTransportCtx() ServerOption {
 	return func(s *Server) {
 		s.disableTransportCtx = true
+	}
+}
+
+// DisableErrorInterceptor disables the default errorx status interceptor.
+func DisableErrorInterceptor() ServerOption {
+	return func(s *Server) {
+		s.disableErrorInterceptor = true
 	}
 }

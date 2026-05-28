@@ -15,6 +15,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/ml444/gkit/discovery"
 	"github.com/ml444/gkit/middleware"
 	"github.com/ml444/gkit/transport"
 	"github.com/ml444/gkit/transport/httpx/coder/form"
@@ -34,6 +35,8 @@ type Client struct {
 	tlsConf    *tls.Config
 	timeout    time.Duration
 	endpoint   string
+	discovery  *discovery.DiscoveryClient
+	service    string
 	userAgent  string
 	encoder    EncodeRequestFunc
 	decoder    DecodeResponseFunc
@@ -67,6 +70,9 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 		return nil, err
 	}
 	client.target = target
+	if client.service == "" && client.target != nil && client.target.DiscoveryService != "" {
+		client.service = client.target.DiscoveryService
+	}
 	return &client, nil
 }
 
@@ -103,7 +109,7 @@ func (client *Client) Invoke(ctx context.Context, method, path string, args inte
 		endpoint: client.endpoint,
 		path:     c.operation,
 		inMD:     transport.MD(req.Header),
-		//pathTemplate: c.pathTemplate,
+		pathTemplate: c.pathTemplate,
 	})
 	return client.invoke(ctx, req, args, reply, c, opts...)
 }
@@ -112,17 +118,21 @@ func (client *Client) invoke(ctx context.Context, req *http.Request, args interf
 	h := func(ctx context.Context, in interface{}) (interface{}, error) {
 		res, err := client.Do(req.WithContext(ctx))
 		if err != nil {
+			client.updateDiscoveryStatus(req.Context(), false)
 			return nil, err
 		}
 		defer res.Body.Close()
 		if err = client.decoder(ctx, res, reply); err != nil {
+			client.updateDiscoveryStatus(req.Context(), false)
 			return nil, err
 		}
 		if c.onResponse != nil {
 			if err = c.onResponse(res); err != nil {
+				client.updateDiscoveryStatus(req.Context(), false)
 				return nil, err
 			}
 		}
+		client.updateDiscoveryStatus(req.Context(), res.StatusCode < 500)
 		return reply, nil
 	}
 	if len(client.middleware) > 0 {
@@ -138,25 +148,54 @@ func (client *Client) Do(req *http.Request) (*http.Response, error) {
 	} else {
 		req.URL.Scheme = "https"
 	}
-	if client.endpoint != "" {
+	if client.discovery != nil {
+		svc := client.service
+		if svc == "" && client.target != nil {
+			svc = client.target.DiscoveryService
+		}
+		if svc == "" {
+			return nil, fmt.Errorf("httpx: discovery enabled but service name is empty")
+		}
+		inst, err := client.discovery.GetServiceInstance(req.Context(), svc)
+		if err != nil {
+			return nil, err
+		}
+		req = req.WithContext(context.WithValue(req.Context(), discoveryInstanceKey{}, inst))
+		req.URL.Host = fmt.Sprintf("%s:%d", inst.GetAddress(), inst.GetPort())
+		req.Host = req.URL.Host
+	} else if client.endpoint != "" {
 		req.URL.Host = client.endpoint
 		req.Host = client.endpoint
 	}
-
-	resp, err := client.cc.Do(req)
-	if err == nil {
-		err = client.decoder(req.Context(), resp, nil)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-	return resp, nil
+	return client.cc.Do(req)
 }
 
 // Close tears down the Transport and all underlying connections.
 func (client *Client) Close() error {
+	if client == nil || client.transport == nil {
+		return nil
+	}
+	if tr, ok := client.transport.(interface{ CloseIdleConnections() }); ok {
+		tr.CloseIdleConnections()
+	}
 	return nil
+}
+
+type discoveryInstanceKey struct{}
+
+func (client *Client) updateDiscoveryStatus(ctx context.Context, success bool) {
+	if client == nil || client.discovery == nil {
+		return
+	}
+	v := ctx.Value(discoveryInstanceKey{})
+	if v == nil {
+		return
+	}
+	inst, ok := v.(discovery.ServiceInstancer)
+	if !ok || inst == nil {
+		return
+	}
+	client.discovery.UpdateLoadBalancerStatus(ctx, inst, success)
 }
 
 // Target is resolver target
@@ -164,6 +203,7 @@ type Target struct {
 	Scheme    string
 	Authority string
 	Endpoint  string
+	DiscoveryService string
 }
 
 func parseTarget(endpoint string, insecure bool) (*Target, error) {
@@ -177,6 +217,21 @@ func parseTarget(endpoint string, insecure bool) (*Target, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return nil, err
+	}
+	if u.Scheme == "discovery" {
+		scheme := "https"
+		if insecure {
+			scheme = "http"
+		}
+		service := ""
+		if len(u.Path) > 1 {
+			service = u.Path[1:]
+		}
+		return &Target{
+			Scheme:           scheme,
+			Authority:        "discovery",
+			DiscoveryService: service,
+		}, nil
 	}
 	target := &Target{Scheme: u.Scheme, Authority: u.Host}
 	if len(u.Path) > 1 {

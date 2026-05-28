@@ -3,6 +3,7 @@ package httpx
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -41,10 +42,18 @@ type IRouterCoder interface {
 	// SetErrorEncoder(ErrorEncoder)
 }
 
-type routerCoder struct{}
+type routerCoder struct {
+	bindVars RequestDecoder
+	bindQuery RequestDecoder
+	bindForm RequestDecoder
+	bindBody RequestDecoder
+	respEnc  ResponseEncoder
+	errEnc   ErrorEncoder
+}
 
-func (c *routerCoder) BindVars() RequestDecoder {
-	return func(r *http.Request, target interface{}) error {
+func newRouterCoder() *routerCoder {
+	c := &routerCoder{}
+	c.bindVars = func(r *http.Request, target interface{}) error {
 		raws := mux.Vars(r)
 		vars := make(url.Values, len(raws))
 		for k, v := range raws {
@@ -55,19 +64,13 @@ func (c *routerCoder) BindVars() RequestDecoder {
 		}
 		return nil
 	}
-}
-
-func (c *routerCoder) BindQuery() RequestDecoder {
-	return func(r *http.Request, v interface{}) error {
+	c.bindQuery = func(r *http.Request, v interface{}) error {
 		if err := coder.GetCoder(form.Name).Unmarshal([]byte(r.URL.Query().Encode()), v); err != nil {
 			return defaultError(err)
 		}
 		return nil
 	}
-}
-
-func (c *routerCoder) BindForm() RequestDecoder {
-	return func(r *http.Request, v interface{}) error {
+	c.bindForm = func(r *http.Request, v interface{}) error {
 		if err := r.ParseForm(); err != nil {
 			return err
 		}
@@ -76,20 +79,18 @@ func (c *routerCoder) BindForm() RequestDecoder {
 		}
 		return nil
 	}
-}
-
-func (c *routerCoder) BindBody() RequestDecoder {
-	return func(r *http.Request, v interface{}) error {
+	c.bindBody = func(r *http.Request, v interface{}) error {
 		codec, _ := getCoderForRequest(r, "Content-Type")
-		//if !ok {
-		//	return errorx.BadRequest(fmt.Sprintf("unregister Content-Type: %s", r.Header.Get("Content-Type")))
-		//}
 		data, err := io.ReadAll(r.Body)
 
 		// reset body.
 		r.Body = io.NopCloser(bytes.NewBuffer(data))
 
 		if err != nil {
+			var mbe *http.MaxBytesError
+			if errors.As(err, &mbe) {
+				return errorx.CreateError(http.StatusRequestEntityTooLarge, errorx.ErrCodeInvalidReqSys, err.Error())
+			}
 			return errorx.BadRequest(err.Error())
 		}
 		if len(data) == 0 {
@@ -100,11 +101,9 @@ func (c *routerCoder) BindBody() RequestDecoder {
 		}
 		return nil
 	}
-}
-
-func (c *routerCoder) ResponseEncoder() ResponseEncoder {
-	return func(status int, w http.ResponseWriter, r *http.Request, v interface{}) error {
+	c.respEnc = func(status int, w http.ResponseWriter, r *http.Request, v interface{}) error {
 		if v == nil {
+			w.WriteHeader(status)
 			return nil
 		}
 		if rd, ok := v.(IRedirect); ok {
@@ -125,10 +124,7 @@ func (c *routerCoder) ResponseEncoder() ResponseEncoder {
 		}
 		return nil
 	}
-}
-
-func (c *routerCoder) ErrorEncoder() ErrorEncoder {
-	return func(w http.ResponseWriter, r *http.Request, err error) {
+	c.errEnc = func(w http.ResponseWriter, r *http.Request, err error) {
 		ex := errorx.FromError(err)
 		ex.ConvertMsgByLang(getAcceptLanguage(r)...)
 		codec, _ := getCoderForRequest(r, "Accept")
@@ -141,6 +137,31 @@ func (c *routerCoder) ErrorEncoder() ErrorEncoder {
 		w.WriteHeader(int(ex.Status))
 		_, _ = w.Write(body)
 	}
+	return c
+}
+
+func (c *routerCoder) BindVars() RequestDecoder {
+	return c.bindVars
+}
+
+func (c *routerCoder) BindQuery() RequestDecoder {
+	return c.bindQuery
+}
+
+func (c *routerCoder) BindForm() RequestDecoder {
+	return c.bindForm
+}
+
+func (c *routerCoder) BindBody() RequestDecoder {
+	return c.bindBody
+}
+
+func (c *routerCoder) ResponseEncoder() ResponseEncoder {
+	return c.respEnc
+}
+
+func (c *routerCoder) ErrorEncoder() ErrorEncoder {
+	return c.errEnc
 }
 
 func DefaultRequestEncoder(_ context.Context, contentType string, in interface{}) ([]byte, error) {
@@ -157,7 +178,6 @@ func DefaultResponseDecoder(_ context.Context, rsp *http.Response, v interface{}
 	if rsp.StatusCode < 400 && v == nil {
 		return nil
 	}
-	defer rsp.Body.Close()
 	data, err := io.ReadAll(rsp.Body)
 	if err != nil {
 		return err

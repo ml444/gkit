@@ -65,9 +65,13 @@ func NewRouterCfg() *RouterCfg {
 		StrictSlash:             true,
 		SkipClean:               false,
 		RootPrefix:              "",
-		NotFoundHandler:         http.DefaultServeMux,
-		MethodNotAllowedHandler: http.DefaultServeMux,
-		Coder:                   &routerCoder{},
+		NotFoundHandler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}),
+		MethodNotAllowedHandler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}),
+		Coder:                   newRouterCoder(),
 	}
 }
 
@@ -127,7 +131,7 @@ func newMuxRouter(cfg *RouterCfg) *mux.Router {
 }
 func newRouter(prefix string, cfg *RouterCfg, middlewares ...middleware.HttpMiddleware) *Router {
 	if cfg.Coder == nil {
-		cfg.Coder = &routerCoder{}
+		cfg.Coder = newRouterCoder()
 	}
 	r := &Router{
 		prefix:      prefix,

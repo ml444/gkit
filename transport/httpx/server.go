@@ -28,6 +28,7 @@ type Server struct {
 	network             string
 	address             string
 	timeout             time.Duration
+	maxRequestBodyBytes int64
 	router              IRouter
 	routerCfg           *RouterCfg
 	httpMiddlewares     []middleware.HttpMiddleware
@@ -37,10 +38,11 @@ type Server struct {
 
 func NewServer(opts ...ServerOption) *Server {
 	srv := &Server{
-		network:   "tcp",
-		address:   ":5050",
-		timeout:   1 * time.Second,
-		routerCfg: NewRouterCfg(),
+		network:             "tcp",
+		address:             ":5050",
+		timeout:             1 * time.Second,
+		maxRequestBodyBytes: 4 << 20,
+		routerCfg:           NewRouterCfg(),
 	}
 	for _, o := range opts {
 		o(srv)
@@ -79,6 +81,7 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 func (s *Server) globalMiddleware() middleware.HttpMiddleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			log.Debugf("[HTTP] [%s]%s", req.Method, req.URL.Path)
 			var (
 				ctx    context.Context
 				cancel context.CancelFunc
@@ -89,6 +92,10 @@ func (s *Server) globalMiddleware() middleware.HttpMiddleware {
 				ctx, cancel = context.WithCancel(req.Context())
 			}
 			defer cancel()
+			ctx = context.WithValue(ctx, routerCoderKey{}, s.routerCfg.Coder)
+			if s.maxRequestBodyBytes > 0 && req.Body != nil {
+				req.Body = http.MaxBytesReader(w, req.Body, s.maxRequestBodyBytes)
+			}
 			if !s.disableTransportCtx {
 				pathTemplate := req.URL.Path
 				if route := mux.CurrentRoute(req); route != nil {
@@ -96,10 +103,11 @@ func (s *Server) globalMiddleware() middleware.HttpMiddleware {
 					pathTemplate, _ = route.GetPathTemplate()
 				}
 				tr := &Transport{
-					path:  pathTemplate,
-					inMD:  transport.MD(req.Header),
-					outMD: transport.MD{},
-					req:   req,
+					path:         pathTemplate,
+					pathTemplate: pathTemplate,
+					inMD:         transport.MD(req.Header),
+					outMD:        transport.MD{},
+					req:          req,
 				}
 				if s.endpoint != nil {
 					tr.endpoint = s.endpoint.String()
@@ -116,6 +124,8 @@ func (s *Server) globalMiddleware() middleware.HttpMiddleware {
 						}
 					}
 				}()
+			} else {
+				req = req.WithContext(ctx)
 			}
 			next.ServeHTTP(w, req)
 		})

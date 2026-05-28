@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/ml444/gkit/discovery"
 	"github.com/ml444/gkit/middleware"
 )
 
@@ -41,6 +42,13 @@ func Timeout(timeout time.Duration) ServerOption {
 	}
 }
 
+// MaxRequestBodySize limits request body size in bytes (0 means unlimited).
+func MaxRequestBodySize(n int64) ServerOption {
+	return func(s *Server) {
+		s.maxRequestBodyBytes = n
+	}
+}
+
 // TLSConfig with TLS config.
 func TLSConfig(c *tls.Config) ServerOption {
 	return func(o *Server) {
@@ -67,6 +75,11 @@ func SetMiddlewares(mws ...middleware.Middleware) ServerOption {
 	return func(s *Server) {
 		s.middlewares = append(s.middlewares, mws...)
 	}
+}
+
+// Middleware is an alias of SetMiddlewares for compatibility with README examples.
+func Middleware(mws ...middleware.Middleware) ServerOption {
+	return SetMiddlewares(mws...)
 }
 
 // SetMiddlewares with http server middlewares.
@@ -162,6 +175,15 @@ func WithMiddlewares(m ...middleware.Middleware) ClientOption {
 func WithEndpoint(endpoint string) ClientOption {
 	return func(o *Client) {
 		o.endpoint = endpoint
+	}
+}
+
+// WithDiscovery enables discovery-based endpoint resolution.
+// The service name can also be provided via endpoint: discovery:///service-name
+func WithDiscovery(dc *discovery.DiscoveryClient, serviceName string) ClientOption {
+	return func(o *Client) {
+		o.discovery = dc
+		o.service = serviceName
 	}
 }
 

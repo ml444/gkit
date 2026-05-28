@@ -3,6 +3,7 @@ package grpcx
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"net"
 	"time"
 
@@ -13,12 +14,13 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	grpcmd "google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
-	"google.golang.org/grpc/xds"
 
 	"github.com/ml444/gkit/internal/netx"
 	"github.com/ml444/gkit/log"
 	"github.com/ml444/gkit/middleware"
+	"github.com/ml444/gkit/middleware/general"
 	"github.com/ml444/gkit/transport"
+	"github.com/ml444/gkit/transport/grpcx/xds"
 )
 
 type iServer interface {
@@ -35,6 +37,7 @@ type Server struct {
 	network             string
 	address             string
 	endpoint            string
+	listener            net.Listener
 	middlewares         []middleware.Middleware
 	grpcOpts            []grpc.ServerOption
 	unaryInterceptors   []grpc.UnaryServerInterceptor
@@ -46,20 +49,24 @@ type Server struct {
 	enableHealth        bool
 	debug               bool
 	disableTransportCtx bool
-	enableXDS           bool
+	disableErrorInterceptor bool
+	enableXDS               bool
 }
 
-func NewServer(opts ...ServerOption) *Server {
+// NewServer creates a gRPC server.
+func NewServer(opts ...ServerOption) (*Server, error) {
 	s := &Server{
 		name:    "gkit",
 		network: "tcp",
 		address: ":5040",
-		health:  health.NewServer(),
 	}
 	s.unaryInterceptors = append(s.unaryInterceptors, s.defaultUnaryInterceptor())
 	s.streamInterceptors = append(s.streamInterceptors, s.defaultStreamInterceptor())
 	for _, o := range opts {
 		o(s)
+	}
+	if !s.disableErrorInterceptor {
+		s.unaryInterceptors = append(s.unaryInterceptors, general.ServerErrorInterceptor)
 	}
 	s.grpcOpts = append(s.grpcOpts,
 		grpc.ChainUnaryInterceptor(s.unaryInterceptors...),
@@ -73,47 +80,89 @@ func NewServer(opts ...ServerOption) *Server {
 		s.grpcOpts = append(s.grpcOpts, grpc.Creds(insecure.NewCredentials()))
 	}
 	if s.enableXDS {
-		var err error
-		s.iServer, err = xds.NewGRPCServer(s.grpcOpts...)
+		gs, err := xds.NewGRPCServer(s.grpcOpts...)
 		if err != nil {
-			panic(err.Error())
+			return nil, err
 		}
+		s.iServer = gs
 	} else {
 		s.iServer = grpc.NewServer(s.grpcOpts...)
 	}
 	if s.enableHealth {
+		s.health = health.NewServer()
 		s.health.SetServingStatus(s.name, healthpb.HealthCheckResponse_SERVING)
 		healthpb.RegisterHealthServer(s.iServer, s.health)
 	}
 	if s.debug {
-		reflection.Register(s.iServer)
+		if gs, ok := s.iServer.(*grpc.Server); ok {
+			reflection.Register(gs)
+		}
 	}
-	return s
+	return s, nil
 }
 
-func (s *Server) Start() error {
-	ln, err := net.Listen(s.network, s.address)
-	if err != nil {
-		log.Errorf("net.Listen(%s, %s) failed: %v", s.network, s.address, err)
-		return err
+// Endpoint returns the listen address in host:port form.
+func (s *Server) Endpoint() (string, error) {
+	if err := s.listenAndEndpoint(); err != nil {
+		return "", err
 	}
-	s.endpoint, _ = netx.ExtractEndpoint(s.address, ln)
-
-	log.Infof("[gRPC] server listening on: %s", ln.Addr().String())
-	s.health.Resume()
-	return s.Serve(ln)
+	return s.endpoint, nil
 }
 
-func (s *Server) Stop() error {
-	s.health.Shutdown()
-	s.GracefulStop()
-	log.Info("[gRPC] server stopping")
+func (s *Server) listenAndEndpoint() error {
+	if s.listener == nil {
+		ln, err := net.Listen(s.network, s.address)
+		if err != nil {
+			return err
+		}
+		s.listener = ln
+	}
+	if s.endpoint == "" {
+		addr, err := netx.ExtractEndpoint(s.address, s.listener)
+		if err != nil {
+			return err
+		}
+		if addr == "" {
+			return errors.New("grpcx: failed to extract endpoint")
+		}
+		s.endpoint = addr
+	}
 	return nil
 }
 
-/*
->>>>>>>>>>>> server interceptor <<<<<<<<<<<<<
-*/
+// Start starts the gRPC server and blocks until it stops.
+func (s *Server) Start() error {
+	if err := s.listenAndEndpoint(); err != nil {
+		log.Errorf("grpcx: listen endpoint failed: %v", err)
+		return err
+	}
+	log.Infof("[gRPC] server listening on: %s", s.listener.Addr().String())
+	if s.enableHealth && s.health != nil {
+		s.health.Resume()
+	}
+	return s.Serve(s.listener)
+}
+
+// Stop gracefully stops the server. If ctx is canceled, forces Stop.
+func (s *Server) Stop(ctx context.Context) error {
+	if s.enableHealth && s.health != nil {
+		s.health.Shutdown()
+	}
+	done := make(chan struct{})
+	go func() {
+		s.GracefulStop()
+		close(done)
+	}()
+	select {
+	case <-done:
+		log.Info("[gRPC] server stopping")
+		return nil
+	case <-ctx.Done():
+		s.iServer.Stop()
+		log.Info("[gRPC] server stopping (forced)")
+		return ctx.Err()
+	}
+}
 
 func (s *Server) defaultUnaryInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
@@ -149,24 +198,43 @@ func (s *Server) defaultUnaryInterceptor() grpc.UnaryServerInterceptor {
 	}
 }
 
-// wrappedStream is rewrite grpc stream's context
 type wrappedStream struct {
 	grpc.ServerStream
-	ctx context.Context
-}
-
-func NewWrappedStream(ctx context.Context, stream grpc.ServerStream) grpc.ServerStream {
-	return &wrappedStream{
-		ServerStream: stream,
-		ctx:          ctx,
-	}
+	ctx        context.Context
+	outMD      grpcmd.MD
+	headerSent bool
 }
 
 func (w *wrappedStream) Context() context.Context {
 	return w.ctx
 }
 
-// defaultStreamInterceptor is a gRPC stream server interceptor
+func (w *wrappedStream) SendMsg(m interface{}) error {
+	if err := w.sendOutboundHeaders(); err != nil {
+		return err
+	}
+	return w.ServerStream.SendMsg(m)
+}
+
+func (w *wrappedStream) SendHeader(md grpcmd.MD) error {
+	if err := grpc.SendHeader(w.Context(), md); err != nil {
+		return err
+	}
+	w.headerSent = true
+	return nil
+}
+
+func (w *wrappedStream) sendOutboundHeaders() error {
+	if w.headerSent || len(w.outMD) == 0 {
+		return nil
+	}
+	if err := w.ServerStream.SetHeader(w.outMD); err != nil {
+		return err
+	}
+	w.headerSent = true
+	return nil
+}
+
 func (s *Server) defaultStreamInterceptor() grpc.StreamServerInterceptor {
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if !s.disableTransportCtx {
@@ -179,12 +247,14 @@ func (s *Server) defaultStreamInterceptor() grpc.StreamServerInterceptor {
 				inMD:      transport.MD(inMD),
 				outMD:     transport.MD(outMD),
 			})
-			ss = NewWrappedStream(ctx, ss)
-			defer func() {
-				if len(outMD) > 0 {
-					_ = grpc.SetHeader(ctx, outMD)
-				}
-			}()
+			ws := &wrappedStream{
+				ServerStream: ss,
+				ctx:          ctx,
+				outMD:        outMD,
+			}
+			err := handler(srv, ws)
+			_ = ws.sendOutboundHeaders()
+			return err
 		}
 		return handler(srv, ss)
 	}

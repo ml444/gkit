@@ -47,10 +47,23 @@ type wrappedCtx struct {
 	rsp    http.ResponseWriter
 }
 
+type routerCoderKey struct{}
+
 func NewCtx(rsp http.ResponseWriter, req *http.Request) Context {
+	var rc IRouterCoder
+	if req != nil {
+		if v := req.Context().Value(routerCoderKey{}); v != nil {
+			if c, ok := v.(IRouterCoder); ok && c != nil {
+				rc = c
+			}
+		}
+	}
+	if rc == nil {
+		rc = newRouterCoder()
+	}
 	return &wrappedCtx{
 		status: http.StatusOK,
-		coder:  &routerCoder{},
+		coder:  rc,
 		req:    req,
 		rsp:    rsp,
 	}
@@ -194,7 +207,7 @@ func (c *wrappedCtx) setResponseHeaders() {
 	if !ok {
 		return
 	}
-	if outHeaders := tr.OutHeader(); len(outHeaders) > 0 {
+	if outHeaders := tr.Out(); len(outHeaders) > 0 {
 		for k, v := range outHeaders {
 			if len(v) == 0 {
 				continue
