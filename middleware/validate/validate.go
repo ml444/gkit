@@ -2,6 +2,7 @@ package validate
 
 import (
 	"context"
+	"errors"
 
 	"github.com/ml444/gkit/errorx"
 	"github.com/ml444/gkit/middleware"
@@ -12,6 +13,10 @@ type IValidator interface {
 }
 
 var invalidParamError = func(err error) error {
+	var ex *errorx.Error
+	if errors.As(err, &ex) {
+		return errorx.FromError(err)
+	}
 	return errorx.CreateError(
 		errorx.DefaultStatusCode,
 		errorx.ErrCodeInvalidParamSys,

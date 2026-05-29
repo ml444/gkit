@@ -1,0 +1,531 @@
+# middleware
+
+gkit middleware layer for **HTTP** and **gRPC-style service** handlers. It unifies cross-cutting concerns (logging, auth, rate limiting, response wrapping, etc.) so applications built on `httpx` and `grpcx` share the same patterns.
+
+## Concepts
+
+### Two middleware types
+
+| Type | Signature | Used by |
+|------|-----------|---------|
+| **Service middleware** | `middleware.Middleware` → wraps `ServiceHandler` | `httpx` generated handlers, `grpcx` unary RPC, `httpx.Client` |
+| **HTTP middleware** | `middleware.HttpMiddleware` → wraps `http.Handler` | `httpx.Server` router (global / route group) |
+
+Core definitions live in [`middleware.go`](middleware.go):
+
+```go
+type ServiceHandler func(ctx context.Context, req interface{}) (rsp interface{}, err error)
+type Middleware       func(ServiceHandler) ServiceHandler
+type HttpMiddleware   func(http.Handler) http.Handler
+```
+
+Use `middleware.Chain(...)` and `middleware.HTTPChain(...)` to compose multiple middlewares. The **first argument is the outermost** layer (runs first on the way in).
+
+### Lurker hooks
+
+[`option.go`](option.go) defines `LurkerFunc` for post-handler side effects (used by `logging` and `recovery`):
+
+```go
+type LurkerFunc func(ctx context.Context, p interface{}) (err error)
+```
+
+`LurkerChain` stops on first error; `ForceLurkerChain` runs all handlers and ignores errors.
+
+### Transport context
+
+Many Service middlewares read `transport.FromContext(ctx)` for **path** (route template or gRPC full method), **metadata**, etc. This is set automatically by `httpx.Server` and `grpcx.Server` unless `DisableTransportCtx` is enabled.
+
+---
+
+## Registration
+
+### httpx server
+
+```go
+import (
+    "time"
+
+    "github.com/ml444/gkit/middleware/cors"
+    "github.com/ml444/gkit/middleware/logging"
+    "github.com/ml444/gkit/middleware/ratelimit"
+    "github.com/ml444/gkit/middleware/recovery"
+    "github.com/ml444/gkit/middleware/requestid"
+    "github.com/ml444/gkit/middleware/response"
+    "github.com/ml444/gkit/middleware/tracing"
+    "github.com/ml444/gkit/middleware/validate"
+    "github.com/ml444/gkit/transport/httpx"
+)
+
+srv := httpx.NewServer(
+    httpx.Address(":5050"),
+    // HTTP layer (router)
+    httpx.SetHTTPMiddlewares(
+        requestid.HTTPMiddleware(),
+        tracing.HTTPMiddleware(),
+        cors.Default(),
+        response.WrapHttpResponse(),
+    ),
+    // Service layer (per generated handler)
+    httpx.Middleware(
+        recovery.Recovery(),
+        tracing.Server(),
+        requestid.Server(),
+        ratelimit.FrequencyLimit(/* ... */),
+        logging.LogRequest(),
+        response.WrapError(),
+        validate.Validator(),
+    ),
+)
+```
+
+Per-route HTTP middleware: `router.GET("/path", handler, cors.New(opts))`.
+
+### grpcx server
+
+Service middleware:
+
+```go
+grpcx.NewServer(
+    grpcx.Middlewares(
+        recovery.Recovery(),
+        tracing.Server(),
+        ratelimit.FrequencyLimit(/* ... */),
+        validate.Validator(),
+        response.WrapError(),
+    ),
+)
+```
+
+gRPC error conversion is registered by default via `response.ServerErrorInterceptor` on the server. Panic recovery can use `recovery.UnaryServerInterceptor()`.
+
+### protoc-gen-go-http handlers
+
+Generated handlers accept optional per-route middleware:
+
+```go
+user.GetUser_HTTP_Handler(srv, recovery.Recovery(), validate.Validator())
+```
+
+---
+
+## Recommended order
+
+**Service (outer → inner):**
+
+```
+recovery → tracing → requestid → ratelimit → auth → circuitbreaker → timeout → validate
+  → [handler] → logging → response.WrapError → response.ReplaceEmptyResponse → response.WrapResponse
+```
+
+**HTTP (outer → inner):**
+
+```
+requestid → tracing → security → cors → ipfilter → csrf → gzip → logging.HTTPMiddleware → response.WrapHttpResponse
+```
+
+Place **recovery** outermost on the Service chain so panics in any inner middleware are caught. Place **response.WrapHttpResponse** on the HTTP chain when you want `{code, message, data}` JSON envelopes.
+
+---
+
+## Package reference
+
+### `response` — errors, empty bodies, envelopes
+
+| API | Layer | Description |
+|-----|-------|-------------|
+| `WrapError()` | Service | Converts errors to `errorx.Error` |
+| `ReplaceEmptyResponse(data)` | Service | Replaces nil / zero pointer responses with `data` |
+| `WrapResponse()` | Service | Wraps successful proto responses in `ApiCommonResponse` |
+| `WrapHttpResponse()` | HTTP | Wraps 2xx JSON as `{code, message, data}` |
+| `MarkHttpRaw(w)` / `IsHttpRaw(h)` | HTTP | Skip wrapping for binary / raw routes |
+| `ServerErrorInterceptor` | gRPC | Maps handler errors to gRPC status + `errorx` details |
+| `ClientErrorInterceptor` | gRPC | Restores `errorx.Error` on the client |
+
+```go
+httpx.Middleware(
+    response.WrapError(),
+    response.ReplaceEmptyResponse(&emptypb.Empty{}),
+    response.WrapResponse(),
+)
+```
+
+For file download routes generated by `protoc-gen-go-http`, call `response.MarkHttpRaw(w)` in the handler so `WrapHttpResponse` does not alter the body.
+
+---
+
+### `recovery` — panic handling
+
+| API | Layer | Description |
+|-----|-------|-------------|
+| `Recovery(fns...)` | Service | `recover()` + stack trace; default returns `errorx.InternalServer` |
+| `UnaryServerInterceptor(fns...)` | gRPC | Unary panic recovery |
+| `StreamServerInterceptor(fns...)` | gRPC | Stream panic recovery |
+
+Custom handler example:
+
+```go
+recovery.Recovery(func(ctx context.Context, stack interface{}) error {
+    log.Errorf("panic: %v\n%v", ctx.Value(recovery.RecoverKey{}), stack)
+    return errorx.InternalServer("internal error")
+})
+```
+
+Context keys: `recovery.RecoverKey`, `recovery.RequestKey`.
+
+---
+
+### `ratelimit` — frequency limiting
+
+Limits by **transport path** (HTTP route template or gRPC method). Supports exact paths, regex, and global (`MatchKindAll`) rules with multiple time windows per rule.
+
+| API | Description |
+|-----|-------------|
+| `FrequencyLimit(cfgs...)` | In-process fixed-window limiter (default) |
+| `FrequencyLimitWithOptions(cfgs, opts...)` | With `WithFailClosed`, `WithStore` |
+| `FrequencyLimitWithStore(store, cfgs, opts...)` | Distributed limiting via `Store` |
+| `NewMemoryStore()` | In-process `Store` implementation |
+
+```go
+ratelimit.FrequencyLimit(
+    &ratelimit.LimitCfg{
+        Kind:  ratelimit.MatchKindAll,
+        Freqs: []*ratelimit.Frequency{{Period: time.Second, Limit: 100}},
+    },
+    &ratelimit.LimitCfg{
+        Kind:  ratelimit.MatchKindExact,
+        Paths: []string{"/api/v1/users/{id}"},
+        Freqs: []*ratelimit.Frequency{
+            {Period: time.Minute, Limit: 60},
+        },
+    },
+)
+```
+
+| Option | Effect |
+|--------|--------|
+| `WithFailClosed()` | Reject when transport context is missing (default: allow) |
+| `WithStore(store)` | Use custom store with `FrequencyLimitWithOptions` |
+| `WithServiceName(name)` | `{service}` segment in Redis keys |
+
+**Build tag `prometheus`:** registers Prometheus counters/histograms. See [OPTIONAL.md](OPTIONAL.md).
+
+```bash
+go get github.com/prometheus/client_golang/prometheus
+go build -tags prometheus ./...
+```
+
+Distributed rate limiting uses optional submodule `middleware/ratelimit/redis` (not in root `go.mod`):
+
+```go
+import (
+    "github.com/ml444/gkit/middleware/ratelimit"
+    rlredis "github.com/ml444/gkit/middleware/ratelimit/redis"
+)
+
+store := rlredis.NewStore(client, rlredis.Config{Service: "user-api"})
+ratelimit.FrequencyLimitWithStore(store, cfgs, ratelimit.WithServiceName("user-api"))
+```
+
+Redis key: `gkit:rl:{service}:{path}:{windowMs}`.
+
+Exceeded limit returns `ratelimit.ErrLimitExceed` (HTTP 429).
+
+---
+
+### `validate` — request/response validation
+
+| API | Description |
+|-----|-------------|
+| `Validator()` | Calls `Validate()` on req/rsp if they implement `validate.IValidator` |
+
+Works with [**protoc-gen-go-validate**](https://github.com/ml444/gkit/tree/master/cmd/protoc-gen-go-validate). Validation errors are normalized via `errorx`.
+
+```go
+type CreateUserRequest struct { /* ... */ }
+func (r *CreateUserRequest) Validate() error { /* generated or hand-written */ }
+
+httpx.Middleware(validate.Validator())
+```
+
+---
+
+### `logging` — service and HTTP logs
+
+| API | Layer | Description |
+|-----|-------|-------------|
+| `LogRequest(fns...)` | Service | After handler: logs latency, path, trace ID, request (customizable via `LurkerFunc`) |
+| `HTTPMiddleware()` | HTTP | Structured access log: method, path, status, bytes, latency, trace ID |
+
+Context keys for Service logging: `logging.Took` (duration ms), `logging.Reply` (response).
+
+```go
+httpx.SetHTTPMiddlewares(logging.HTTPMiddleware())
+httpx.Middleware(logging.LogRequest())
+```
+
+---
+
+### `tracing` — trace ID propagation
+
+| API | Layer | Description |
+|-----|-------|-------------|
+| `Server()` | Service | Ensures trace ID in context; sets outbound metadata |
+| `HTTPMiddleware()` | HTTP | Reads/generates `X-Trace-Id`, echoes on response |
+| `UnaryServerInterceptor()` | gRPC | Trace ID on unary RPC |
+
+Uses headers from [`pkg/header`](../pkg/header/header.go): `X-Trace-Id`, `X-Request-ID`.
+
+For full OpenTelemetry integration, see [`pkg/tracing`](../pkg/tracing/) (separate module).
+
+---
+
+### `requestid` — request ID
+
+| API | Layer | Description |
+|-----|-------|-------------|
+| `HTTPMiddleware()` | HTTP | Propagates or generates `X-Request-ID` |
+| `Server()` | Service | Ensures request ID in context |
+| `FromContext(ctx)` | — | Reads request ID |
+
+---
+
+### `metrics` — request metrics
+
+| API | Layer | Description |
+|-----|-------|-------------|
+| `HTTPMiddleware()` | HTTP | Records count + duration per method/path |
+| `Server()` | Service | Records per transport path |
+| `SetRecorder(r)` | — | Plug in custom `Recorder` |
+| `NewInMemoryRecorder()` | — | Test helper |
+
+**Build tag `prometheus`:** registers Prometheus counters/histograms (`gkit_http_requests_total`, `gkit_http_request_duration_seconds`). Build with:
+
+```bash
+go build -tags prometheus ./...
+```
+
+---
+
+### `auth` — authentication
+
+| API | Layer | Description |
+|-----|-------|-------------|
+| `Server(opts...)` | Service | Validates token from transport metadata |
+| `HTTPMiddleware(opts...)` | HTTP | `Authorization: Bearer` or API key header |
+| `FromContext(ctx)` | — | `Claims` after success |
+| `StaticValidator(map)` | — | Simple token → claims map |
+
+```go
+auth.HTTPMiddleware(
+    auth.WithValidator(auth.StaticValidator(map[string]auth.Claims{
+        "secret-token": {"user_id": "1"},
+    })),
+    auth.WithSkipPaths("/health"),
+)
+```
+
+Errors: `auth.ErrUnauthorized` (401), `auth.ErrForbidden` (403).
+
+Implement `auth.TokenValidator` for JWT or custom schemes.
+
+---
+
+### `security` — security headers
+
+| API | Layer | Description |
+|-----|-------|-------------|
+| `HTTPMiddleware(opt)` | HTTP | HSTS, `X-Content-Type-Options`, `X-Frame-Options`, etc. |
+| `DefaultOptions()` | — | Sensible defaults |
+
+```go
+security.HTTPMiddleware(security.DefaultOptions())
+```
+
+---
+
+### `cors` — cross-origin requests
+
+| API | Description |
+|-----|-------------|
+| `Default()` | Permissive dev defaults (`*`) |
+| `New(Options)` | Origin list, methods, headers, credentials, `MaxAge`, preflight |
+
+```go
+cors.New(cors.Options{
+    AllowOrigins:     []string{"https://app.example.com"},
+    AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
+    AllowHeaders:     "Content-Type,Authorization",
+    AllowCredentials: true,
+    MaxAge:           3600,
+})
+```
+
+Preflight: `OPTIONS` with `Access-Control-Request-Method` returns `204` without hitting the handler.
+
+---
+
+### `csrf` — CSRF protection
+
+| API | Layer | Description |
+|-----|-------|-------------|
+| `HTTPMiddleware(opt)` | HTTP | Double-submit cookie + `X-CSRF-Token` header |
+
+Best for cookie/session web apps. **By default `SkipBearer: true`** — requests with `Authorization: Bearer` skip CSRF (pure Bearer APIs). Use `csrf.DefaultOptions()` or set `SkipBearer: false` to enforce everywhere. Error: `csrf.ErrCSRF` (403).
+
+```go
+csrf.HTTPMiddleware(csrf.DefaultOptions()) // cookie/session web
+```
+
+---
+
+### `ipfilter` — IP allow/deny
+
+| API | Layer | Description |
+|-----|-------|-------------|
+| `HTTPMiddleware(opt)` | HTTP | CIDR allow/deny lists |
+| `ParseCIDRs(...)` | — | Parse CIDR strings |
+
+```go
+allow, _ := ipfilter.ParseCIDRs("10.0.0.0/8")
+ipfilter.HTTPMiddleware(ipfilter.Options{
+    AllowList: allow,
+    TrustXFF:  true,
+})
+```
+
+---
+
+### `gzip` — response compression
+
+| API | Layer | Description |
+|-----|-------|-------------|
+| `HTTPMiddleware(opt)` | HTTP | gzip when `Accept-Encoding: gzip` |
+
+```go
+gzip.HTTPMiddleware(gzip.Options{MinLength: 1024})
+```
+
+---
+
+### `timeout` — per-request timeout
+
+| API | Layer | Description |
+|-----|-------|-------------|
+| `HTTPMiddleware(d)` | HTTP | `context.WithTimeout` on request |
+| `Server(d)` | Service | Per-RPC timeout |
+
+Complements `httpx.Timeout` (server-wide). Prefer the **inner** Service `timeout.Server` when both are used.
+
+```go
+timeout.Server(5 * time.Second)
+```
+
+---
+
+### `bodylimit` — request size (service)
+
+| API | Description |
+|-----|-------------|
+| `Server(maxBytes)` | Rejects large requests (approximate size) |
+
+Use together with `httpx.MaxRequestBodySize` for HTTP body limits.
+
+---
+
+### `circuitbreaker` — circuit breaker
+
+| API | Description |
+|-----|-------------|
+| `Server(opt)` | Per-path breaker: closed → open → half-open |
+
+```go
+circuitbreaker.Server(circuitbreaker.Options{
+    Threshold:    5,
+    OpenDuration: 30 * time.Second,
+})
+```
+
+Open state returns `circuitbreaker.ErrOpen` (503).
+
+---
+
+### `retry` — client retries
+
+| API | Description |
+|-----|-------------|
+| `Middleware(opt)` | Retries failed client calls with backoff |
+| `Client(opt, next)` | Wrap a single `ServiceHandler` |
+
+```go
+httpx.NewClient(
+    httpx.WithMiddlewares(retry.Middleware(retry.Options{
+        MaxAttempts: 3,
+        Backoff:     100 * time.Millisecond,
+    })),
+)
+```
+
+---
+
+### `idempotency` — duplicate request guard
+
+| API | Layer | Description |
+|-----|-------|-------------|
+| `HTTPMiddleware(store, ttl)` | HTTP | `Idempotency-Key` header |
+| `Server(store, ttl, keyFn)` | Service | Custom key from context |
+| `NewMemoryStore()` | — | In-process store |
+
+```go
+idempotency.HTTPMiddleware(idempotency.NewMemoryStore(), 24*time.Hour)
+```
+
+Duplicate returns `idempotency.ErrDuplicate` (409).
+
+---
+
+## Build tags & optional modules
+
+See [OPTIONAL.md](OPTIONAL.md) for Prometheus (`-tags prometheus`), Redis submodule (`middleware/ratelimit/redis`), and OTel submodule (`middleware/tracing/otel`).
+
+| Component | How to enable |
+|-----------|----------------|
+| `prometheus` | `-tags prometheus` + `go get github.com/prometheus/client_golang/prometheus` |
+| Redis rate limit | `import ".../middleware/ratelimit/redis"` |
+| OTel spans | `import ".../middleware/tracing/otel"` + `pkg/tracing` |
+
+---
+
+## Directory layout
+
+```
+middleware/
+├── middleware.go      # Middleware, HttpMiddleware, Chain
+├── option.go          # LurkerFunc
+├── logging/           # Service logs + HTTP access logs
+├── bodylimit/
+├── circuitbreaker/
+├── cors/
+├── csrf/
+├── gzip/
+├── idempotency/
+├── ipfilter/
+├── logging/
+├── metrics/
+├── ratelimit/
+├── recovery/
+├── requestid/
+├── response/
+├── retry/
+├── security/
+├── timeout/
+├── tracing/
+└── validate/
+```
+
+---
+
+## See also
+
+- Project overview: [README.md](../README.md)
+- `httpx` / `grpcx` transport: [transport/httpx](../transport/httpx), [transport/grpcx](../transport/grpcx)
+- Error model: [errorx](../errorx)

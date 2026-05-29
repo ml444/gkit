@@ -314,20 +314,15 @@ func TestServer(t *testing.T) {
 			fmt.Printf("pass!!! allow: %d, limit: %d \n", allow, limit)
 		}
 	}
-
-	ctx1 := transport.ToContext(context.Background(), &httpx.Transport{
-		BaseTransport: transport.BaseTransport{
-			Endpoint:  "",
-			Operation: "/user.abc/efg/123",
-		},
-	})
+	tr1 := &httpx.Transport{}
+	tr1.SetEndpoint("")
+	tr1.SetPath("/user.abc/efg/123")
+	ctx1 := transport.ToContext(context.Background(), tr1)
 	go run(ctx1, 8, 1960)
 
-	ctx2 := transport.ToContext(context.Background(), &httpx.Transport{
-		BaseTransport: transport.BaseTransport{
-			Endpoint:  "",
-			Operation: "/user.abc/foo/123",
-		},
-	})
+	tr2 := &httpx.Transport{}
+	tr2.SetEndpoint("")
+	tr2.SetPath("/user.abc/foo/123")
+	ctx2 := transport.ToContext(context.Background(), tr2)
 	run(ctx2, 260, 5000)
 }

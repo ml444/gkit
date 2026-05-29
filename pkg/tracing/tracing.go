@@ -3,13 +3,7 @@ package tracing
 import (
 	"context"
 
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/jaeger"
 	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/sdk/resource"
-	tracesdk "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -60,27 +54,22 @@ func SpanID(ctx context.Context) string {
 	return ""
 }
 
-// InitTracer 设置全局trace
+// InitTracer sets the global TracerProvider with OTLP export.
+//
+// Deprecated: use Setup(Config{...}) which returns shutdown.
+// The url parameter is treated as OTLP endpoint host:port (not legacy Jaeger /api/traces URL).
+// If url is empty, OTEL_EXPORTER_OTLP_ENDPOINT or DefaultOTLPEndpoint is used.
 func InitTracer(url string, serviceName string) error {
-	// 创建 Jaeger exporter
-	exp, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(url)))
-	if err != nil {
-		return err
+	cfg := Config{
+		ServiceName:  serviceName,
+		SampleRatio:  1.0,
+		OTLPInsecure: true,
 	}
-	tp := tracesdk.NewTracerProvider(
-		// 将基于父span的采样率设置为100%
-		tracesdk.WithSampler(tracesdk.ParentBased(tracesdk.TraceIDRatioBased(1.0))),
-		// 始终确保在生产中批量处理
-		tracesdk.WithBatcher(exp),
-		// 在资源中记录有关此应用程序的信息
-		tracesdk.WithResource(resource.NewSchemaless(
-			semconv.ServiceNameKey.String(serviceName),
-			attribute.String("exporter", "jaeger"),
-			attribute.Float64("float", 312.23),
-		)),
-		//tracesdk.WithIDGenerator()
-	)
-	// 设置全局trace
-	otel.SetTracerProvider(tp)
-	return nil
+	if url != "" {
+		cfg.OTLPEndpoint = url
+	} else {
+		cfg.OTLPEndpoint = DefaultOTLPEndpoint
+	}
+	_, err := Setup(cfg)
+	return err
 }

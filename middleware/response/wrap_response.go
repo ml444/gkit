@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/ml444/gkit/middleware"
 	"google.golang.org/protobuf/proto"
@@ -16,11 +17,6 @@ func WrapResponse() middleware.Middleware {
 		return func(ctx context.Context, req any) (rsp any, err error) {
 			rsp, err = handler(ctx, req)
 			if err == nil {
-				// rsp = map[string]interface{}{
-				// 	"code":    0,
-				// 	"message": "success",
-				// 	"data":    rsp,
-				// }
 				var value anypb.Any
 				err = anypb.MarshalFrom(&value, rsp.(proto.Message), proto.MarshalOptions{})
 				if err != nil {
@@ -41,23 +37,43 @@ type bodyCaptureWriter struct {
 	http.ResponseWriter
 	status int
 	body   *bytes.Buffer
+	wrote  bool
 }
 
 func (w *bodyCaptureWriter) WriteHeader(statusCode int) {
-	w.status = statusCode
-	w.ResponseWriter.WriteHeader(statusCode)
+	if !w.wrote {
+		w.status = statusCode
+		w.wrote = true
+	}
 }
 
 func (w *bodyCaptureWriter) Write(b []byte) (int, error) {
+	if !w.wrote {
+		w.WriteHeader(http.StatusOK)
+	}
 	return w.body.Write(b)
 }
 
+func (w *bodyCaptureWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// acceptsJSON reports whether the client accepts JSON responses.
+func acceptsJSON(h http.Header) bool {
+	accept := h.Get("Accept")
+	if accept == "" {
+		return true
+	}
+	return strings.Contains(accept, "application/json")
+}
+
 // WrapHttpResponse wraps successful JSON responses into {code,message,data}.
-// For non-2xx responses, it leaves the response unchanged.
 func WrapHttpResponse() middleware.HttpMiddleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			if req.Header.Get("Accept") != "application/json" {
+			if !acceptsJSON(req.Header) {
 				next.ServeHTTP(w, req)
 				return
 			}
@@ -70,11 +86,22 @@ func WrapHttpResponse() middleware.HttpMiddleware {
 			next.ServeHTTP(cw, req)
 
 			if IsHttpRaw(cw.Header()) {
+				for k, vs := range cw.Header() {
+					for _, v := range vs {
+						w.Header().Add(k, v)
+					}
+				}
+				if cw.wrote {
+					w.WriteHeader(cw.status)
+				}
 				_, _ = w.Write(cw.body.Bytes())
 				return
 			}
 
 			if cw.status < 200 || cw.status >= 300 {
+				if cw.wrote {
+					w.WriteHeader(cw.status)
+				}
 				_, _ = w.Write(cw.body.Bytes())
 				return
 			}

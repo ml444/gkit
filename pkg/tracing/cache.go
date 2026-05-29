@@ -1,7 +1,6 @@
 package tracing
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/petermattis/goid"
@@ -59,9 +58,5 @@ func GetTraceIdFromCache(key int64) string {
 	if key == 0 {
 		key = goid.Get()
 	}
-	traceId := CacheTraceId.GetTraceId(key)
-	if traceId == "" {
-		fmt.Println("[", key, "] traceId is empty")
-	}
-	return traceId
+	return CacheTraceId.GetTraceId(key)
 }

@@ -3,21 +3,13 @@ package ratelimit
 /*
 The frequency limit has three matching methods (all, regular, and exact) to match
 the full-method value of the API.
-`All` counts the total number of hits for all APIs.
-There are no independent statistical restrictions on specific matching APIs.
-`Exact` and `Regular` use specific APIs as statistical units.
-If `exact` and `regular` hit the same interface, the exact limit takes precedence.
-
-频率限制有三种匹配方式（全部、正则、精确）来匹配API的full-method的值
-`全部`针对命中的所有API的总数统计。不分别对匹配的具体API做独立的统计限制。
-`精确`和`正则`是以具体的接口为统计单元。
-如果`精确`和`正则`命中同一个接口，以精确的限制为主。
 */
 
 import (
 	"context"
 	"regexp"
 	"sort"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -37,23 +29,15 @@ const (
 )
 
 type Frequency struct {
-	// Unit is milliseconds
 	Period time.Duration
 	Limit  uint64
 }
+
 type LimitCfg struct {
-	// MatchKindTerm: 	Exactly matches the value of the field `Paths`.
-	// MatchKindRegexp: The field `Pattern` is used as a regular expression.
-	// MatchKindAll: 	All methods match this limit. The field `Paths` can't be set.
 	Kind    MatchKind
 	Pattern string
-
-	// example: /helloworld.Greeter/SayHello
-	// example: /v1/sayhello/{name}
-	Paths []string
-	// The same matching rule can set multiple frequency
-	// example: [{Period: 60, Limit: 10}, {Period: 3600, Limit: 100}]
-	Freqs []*Frequency
+	Paths   []string
+	Freqs   []*Frequency
 }
 
 type periodLimit struct {
@@ -65,7 +49,7 @@ type periodLimit struct {
 
 func newPeriodLimit(period int64, limit uint64) *periodLimit {
 	tsNow := &atomic.Int64{}
-	tsNow.Add(time.Now().UnixMilli())
+	tsNow.Store(time.Now().UnixMilli())
 	return &periodLimit{
 		period:    period,
 		limit:     limit,
@@ -89,18 +73,11 @@ func (p *periodLimit) over(now int64) bool {
 }
 
 type freqLimiter struct {
-	// total  *atomic.Uint64
 	limits []*periodLimit
 }
 
 func newFreqLimiter() *freqLimiter {
 	return &freqLimiter{}
-}
-
-func (rl *freqLimiter) sortLimits() {
-	sort.SliceStable(rl.limits, func(i, j int) bool {
-		return rl.limits[i].period < rl.limits[j].period
-	})
 }
 
 func (rl *freqLimiter) Allow() bool {
@@ -114,13 +91,14 @@ func (rl *freqLimiter) Allow() bool {
 }
 
 type limitSet struct {
+	mu                sync.RWMutex
 	allMethod         *freqLimiter
 	reMap             map[*regexp.Regexp]*freqLimiter
 	specificMethodMap map[string]*freqLimiter
 	checkedMethod     map[string]bool
 }
 
-func (s *limitSet) WalkAllow(key string) bool {
+func (s *limitSet) walkAllowLocked(key string) bool {
 	if s.allMethod != nil {
 		if !s.allMethod.Allow() {
 			return false
@@ -144,16 +122,19 @@ func (s *limitSet) WalkAllow(key string) bool {
 			s.specificMethodMap[key] = limiter
 		}
 		for _, limit := range reLimiter.limits {
-			limiter.limits = append(
-				limiter.limits,
-				newPeriodLimit(limit.period, limit.limit),
-			)
+			limiter.limits = append(limiter.limits, newPeriodLimit(limit.period, limit.limit))
 		}
 	}
 	if limiter == nil {
 		return true
 	}
 	return limiter.Allow()
+}
+
+func (s *limitSet) WalkAllow(key string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.walkAllowLocked(key)
 }
 
 func newLimitSet(cfgs ...*LimitCfg) *limitSet {
@@ -171,7 +152,6 @@ func newLimitSet(cfgs ...*LimitCfg) *limitSet {
 			}
 			limits = append(limits, newPeriodLimit(cycle.Period.Milliseconds(), cycle.Limit))
 		}
-		// Sort by period from small to large
 		sort.SliceStable(limits, func(i, j int) bool {
 			return limits[i].period < limits[j].period
 		})
@@ -206,20 +186,92 @@ func newLimitSet(cfgs ...*LimitCfg) *limitSet {
 				limiter.limits = append(limiter.limits, limits...)
 			}
 		}
-
 	}
 	return rlSet
 }
 
+// FrequencyLimit returns middleware that limits request frequency by transport path.
 func FrequencyLimit(rls ...*LimitCfg) middleware.Middleware {
+	return FrequencyLimitWithOptions(rls)
+}
+
+// FrequencyLimitWithOptions is like FrequencyLimit with extra configuration.
+func FrequencyLimitWithOptions(rls []*LimitCfg, opts ...Option) middleware.Middleware {
+	o := applyOptions(opts)
 	lSet := newLimitSet(rls...)
 	return func(handler middleware.ServiceHandler) middleware.ServiceHandler {
 		return func(ctx context.Context, req interface{}) (rsp interface{}, err error) {
 			tr, ok := transport.FromContext(ctx)
-			if ok && !lSet.WalkAllow(tr.GetOperation()) {
+			if !ok {
+				if o.FailOpen {
+					return handler(ctx, req)
+				}
+				return nil, ErrLimitExceed
+			}
+			if !lSet.WalkAllow(tr.Path()) {
 				return nil, ErrLimitExceed
 			}
 			return handler(ctx, req)
 		}
+	}
+}
+
+// FrequencyLimitWithStore uses Store for distributed limiting while preserving LimitCfg matching.
+func FrequencyLimitWithStore(store Store, rls []*LimitCfg, opts ...Option) middleware.Middleware {
+	o := applyOptions(opts)
+	if store == nil {
+		store = NewMemoryStore()
+	}
+	o.Store = store
+	return func(handler middleware.ServiceHandler) middleware.ServiceHandler {
+		return func(ctx context.Context, req interface{}) (rsp interface{}, err error) {
+			tr, ok := transport.FromContext(ctx)
+			if !ok {
+				if o.FailOpen {
+					return handler(ctx, req)
+				}
+				return nil, ErrLimitExceed
+			}
+			key := tr.Path()
+			for _, cfg := range rls {
+				if !matchCfg(cfg, key) {
+					continue
+				}
+				for _, f := range cfg.Freqs {
+					storeKey := RateLimitKey(o.ServiceName, key, f.Period)
+					allowed, allowErr := o.Store.Allow(ctx, storeKey, f.Period, f.Limit)
+					if allowErr != nil {
+						if o.FailOpen {
+							continue
+						}
+						return nil, allowErr
+					}
+					if !allowed {
+						return nil, ErrLimitExceed
+					}
+				}
+			}
+			return handler(ctx, req)
+		}
+	}
+}
+
+func matchCfg(cfg *LimitCfg, key string) bool {
+	switch cfg.Kind {
+	case MatchKindAll:
+		return true
+	case MatchKindRegular:
+		if cfg.Pattern == "" {
+			return false
+		}
+		re, err := regexp.Compile(cfg.Pattern)
+		return err == nil && re.MatchString(key)
+	default:
+		for _, p := range cfg.Paths {
+			if p == key {
+				return true
+			}
+		}
+		return false
 	}
 }

@@ -8,7 +8,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	xdscreds "google.golang.org/grpc/credentials/xds"
 
-	"github.com/ml444/gkit/middleware/general"
+	"github.com/ml444/gkit/middleware/response"
 )
 
 // ClientOption configures an xDS gRPC client.
@@ -40,7 +40,7 @@ func NewClient(target string, opts ...ClientOption) (*grpc.ClientConn, error) {
 	}
 	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(creds),
-		grpc.WithChainUnaryInterceptor(general.ClientErrorInterceptor),
+		grpc.WithChainUnaryInterceptor(response.ClientErrorInterceptor),
 	}
 	dialOpts = append(dialOpts, cfg.dialOpts...)
 

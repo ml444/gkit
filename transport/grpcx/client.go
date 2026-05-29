@@ -18,7 +18,7 @@ import (
 
 	"github.com/ml444/gkit/discovery"
 	"github.com/ml444/gkit/middleware"
-	"github.com/ml444/gkit/middleware/general"
+	"github.com/ml444/gkit/middleware/response"
 	discoveryresolver "github.com/ml444/gkit/transport/grpcx/resolver"
 	"github.com/ml444/gkit/transport/grpcx/xds"
 )
@@ -54,7 +54,7 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 	dialOpts := []grpc.DialOption{
 		grpc.WithChainUnaryInterceptor(append(
 			[]grpc.UnaryClientInterceptor{
-				general.ClientErrorInterceptor,
+				response.ClientErrorInterceptor,
 				c.discoveryFeedbackInterceptor(),
 			},
 			c.unaryInterceptors...,

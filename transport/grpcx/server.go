@@ -18,7 +18,7 @@ import (
 	"github.com/ml444/gkit/internal/netx"
 	"github.com/ml444/gkit/log"
 	"github.com/ml444/gkit/middleware"
-	"github.com/ml444/gkit/middleware/general"
+	"github.com/ml444/gkit/middleware/response"
 	"github.com/ml444/gkit/transport"
 	"github.com/ml444/gkit/transport/grpcx/xds"
 )
@@ -66,7 +66,7 @@ func NewServer(opts ...ServerOption) (*Server, error) {
 		o(s)
 	}
 	if !s.disableErrorInterceptor {
-		s.unaryInterceptors = append(s.unaryInterceptors, general.ServerErrorInterceptor)
+		s.unaryInterceptors = append(s.unaryInterceptors, response.ServerErrorInterceptor)
 	}
 	s.grpcOpts = append(s.grpcOpts,
 		grpc.ChainUnaryInterceptor(s.unaryInterceptors...),
