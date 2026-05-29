@@ -1,3 +1,9 @@
+// Package errorx provides structured errors with HTTP status, business error codes,
+// optional metadata, i18n messages, and gRPC status conversion.
+//
+// Error embeds the protobuf ErrorInfo message for JSON/gRPC wire compatibility.
+// A separate domain struct is intentionally not used to avoid duplicate fields and
+// keep httpx codec marshaling aligned with the proto schema.
 package errorx
 
 import (
@@ -5,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/status"
@@ -18,23 +25,47 @@ type ErrCodeDetail struct {
 }
 
 var (
-	gMsgLanguage string
+	gMsgLanguage atomic.Value // string
 	errCodeMap   = map[int32]*ErrCodeDetail{}
-	lock         = sync.Mutex{}
+	lock         sync.RWMutex
 )
 
 func SetLang(l string) {
-	gMsgLanguage = l
+	gMsgLanguage.Store(l)
+}
+
+func msgLanguage() string {
+	v, _ := gMsgLanguage.Load().(string)
+	return v
+}
+
+func cloneErrCodeDetail(d *ErrCodeDetail) *ErrCodeDetail {
+	if d == nil {
+		return nil
+	}
+	cp := &ErrCodeDetail{
+		Status:  d.Status,
+		Code:    d.Code,
+		Message: d.Message,
+	}
+	if len(d.Polyglot) > 0 {
+		cp.Polyglot = make(map[string]string, len(d.Polyglot))
+		for k, v := range d.Polyglot {
+			cp.Polyglot[k] = v
+		}
+	}
+	return cp
 }
 
 func RegisterError(codeMap map[int32]*ErrCodeDetail) {
 	lock.Lock()
 	defer lock.Unlock()
 	for k, detail := range codeMap {
-		if detail.Status == 0 {
-			detail.Status = DefaultStatusCode
+		cp := cloneErrCodeDetail(detail)
+		if cp.Status == 0 {
+			cp.Status = DefaultStatusCode
 		}
-		errCodeMap[k] = detail
+		errCodeMap[k] = cp
 	}
 }
 
@@ -46,13 +77,13 @@ type Error struct {
 
 func (e *Error) Error() string {
 	if e.cause != nil && len(e.Metadata) != 0 {
-		return fmt.Sprintf("error: [%d: %d] '%s' metadata=%v cause=%s", e.Status, e.Code, e.Message, e.Metadata, e.cause)
+		return fmt.Sprintf("error: [%d:%d] '%s' metadata=%v cause=%s", e.Status, e.Code, e.Message, e.Metadata, e.cause)
 	} else if e.cause != nil {
-		return fmt.Sprintf("error: [%d: %d] '%s' cause=%s", e.Status, e.Code, e.Message, e.cause)
+		return fmt.Sprintf("error: [%d:%d] '%s' cause=%s", e.Status, e.Code, e.Message, e.cause)
 	} else if len(e.Metadata) != 0 {
-		return fmt.Sprintf("error: [%d: %d] '%s' metadata=%v", e.Status, e.Code, e.Message, e.Metadata)
+		return fmt.Sprintf("error: [%d:%d] '%s' metadata=%v", e.Status, e.Code, e.Message, e.Metadata)
 	} else {
-		return fmt.Sprintf("error: [%d: %d] '%s'", e.Status, e.Code, e.Message)
+		return fmt.Sprintf("error: [%d:%d] '%s'", e.Status, e.Code, e.Message)
 	}
 }
 
@@ -64,6 +95,7 @@ func (e *Error) JSONBytes() []byte {
 
 func (e *Error) Unwrap() error { return e.cause }
 
+// Is reports whether err is an *Error with the same HTTP status and business code.
 func (e *Error) Is(err error) bool {
 	if se := new(Error); errors.As(err, &se) {
 		return se.Status == e.Status && se.Code == e.Code
@@ -95,17 +127,22 @@ func (e *Error) WithMetadata(md map[string]string) *Error {
 	return err
 }
 
-// ConvertMsgByLang function: Language conversion message based on the Accept-Language request header requirement
+// ConvertMsgByLang picks the first Accept-Language tag that has a registered translation.
+// When a requested tag matches the server default language (SetLang), the message from
+// New()/pickMsg is kept unchanged.
 func (e *Error) ConvertMsgByLang(langs ...string) {
 	if len(langs) == 0 {
 		return
 	}
+	lock.RLock()
 	detail, ok := errCodeMap[e.Code]
+	lock.RUnlock()
 	if !ok || len(detail.Polyglot) == 0 {
 		return
 	}
+	defaultLang := msgLanguage()
 	for _, lang := range langs {
-		if gMsgLanguage == lang {
+		if defaultLang == lang {
 			return
 		}
 		msg, ok := detail.Polyglot[lang]
@@ -117,18 +154,23 @@ func (e *Error) ConvertMsgByLang(langs ...string) {
 }
 
 func (e *Error) GRPCStatus() *status.Status {
-	s, _ := status.New(ToGRPCCode(int(e.Status)), e.Message).
-		WithDetails(&errdetails.ErrorInfo{
-			Reason:   e.Message,
-			Metadata: e.Metadata,
-		})
+	st := status.New(ToGRPCCode(int(e.Status)), e.Message)
+	s, err := st.WithDetails(&ErrorInfo{
+		Status:   e.Status,
+		Code:     e.Code,
+		Message:  e.Message,
+		Metadata: e.Metadata,
+	})
+	if err != nil {
+		return st
+	}
 	return s
 }
 
 func pickMsg(detail *ErrCodeDetail) string {
 	msg := detail.Message
-	if detail.Polyglot != nil && gMsgLanguage != "" {
-		if v, ok := detail.Polyglot[gMsgLanguage]; ok {
+	if detail.Polyglot != nil {
+		if v, ok := detail.Polyglot[msgLanguage()]; ok {
 			msg = v
 		}
 	}
@@ -136,9 +178,11 @@ func pickMsg(detail *ErrCodeDetail) string {
 }
 
 func getErrDetail(errCode int32) *ErrCodeDetail {
+	lock.RLock()
 	detail, ok := errCodeMap[errCode]
+	lock.RUnlock()
 	if !ok {
-		detail = &ErrCodeDetail{Status: DefaultStatusCode}
+		return &ErrCodeDetail{Status: DefaultStatusCode}
 	}
 	return detail
 }
@@ -245,20 +289,31 @@ func FromError(err error) *Error {
 	}
 	gs, ok := status.FromError(err)
 	if !ok {
-		return CreateError(UnknownStatusCode, ErrCodeUnknown, err.Error())
+		return CreateError(UnknownStatusCode, ErrCodeUnknown, err.Error()).WithCause(err)
 	}
 	ret := CreateError(
 		int32(FromGRPCCode(gs.Code())),
 		ErrCodeUnknown,
 		gs.Message(),
-	)
+	).WithCause(err)
 	for _, detail := range gs.Details() {
-		if ErrInfo, ok := detail.(*ErrorInfo); ok {
-			return CreateError(
-				ErrInfo.Status,
-				ErrInfo.Code,
-				ErrInfo.Message,
-			).WithMetadata(ErrInfo.Metadata)
+		if errInfo, ok := detail.(*ErrorInfo); ok {
+			out := CreateError(
+				errInfo.Status,
+				errInfo.Code,
+				errInfo.Message,
+			).WithCause(err)
+			if len(errInfo.Metadata) > 0 {
+				out = out.WithMetadata(errInfo.Metadata)
+			}
+			return out
+		}
+		if legacy, ok := detail.(*errdetails.ErrorInfo); ok {
+			out := ret
+			if md := legacy.GetMetadata(); len(md) > 0 {
+				out = out.WithMetadata(md)
+			}
+			return out
 		}
 	}
 	return ret

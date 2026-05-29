@@ -75,24 +75,24 @@ func IsInternalServer(err error) bool {
 
 // ServiceUnavailable new ServiceUnavailable error that is mapped to an HTTP 503 response.
 func ServiceUnavailable(message string) *Error {
-	return CreateError(http.StatusInternalServerError, ErrCodeUnknown, message)
+	return CreateError(http.StatusServiceUnavailable, ErrCodeUnknown, message)
 }
 
 // IsServiceUnavailable determines if err is an error which indicates an Unavailable error.
 // It supports wrapped errors.
 func IsServiceUnavailable(err error) bool {
-	return Status(err) == http.StatusInternalServerError
+	return Status(err) == http.StatusServiceUnavailable
 }
 
 // GatewayTimeout new GatewayTimeout error that is mapped to an HTTP 504 response.
 func GatewayTimeout(message string) *Error {
-	return CreateError(http.StatusInternalServerError, ErrCodeUnknown, message)
+	return CreateError(http.StatusGatewayTimeout, ErrCodeUnknown, message)
 }
 
 // IsGatewayTimeout determines if err is an error which indicates a GatewayTimeout error.
 // It supports wrapped errors.
 func IsGatewayTimeout(err error) bool {
-	return Status(err) == 504
+	return Status(err) == http.StatusGatewayTimeout
 }
 
 // ClientClosed new ClientClosed error that is mapped to an HTTP 499 response.
@@ -103,5 +103,5 @@ func ClientClosed(message string) *Error {
 // IsClientClosed determines if err is an error which indicates a IsClientClosed error.
 // It supports wrapped errors.
 func IsClientClosed(err error) bool {
-	return Status(err) == 499
+	return Status(err) == StatusClientClosed
 }

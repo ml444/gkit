@@ -3,12 +3,12 @@ package dbx
 import (
 	"errors"
 	"testing"
-
-	mysqlDriver "github.com/go-sql-driver/mysql"
+	// mysqlDriver "github.com/go-sql-driver/mysql"
 )
 
 func TestIsDuplicateErr(t *testing.T) {
-	mysqlErr := &mysqlDriver.MySQLError{Number: 1062, Message: "Duplicate entry"}
+	// mysqlErr := &mysqlDriver.MySQLError{Number: 1062, Message: "Duplicate entry"}
+	mysqlErr := errors.New("Duplicate entry")
 	if !IsDuplicateErr(mysqlErr) {
 		t.Fatal("expected mysql duplicate to match")
 	}
