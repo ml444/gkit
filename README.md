@@ -14,7 +14,7 @@ and to achieve automatic generation of most codes through the following protoc p
 - [**protoc-gen-go-errcode**](https://github.com/ml444/gkit/tree/master/cmd/protoc-gen-go-errcode): Generate error codes and error messages, automatically obtain error messages and http status codes based on the error codes, and support multi-language configuration.
 - [**protoc-gen-go-field**](https://github.com/ml444/gkit/tree/master/cmd/protoc-gen-go-field): Generate message structure field name constants and DB column names. You can use prefixes, suffixes or regular expressions to filter messages that need to generate field constants.
 - [**protoc-gen-go-gorm**](https://github.com/ml444/gkit/tree/master/cmd/protoc-gen-go-gorm): Generate gorm model. The gorm tag of the field is defined through proto extension, as well as the serialization and deserialization methods of json and bytes type fields.
-- [**protoc-gen-go-http**](https://github.com/ml444/gkit/tree/master/cmd/protoc-gen-go-http): Generate http routes and handlers, and use the `pluck.proto` extension to implement http request header settings, which is more useful when uploading and downloading files.
+- [**protoc-gen-go-http**](https://github.com/ml444/gkit/tree/master/cmd/protoc-gen-go-http): Generate HTTP routes and handlers (see [plugin README](cmd/protoc-gen-go-http/README.md)). Uses the `pluck.proto` extension for upload/download. By default (`omitempty=true`), files without `google.api.http` produce no output.
 - [**protoc-gen-go-validate**](https://github.com/ml444/gkit/tree/master/cmd/protoc-gen-go-validate): Generate parameter verification method to verify parameters according to the rules defined by `v.proto`. Call the middleware `validation.Validator` to start validation.
 
 **Install protoc plugin**
@@ -338,18 +338,18 @@ func (s *UserService) GetUser(ctx context.Context, req *user.GetUserReq) (*user.
 	if req.Id == 0 {
 		return nil, errorx.New(user.ErrParamRequired) 
         // if has request.headers: `Accept-Language: en` 
-        // return response.body: {"status_code": 400, "error_code": 102001, "message": "Missing parameters"}
+        // return response.body: {"status": 400, "code": 102001, "message": "Missing parameters"}
         // if has request.headers: `Accept-Language: zh` 
-        // return response.body: {"status_code": 400, "error_code": 102001, "message": "缺失参数"}
+        // return response.body: {"status": 400, "code": 102001, "message": "缺失参数"}
 	}
 	// do something
 
 	// if not found user
 	return nil, errorx.New(user.ErrNotFoundUser) 
     // if has request.headers: `Accept-Language: en` 
-    // return response.body: {"status_code": 404, "error_code": 102002, "message": "The user was not found"}
+    // return response.body: {"status": 404, "code": 102002, "message": "The user was not found"}
     // if has request.headers: `Accept-Language: zh` 
-    // return response.body: {"status_code": 404, "error_code": 102002, "message": "未找到用户"}
+    // return response.body: {"status": 404, "code": 102002, "message": "未找到用户"}
 }
 
 func main() {
@@ -808,75 +808,138 @@ func main() {
 
 ### middleware
 
-Middleware, the following middleware is currently developed:
+gkit provides **Service** middleware (`middleware.Middleware`, used by httpx/grpcx handlers) and **HTTP** middleware (`middleware.HttpMiddleware`, used on the router).
 
-- `general`: used to handle empty responses and unified error output in responses.
-- `logging` : record request logs, response logs, request and response logs.
-- `ratelimit` : used to limit the access frequency of requests.
-- `recovery` : used to recover panic and record logs.
-- `tracking` : used for tracking request links.
-- `validation`: used for parameter verification. Only when this middleware is enabled, the parameter verification rules defined in the proto file will take effect.
+**Service middleware**
+
+| Package | Purpose |
+|---------|---------|
+| `response` | Wrap errors, empty responses, JSON/proto envelopes |
+| `recovery` | Panic recovery |
+| `tracing` / `requestid` | Trace and request ID propagation |
+| `ratelimit` | Local or store-backed rate limits |
+| `auth` | Bearer / API key authentication |
+| `validate` | `Validate()` on requests (protoc-gen-go-validate) |
+| `logging` | Service request logs (`LogRequest`) + HTTP access logs (`HTTPMiddleware`) |
+| `circuitbreaker` | Per-path circuit breaker |
+| `timeout` | Per-RPC timeout |
+| `bodylimit` | Request size guard |
+| `metrics` | Request metrics recorder |
+| `retry` | Client retry (httpx/grpcx client) |
+| `idempotency` | Idempotency key deduplication |
+
+**HTTP middleware**
+
+| Package | Purpose |
+|---------|---------|
+| `cors` | CORS with preflight support |
+| `security` | Security response headers |
+| `gzip` | Response compression |
+| `logging` | HTTP access logs (`HTTPMiddleware`) |
+| `csrf` | CSRF double-submit protection |
+| `ipfilter` | IP allow/deny lists |
+| `response` | `WrapHttpResponse` JSON envelope |
+
+**Recommended order**
+
+- Service: `recovery` → `tracing` → `requestid` → `ratelimit` → `auth` → `validate` → handler → `logging` → `response.WrapError` → `response.ReplaceEmptyResponse` → `response.WrapResponse`
+- HTTP: `requestid` → `tracing` → `security` → `cors` → `gzip` → `logging.HTTPMiddleware` → `response.WrapHttpResponse`
 
 ```go
 package main
 
 import (
-	"github.com/ml444/gkit/middleware/general"
+	"time"
+
 	"github.com/ml444/gkit/middleware/logging"
 	"github.com/ml444/gkit/middleware/ratelimit"
 	"github.com/ml444/gkit/middleware/recovery"
-	"github.com/ml444/gkit/middleware/trace"
+	"github.com/ml444/gkit/middleware/requestid"
+	"github.com/ml444/gkit/middleware/response"
+	"github.com/ml444/gkit/middleware/tracing"
 	"github.com/ml444/gkit/middleware/validate"
 	"github.com/ml444/gkit/transport/httpx"
 )
 
 func main() {
-	// HTTP
 	httpx.NewServer(
 		httpx.Address(":5050"),
+		httpx.SetHTTPMiddlewares(
+			requestid.HTTPMiddleware(),
+			tracing.HTTPMiddleware(),
+			response.WrapHttpResponse(),
+		),
 		httpx.Middleware(
-			//  Handling empty responses
-			general.ReplaceEmptyResponse(struct {
-				StatusCode int32
-				ErrCode    int32
-				Message    string
-			}{200, 0, "success"}),
-			// Unify errors into the errorx.Error structure
-			general.WrapError(),
-			// Record the input parameters and time consumption of the request
-			logging.LogRequest(),
-			// Frequency limiting middleware 
+			recovery.Recovery(),
+			tracing.Server(),
+			requestid.Server(),
 			ratelimit.FrequencyLimit(
 				&ratelimit.LimitCfg{
-					Kind: ratelimit.MatchKindAll,
-					Freqs: []*ratelimit.Cycle{
-						{Period: time.Second * 1, Limit: 100},
-					},
-				},
-				&ratelimit.LimitCfg{
-					Paths: []string{user.OperationUserGetUser},
-					Freqs: []*ratelimit.Cycle{
-						{Period: time.Second * 1, Limit: 50},
-						{Period: time.Second * 60, Limit: 3000},
-					},
+					Kind:  ratelimit.MatchKindAll,
+					Freqs: []*ratelimit.Frequency{{Period: time.Second, Limit: 100}},
 				},
 			),
-			// Recovery middleware
-			recovery.Recovery(),
-			// Tracking middleware
-			trace.Server(),
-			// Verification middleware
+			logging.LogRequest(),
+			response.WrapError(),
 			validate.Validator(),
-
 		),
 	)
 }
 ```
 
+Distributed rate limiting: import `github.com/ml444/gkit/middleware/ratelimit/redis` (optional submodule). Keys: `gkit:rl:{service}:{path}:{windowMs}`. See [middleware/OPTIONAL.md](middleware/OPTIONAL.md).
+Prometheus metrics: build with `-tags prometheus`.
+OpenTelemetry spans: `middleware/tracing/otel` + `pkg/tracing`.
+CSRF: defaults to skipping Bearer APIs (`SkipBearer: true`).
+
 ### transport
 
 - Convert the core logic of the http request into the service method of grpc.
 - It encapsulates the middleware of http and grpc and unifies the middleware interface.
+
+#### grpcx (gRPC server & client)
+
+`grpcx` wraps `grpc.Server` / `grpc.ClientConn` with transport context, middleware, health checks, and **service discovery** via the [`discovery`](discovery) module.
+
+**gkit registry (Consul, Etcd, Nacos, …)** — same target scheme as httpx:
+
+```go
+import (
+	"context"
+
+	"github.com/ml444/gkit/discovery"
+	"github.com/ml444/gkit/discovery/consul"
+	"github.com/ml444/gkit/transport/grpcx"
+)
+
+func main() {
+	registry, _ := consul.NewConsulRegistry(consulConfig)
+	dc := discovery.NewDiscoveryClient(registry)
+
+	// Server: register instance after Endpoint() is available
+	srv, _ := grpcx.NewServer(grpcx.Address(":5040"), grpcx.EnableHealth())
+	_ = srv.RegisterDiscovery(context.Background(), registry)
+
+	// Client: discovery:///service-name
+	client, _ := grpcx.NewClient(
+		grpcx.WithEndpoint("discovery:///userService"),
+		grpcx.WithDiscovery(dc, ""),
+	)
+	defer client.Close()
+	conn := client.Conn() // use generated gRPC stubs
+	_ = conn
+}
+```
+
+**Istio / Envoy mesh (xDS)** — separate control plane; use the `grpcx/xds` subpackage (requires `GRPC_XDS_BOOTSTRAP`):
+
+```go
+import "github.com/ml444/gkit/transport/grpcx/xds"
+
+conn, err := xds.NewClient("xds:///your-listener-name")
+```
+
+Do not mix `discovery:///` and `xds:///` on the same `ClientConn`. Pick one discovery mechanism per connection.
 
 ### pkg
 
