@@ -459,7 +459,7 @@ func (s *Scope) Group(name string) *Scope {
 func (s *Scope) Groups(names ...string) *Scope {
 	var columns []clause.Column
 	for _, name := range names {
-		fields := strings.FieldsFunc(name, utils.IsValidDBNameChar)
+		fields := strings.FieldsFunc(name, utils.IsInvalidDBNameChar)
 		columns = append(columns, clause.Column{Name: name, Raw: len(fields) != 1})
 	}
 	s.DB.Statement.AddClause(clause.GroupBy{

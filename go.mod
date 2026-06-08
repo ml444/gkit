@@ -13,8 +13,8 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240108191215-35c7eff3a6b1
 	google.golang.org/grpc v1.60.1
 	google.golang.org/protobuf v1.36.8
-	gorm.io/driver/sqlite v1.5.7
-	gorm.io/gorm v1.25.7-0.20240204074919-46816ad31dde
+	gorm.io/driver/sqlite v1.6.0
+	gorm.io/gorm v1.31.1
 )
 
 require (
