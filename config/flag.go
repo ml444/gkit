@@ -9,7 +9,51 @@ import (
 
 func GetTagValues(tag reflect.StructTag, key string) (bool, []string) {
 	tagValue, ok := tag.Lookup(key)
-	return ok, strings.Split(tagValue, ";")
+	if !ok {
+		return false, nil
+	}
+	parts := strings.Split(tagValue, ";")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return true, out
+}
+
+type tagOptions struct {
+	name       string
+	defaultStr string
+	usage      string
+}
+
+// parseStructTagOptions parses tag segments in two forms:
+// 1) shorthand name: "PREDICTION_TG_BOT_TOKEN"
+// 2) key=value pairs: "name=PREDICTION_TG_BOT_TOKEN; default=abc"
+func parseStructTagOptions(tagValues []string) (tagOptions, error) {
+	var opts tagOptions
+	for _, value := range tagValues {
+		key, val, hasKey := strings.Cut(value, "=")
+		if !hasKey {
+			if opts.name == "" {
+				opts.name = value
+			}
+			continue
+		}
+		switch strings.TrimSpace(key) {
+		case "name":
+			opts.name = strings.TrimSpace(val)
+		case "default":
+			opts.defaultStr = strings.TrimSpace(val)
+		case "usage":
+			opts.usage = strings.TrimSpace(val)
+		default:
+			return opts, fmt.Errorf("invalid tag key: %s", strings.TrimSpace(key))
+		}
+	}
+	return opts, nil
 }
 
 func parseFieldTagWithFlag(fs *flag.FlagSet, field reflect.StructField, v reflect.Value, mValue *Value, useFlag *bool) error {
@@ -18,21 +62,11 @@ func parseFieldTagWithFlag(fs *flag.FlagSet, field reflect.StructField, v reflec
 	ok, tagValues := GetTagValues(tag, "flag")
 	if ok {
 		*useFlag = true
-		name, defaultStr, usage := "", "", ""
-		for _, value := range tagValues {
-			sList := strings.SplitN(value, "=", 2)
-			if len(sList) != 2 {
-				return fmt.Errorf("invalid value: %s", value)
-			}
-			switch sList[0] {
-			case "name":
-				name = sList[1]
-			case "default":
-				defaultStr = sList[1]
-			case "usage":
-				usage = sList[1]
-			}
+		opts, err := parseStructTagOptions(tagValues)
+		if err != nil {
+			return err
 		}
+		name, defaultStr, usage := opts.name, opts.defaultStr, opts.usage
 		// name must have a value, because the upper-level logic
 		// will determine whether the name is empty or not.
 		if name == "" {
@@ -55,7 +89,6 @@ func parseFieldTagWithFlag(fs *flag.FlagSet, field reflect.StructField, v reflec
 		if fs.Lookup(name) != nil {
 			return nil
 		}
-		var err error
 		if v.CanAddr() {
 			err = setFlag(fs, name, usage, mValue.value, field.Type, v.Addr())
 		} else {

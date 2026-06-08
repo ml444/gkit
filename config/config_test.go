@@ -388,3 +388,110 @@ func TestInitConfig_DuplicateFlagNameAcrossProcessors(t *testing.T) {
 		t.Fatalf("expected independent flag parsing, got cfgA=%q cfgB=%q", cfgA.Name, cfgB.Name)
 	}
 }
+
+type envShorthandConfig struct {
+	Token string `env:"TOKEN; default=abc"`
+}
+
+type envExplicitNameConfig struct {
+	Token string `env:"name=TOKEN; default=abc"`
+}
+
+func TestInitConfig_EnvShorthandName(t *testing.T) {
+	t.Setenv("TOKEN", "from-env")
+	cfg := &envShorthandConfig{}
+	if err := InitConfig(cfg); err != nil {
+		t.Fatalf("InitConfig failed: %v", err)
+	}
+	if cfg.Token != "from-env" {
+		t.Fatalf("expected env value from-env, got %q", cfg.Token)
+	}
+}
+
+func TestInitConfig_EnvShorthandNameDefault(t *testing.T) {
+	t.Setenv("TOKEN", "")
+	cfg := &envShorthandConfig{}
+	if err := InitConfig(cfg); err != nil {
+		t.Fatalf("InitConfig failed: %v", err)
+	}
+	if cfg.Token != "abc" {
+		t.Fatalf("expected default abc, got %q", cfg.Token)
+	}
+}
+
+func TestInitConfig_EnvExplicitName(t *testing.T) {
+	t.Setenv("TOKEN", "explicit-env")
+	cfg := &envExplicitNameConfig{}
+	if err := InitConfig(cfg); err != nil {
+		t.Fatalf("InitConfig failed: %v", err)
+	}
+	if cfg.Token != "explicit-env" {
+		t.Fatalf("expected env value explicit-env, got %q", cfg.Token)
+	}
+}
+
+type flagShorthandConfig struct {
+	Token string `flag:"token; default=abc; usage=bot token"`
+}
+
+type flagExplicitNameConfig struct {
+	Token string `flag:"name=token; default=abc; usage=bot token"`
+}
+
+func TestInitConfig_FlagShorthandName(t *testing.T) {
+	cfg := &flagShorthandConfig{}
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	if err := InitConfig(cfg, WithFlagSet(fs), WithArgs([]string{"--token=from-flag"})); err != nil {
+		t.Fatalf("InitConfig failed: %v", err)
+	}
+	if cfg.Token != "from-flag" {
+		t.Fatalf("expected flag value from-flag, got %q", cfg.Token)
+	}
+}
+
+func TestInitConfig_FlagExplicitName(t *testing.T) {
+	cfg := &flagExplicitNameConfig{}
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	if err := InitConfig(cfg, WithFlagSet(fs), WithArgs([]string{"--token=from-flag"})); err != nil {
+		t.Fatalf("InitConfig failed: %v", err)
+	}
+	if cfg.Token != "from-flag" {
+		t.Fatalf("expected flag value from-flag, got %q", cfg.Token)
+	}
+}
+
+func TestParseStructTagOptions(t *testing.T) {
+	tests := []struct {
+		name    string
+		values  []string
+		want    tagOptions
+		wantErr bool
+	}{
+		{
+			name:   "env shorthand with default",
+			values: []string{"TOKEN", "default=abc"},
+			want:   tagOptions{name: "TOKEN", defaultStr: "abc"},
+		},
+		{
+			name:   "explicit name with default",
+			values: []string{"name=TOKEN", "default=abc"},
+			want:   tagOptions{name: "TOKEN", defaultStr: "abc"},
+		},
+		{
+			name:   "flag shorthand with usage",
+			values: []string{"token", "default=abc", "usage=bot token"},
+			want:   tagOptions{name: "token", defaultStr: "abc", usage: "bot token"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseStructTagOptions(tt.values)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("parseStructTagOptions() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Fatalf("parseStructTagOptions() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}

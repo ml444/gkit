@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -44,18 +43,11 @@ func parseFieldTagWithEnv(field reflect.StructField, v reflect.Value, mValue *Va
 	ok, tagValues := GetTagValues(tag, "env")
 	name, defaultStr := "", ""
 	if ok {
-		for _, value := range tagValues {
-			sList := strings.SplitN(value, "=", 2)
-			if len(sList) != 2 {
-				return fmt.Errorf("invalid value: %s, need format with 'key=value'", value)
-			}
-			switch sList[0] {
-			case "name":
-				name = sList[1]
-			case "default":
-				defaultStr = sList[1]
-			}
+		opts, err := parseStructTagOptions(tagValues)
+		if err != nil {
+			return err
 		}
+		name, defaultStr = opts.name, opts.defaultStr
 	}
 	if name == "" && prefix != "" {
 		name = prefix + strings.ToUpper(strings.ReplaceAll(key, delimiter, "_"))
