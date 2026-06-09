@@ -212,7 +212,7 @@ func (c *wrappedCtx) setResponseHeaders() {
 			if len(v) == 0 {
 				continue
 			}
-			c.rsp.Header().Add(k, v[0])
+			c.rsp.Header().Set(k, v[0])
 		}
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/ml444/gkit/discovery"
-	"github.com/ml444/gkit/middleware"
 	"google.golang.org/grpc"
 )
 
@@ -52,19 +51,5 @@ func WithUnaryInterceptor(in ...grpc.UnaryClientInterceptor) ClientOption {
 func WithDialOptions(opts ...grpc.DialOption) ClientOption {
 	return func(c *Client) {
 		c.dialOpts = append(c.dialOpts, opts...)
-	}
-}
-
-// WithMiddlewares wraps Invoke-style handlers (if used).
-func WithMiddlewares(mws ...middleware.Middleware) ClientOption {
-	return func(c *Client) {
-		c.middlewares = append(c.middlewares, mws...)
-	}
-}
-
-// WithUserAgent is reserved for future metadata injection.
-func WithUserAgent(ua string) ClientOption {
-	return func(c *Client) {
-		c.userAgent = ua
 	}
 }

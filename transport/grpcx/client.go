@@ -17,7 +17,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/ml444/gkit/discovery"
-	"github.com/ml444/gkit/middleware"
 	"github.com/ml444/gkit/middleware/response"
 	discoveryresolver "github.com/ml444/gkit/transport/grpcx/resolver"
 	"github.com/ml444/gkit/transport/grpcx/xds"
@@ -33,14 +32,12 @@ type Client struct {
 	tlsConf           *tls.Config
 	unaryInterceptors []grpc.UnaryClientInterceptor
 	dialOpts          []grpc.DialOption
-	middlewares       []middleware.Middleware
-	userAgent         string
 }
 
 // NewClient creates a gRPC client connection.
 func NewClient(opts ...ClientOption) (*Client, error) {
 	c := &Client{
-		timeout: 2 * time.Second,
+		timeout: 10 * time.Second,
 	}
 	for _, o := range opts {
 		o(c)
@@ -75,7 +72,7 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 	}
 	dialOpts = append(dialOpts, c.dialOpts...)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 	conn, err := grpc.DialContext(ctx, target, dialOpts...)
 	if err != nil {

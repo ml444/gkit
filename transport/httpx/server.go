@@ -105,7 +105,7 @@ func (s *Server) globalMiddleware() middleware.HttpMiddleware {
 				tr := &Transport{
 					path:         pathTemplate,
 					pathTemplate: pathTemplate,
-					inMD:         transport.MD(req.Header),
+					inMD:         transport.New(req.Header),
 					outMD:        transport.MD{},
 					req:          req,
 				}
@@ -113,17 +113,10 @@ func (s *Server) globalMiddleware() middleware.HttpMiddleware {
 					tr.endpoint = s.endpoint.String()
 				}
 				req = req.WithContext(transport.ToContext(ctx, tr))
-				defer func() {
-					if tr.outMD != nil {
-						// set response headers
-						for k, v := range tr.outMD {
-							if len(v) == 0 {
-								continue
-							}
-							w.Header().Set(k, v[0])
-						}
-					}
-				}()
+				tw := newTransportResponseWriter(w, tr)
+				next.ServeHTTP(tw, req)
+				tw.flushTransportHeaders()
+				return
 			} else {
 				req = req.WithContext(ctx)
 			}

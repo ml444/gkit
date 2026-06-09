@@ -2,6 +2,7 @@ package transport
 
 import (
 	"fmt"
+	"strings"
 )
 
 type MD map[string][]string
@@ -25,8 +26,7 @@ func Pairs(kv ...string) MD {
 	}
 	md := make(MD, len(kv)/2)
 	for i := 0; i < len(kv); i += 2 {
-		key := kv[i]
-		md[key] = append(md[key], kv[i+1])
+		md.Append(kv[i], kv[i+1])
 	}
 	return md
 }
@@ -36,12 +36,13 @@ func (m MD) Append(key string, values ...string) {
 	if len(values) == 0 {
 		return
 	}
+	key = m.normalizeKey(key)
 	m[key] = append(m[key], values...)
 }
 
 // GetFirst obtains the first value for a given key.
 func (m MD) GetFirst(key string) string {
-	v := m[key]
+	v := m.Get(key)
 	if len(v) == 0 {
 		return ""
 	}
@@ -50,6 +51,7 @@ func (m MD) GetFirst(key string) string {
 
 // Get obtains the values for a given key.
 func (m MD) Get(key string) []string {
+	key = m.normalizeKey(key)
 	return m[key]
 }
 
@@ -58,17 +60,24 @@ func (m MD) Set(key string, values ...string) {
 	if len(values) == 0 {
 		return
 	}
+	key = m.normalizeKey(key)
 	m[key] = values
 }
 
 // Delete removes the values for a given key.
 func (m MD) Delete(k string) {
+	k = m.normalizeKey(k)
 	delete(m, k)
+	for key := range m {
+		if strings.EqualFold(key, k) {
+			delete(m, key)
+		}
+	}
 }
 
 // Range iterate over element in metadata.
 func (m MD) Range(f func(k string, v []string) bool) {
-	for k, v := range m {
+	for k, v := range m.Copy() {
 		if !f(k, v) {
 			break
 		}
@@ -77,7 +86,7 @@ func (m MD) Range(f func(k string, v []string) bool) {
 
 func (m MD) Keys() []string {
 	var keys []string
-	for k := range m {
+	for k := range m.Copy() {
 		keys = append(keys, k)
 	}
 	return keys
@@ -85,22 +94,16 @@ func (m MD) Keys() []string {
 
 // Len returns the number of items in md.
 func (m MD) Len() int {
-	return len(m)
+	return len(m.Copy())
 }
 
 // Copy returns a deep copy of MD
 func (m MD) Copy() MD {
 	md := make(MD, len(m))
 	for k, v := range m {
-		md[k] = copyOf(v)
+		md.Append(k, v...)
 	}
 	return md
-}
-
-func copyOf(v []string) []string {
-	vals := make([]string, len(v))
-	copy(vals, v)
-	return vals
 }
 
 // Merge joins any number of mds into a single MD.
@@ -108,8 +111,14 @@ func Merge(mds ...MD) MD {
 	out := MD{}
 	for _, md := range mds {
 		for k, v := range md {
-			out[k] = append(out[k], v...)
+			out.Append(k, v...)
 		}
 	}
 	return out
 }
+
+func (m MD) normalizeKey(key string) string {
+	return strings.ToLower(key)
+}
+
+

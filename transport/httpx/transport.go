@@ -14,8 +14,8 @@ type Transport struct {
 	path     string
 	// pathTemplate is the mux template form, e.g. /path/{id}
 	pathTemplate string
-	inMD     transport.MD
-	outMD    transport.MD
+	inMD         transport.MD
+	outMD        transport.MD
 
 	req *http.Request
 }
@@ -57,11 +57,11 @@ func (tr *Transport) SetPath(path string) {
 }
 
 func (tr *Transport) SetRequestHeader(headers http.Header) {
-	tr.inMD = transport.MD(headers)
+	tr.inMD = transport.New(headers)
 }
 
 func (tr *Transport) SetResponseHeader(headers http.Header) {
-	tr.outMD = transport.MD(headers)
+	tr.outMD = transport.New(headers)
 }
 
 // SetOperation sets the transport Operation.
@@ -79,8 +79,8 @@ func ClientTransport(r *http.Request) transport.ITransport {
 		path:     r.URL.Path,
 		// best-effort: at client side we don't have a mux template
 		pathTemplate: r.URL.Path,
-		inMD:     transport.MD(r.Header),
-		req:      r,
+		inMD:         transport.New(r.Header),
+		req:          r,
 	}
 }
 

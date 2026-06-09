@@ -106,9 +106,9 @@ func (client *Client) Invoke(ctx context.Context, method, path string, args inte
 		req.Header.Set("User-Agent", client.userAgent)
 	}
 	ctx = transport.ToContext(ctx, &Transport{
-		endpoint: client.endpoint,
-		path:     c.operation,
-		inMD:     transport.MD(req.Header),
+		endpoint:     client.endpoint,
+		path:         c.operation,
+		inMD:         transport.New(req.Header),
 		pathTemplate: c.pathTemplate,
 	})
 	return client.invoke(ctx, req, args, reply, c, opts...)
@@ -116,7 +116,7 @@ func (client *Client) Invoke(ctx context.Context, method, path string, args inte
 
 func (client *Client) invoke(ctx context.Context, req *http.Request, args interface{}, reply interface{}, c callInfo, opts ...CallOption) error {
 	h := func(ctx context.Context, in interface{}) (interface{}, error) {
-		res, err := client.Do(req.WithContext(ctx))
+		res, req, err := client.Do(req.WithContext(ctx))
 		if err != nil {
 			client.updateDiscoveryStatus(req.Context(), false)
 			return nil, err
@@ -142,7 +142,7 @@ func (client *Client) invoke(ctx context.Context, req *http.Request, args interf
 	return err
 }
 
-func (client *Client) Do(req *http.Request) (*http.Response, error) {
+func (client *Client) Do(req *http.Request) (*http.Response, *http.Request, error) {
 	if client.insecure {
 		req.URL.Scheme = "http"
 	} else {
@@ -154,11 +154,11 @@ func (client *Client) Do(req *http.Request) (*http.Response, error) {
 			svc = client.target.DiscoveryService
 		}
 		if svc == "" {
-			return nil, fmt.Errorf("httpx: discovery enabled but service name is empty")
+			return nil, req, fmt.Errorf("httpx: discovery enabled but service name is empty")
 		}
 		inst, err := client.discovery.GetServiceInstance(req.Context(), svc)
 		if err != nil {
-			return nil, err
+			return nil, req, err
 		}
 		req = req.WithContext(context.WithValue(req.Context(), discoveryInstanceKey{}, inst))
 		req.URL.Host = fmt.Sprintf("%s:%d", inst.GetAddress(), inst.GetPort())
@@ -167,7 +167,8 @@ func (client *Client) Do(req *http.Request) (*http.Response, error) {
 		req.URL.Host = client.endpoint
 		req.Host = client.endpoint
 	}
-	return client.cc.Do(req)
+	res, err := client.cc.Do(req)
+	return res, req, err
 }
 
 // Close tears down the Transport and all underlying connections.
@@ -200,9 +201,9 @@ func (client *Client) updateDiscoveryStatus(ctx context.Context, success bool) {
 
 // Target is resolver target
 type Target struct {
-	Scheme    string
-	Authority string
-	Endpoint  string
+	Scheme           string
+	Authority        string
+	Endpoint         string
 	DiscoveryService string
 }
 

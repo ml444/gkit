@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc/attributes"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/serviceconfig"
 
@@ -78,5 +79,51 @@ func TestParseServiceName(t *testing.T) {
 	target := resolver.Target{URL: url.URL{Scheme: scheme, Path: "/userService"}}
 	if got := parseServiceName(target); got != "userService" {
 		t.Fatalf("got %q", got)
+	}
+	target = resolver.Target{URL: url.URL{Scheme: scheme}}
+	if got := parseServiceName(target); got != "" {
+		t.Fatalf("empty target got %q", got)
+	}
+}
+
+func TestInstanceFromAttributes(t *testing.T) {
+	if got := InstanceFromAttributes(nil); got != nil {
+		t.Fatalf("nil attrs = %#v", got)
+	}
+	if got := InstanceFromAttributes(attributes.New("other", "x")); got != nil {
+		t.Fatalf("missing attrs = %#v", got)
+	}
+	inst := &discovery.ServiceInstance{ID: "i1", Name: "svc", Address: "127.0.0.1", Port: 80}
+	if got := InstanceFromAttributes(attributes.New(instanceAttrKey, inst)); got != inst {
+		t.Fatalf("instance = %#v", got)
+	}
+}
+
+func TestDiscoveryBuilderErrorsAndResolveNow(t *testing.T) {
+	old := currentDC.get()
+	currentDC.set(nil)
+	if _, err := (discoveryBuilder{}).Build(resolver.Target{URL: url.URL{Scheme: scheme, Path: "/svc"}}, &recordingConn{}, resolver.BuildOptions{}); err == nil {
+		t.Fatal("expected missing discovery client error")
+	}
+	currentDC.set(old)
+
+	reg := discovery.NewDefaultRegistry()
+	dc := discovery.NewDiscoveryClient(reg, discovery.WithCacheTTL(time.Millisecond))
+	Register(dc)
+	if _, err := (discoveryBuilder{}).Build(resolver.Target{URL: url.URL{Scheme: scheme}}, &recordingConn{}, resolver.BuildOptions{}); err == nil {
+		t.Fatal("expected empty service error")
+	}
+
+	cc := &recordingConn{}
+	r := &discoveryResolver{
+		dc:      dc,
+		service: "missing",
+		cc:      cc,
+		refresh: time.Hour,
+		stop:    make(chan struct{}),
+	}
+	r.ResolveNow(resolver.ResolveNowOptions{})
+	if len(cc.states) != 1 || len(cc.states[0].Addresses) != 0 {
+		t.Fatalf("states = %#v", cc.states)
 	}
 }

@@ -17,6 +17,7 @@
 .DS_Store
 
 .idea/
+.vscode/
 
 __*.go
 *_test.gobak

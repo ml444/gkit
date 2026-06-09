@@ -31,7 +31,7 @@ func TestClient_DiscoveryEndpoint(t *testing.T) {
 
 	reg := discovery.NewDefaultRegistry()
 	dc := discovery.NewDiscoveryClient(reg, discovery.WithCacheTTL(time.Minute))
-	if err := reg.Register(context.Background(), &discovery.ServiceInstance{
+	if err = reg.Register(context.Background(), &discovery.ServiceInstance{
 		ID: "ins-1", Name: "svc", Address: "127.0.0.1", Port: port,
 	}); err != nil {
 		t.Fatal(err)
