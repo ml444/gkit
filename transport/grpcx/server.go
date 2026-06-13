@@ -33,24 +33,25 @@ type iServer interface {
 
 type Server struct {
 	iServer
-	name                string
-	network             string
-	address             string
-	endpoint            string
-	listener            net.Listener
-	middlewares         []middleware.Middleware
-	grpcOpts            []grpc.ServerOption
-	unaryInterceptors   []grpc.UnaryServerInterceptor
-	streamInterceptors  []grpc.StreamServerInterceptor
-	credentials         credentials.TransportCredentials
-	tlsConf             *tls.Config
-	health              *health.Server
-	timeout             time.Duration
-	enableHealth        bool
-	debug               bool
-	disableTransportCtx bool
+	name                    string
+	network                 string
+	address                 string
+	endpoint                string
+	listener                net.Listener
+	middlewares             []middleware.Middleware
+	grpcOpts                []grpc.ServerOption
+	unaryInterceptors       []grpc.UnaryServerInterceptor
+	streamInterceptors      []grpc.StreamServerInterceptor
+	credentials             credentials.TransportCredentials
+	tlsConf                 *tls.Config
+	health                  *health.Server
+	timeout                 time.Duration
+	enableHealth            bool
+	debug                   bool
+	disableTransportCtx     bool
 	disableErrorInterceptor bool
 	enableXDS               bool
+	streamMiddleware        bool
 }
 
 // NewServer creates a gRPC server.
@@ -237,25 +238,46 @@ func (w *wrappedStream) sendOutboundHeaders() error {
 
 func (s *Server) defaultStreamInterceptor() grpc.StreamServerInterceptor {
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		ctx := ss.Context()
+		var outMD grpcmd.MD
 		if !s.disableTransportCtx {
-			ctx := ss.Context()
 			inMD, _ := grpcmd.FromIncomingContext(ctx)
-			outMD := grpcmd.MD{}
+			outMD = grpcmd.MD{}
 			ctx = transport.ToContext(ctx, &Transport{
 				endpoint:  s.endpoint,
 				operation: info.FullMethod,
 				inMD:      transport.MD(inMD),
 				outMD:     transport.MD(outMD),
 			})
-			ws := &wrappedStream{
-				ServerStream: ss,
-				ctx:          ctx,
-				outMD:        outMD,
-			}
-			err := handler(srv, ws)
-			_ = ws.sendOutboundHeaders()
-			return err
 		}
-		return handler(srv, ss)
+		return s.runStream(srv, ss, ctx, outMD, handler)
 	}
+}
+
+// runStream invokes the stream handler, optionally routing it through the gkit
+// middleware chain (once per stream open) when EnableStreamMiddleware is set.
+// No per-stream timeout is applied here: streams may legitimately be long-lived.
+func (s *Server) runStream(srv interface{}, ss grpc.ServerStream, baseCtx context.Context, outMD grpcmd.MD, handler grpc.StreamHandler) error {
+	invoke := func(ctx context.Context) error {
+		ws := &wrappedStream{
+			ServerStream: ss,
+			ctx:          ctx,
+			outMD:        outMD,
+		}
+		err := handler(srv, ws)
+		_ = ws.sendOutboundHeaders()
+		return err
+	}
+	if !s.streamMiddleware || len(s.middlewares) == 0 {
+		return invoke(baseCtx)
+	}
+	// Adapt unary-shaped middleware to a stream: the chain runs once at stream
+	// open with a nil request; the ctx it produces is propagated to the handler
+	// via the wrapped stream's Context().
+	h := func(ctx context.Context, _ interface{}) (interface{}, error) {
+		return nil, invoke(ctx)
+	}
+	h = middleware.Chain(s.middlewares...)(h)
+	_, err := h(baseCtx, nil)
+	return err
 }

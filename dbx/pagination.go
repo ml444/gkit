@@ -4,6 +4,7 @@ import (
 	"errors"
 	"reflect"
 	"strconv"
+	"strings"
 
 	"github.com/ml444/gkit/dbx/pagination"
 )
@@ -34,9 +35,10 @@ func (s *Scope) PaginationQueryWithOpt(list interface{}, opt *pagination.Paginat
 		}
 	}
 
+	// Apply limit/offset on a chained query without mutating s.DB, so the
+	// same Scope can be safely reused (e.g. for count or another page).
 	offset := opt.Offset()
-	s.DB = s.DB.Limit(int(opt.Size)).Offset(offset)
-	if err := s.Find(list); err != nil {
+	if err := s.DB.Limit(int(opt.Size)).Offset(offset).Find(list).Error; err != nil {
 		return nil, err
 	}
 
@@ -114,12 +116,11 @@ func (s *Scope) ScrollQuery(list interface{}, cursor string, size uint32, cursor
 			last = last.Elem()
 		}
 		if last.Kind() == reflect.Struct {
-			idField := last.FieldByName("ID")
-			if !idField.IsValid() {
-				idField = last.FieldByName("Id")
-			}
-			if idField.IsValid() {
-				scroll.Cursor = formatScrollCursor(idField)
+			// Resolve the cursor from the same column used for ORDER BY/WHERE
+			// (default "id"), so a custom cursorField yields the correct cursor.
+			cursorVal := fieldByColumn(last, field)
+			if cursorVal.IsValid() {
+				scroll.Cursor = formatScrollCursor(cursorVal)
 			}
 		}
 	}
@@ -134,6 +135,78 @@ func parseScrollCursor(cursor string) (any, error) {
 		return id, nil
 	}
 	return cursor, nil
+}
+
+// fieldByColumn finds the struct field that maps to the given DB column name.
+// Match order:
+//  1. explicit gorm:"column:..." tag
+//  2. camelToSnake(field) == column (disambiguates e.g. foo_sar vs foos_ar)
+//  3. field.Name == snakeToPascal(column) (case-sensitive)
+//  4. simple names without underscores, e.g. column "id" -> field ID
+func fieldByColumn(v reflect.Value, column string) reflect.Value {
+	t := v.Type()
+
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if col := gormColumnName(field); col != "" && strings.EqualFold(col, column) {
+			return v.Field(i)
+		}
+	}
+
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if strings.EqualFold(camelToSnake(field.Name), column) {
+			return v.Field(i)
+		}
+	}
+
+	target := snakeToPascal(column)
+	for i := 0; i < t.NumField(); i++ {
+		if t.Field(i).Name == target {
+			return v.Field(i)
+		}
+	}
+
+	if !strings.Contains(column, "_") {
+		for i := 0; i < t.NumField(); i++ {
+			if strings.EqualFold(t.Field(i).Name, column) {
+				return v.Field(i)
+			}
+		}
+	}
+
+	return reflect.Value{}
+}
+
+func gormColumnName(field reflect.StructField) string {
+	tag := field.Tag.Get("gorm")
+	if tag == "" {
+		return ""
+	}
+	for _, part := range strings.Split(tag, ";") {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(part, "column:") {
+			return strings.TrimPrefix(part, "column:")
+		}
+	}
+	return ""
+}
+
+func snakeToPascal(s string) string {
+	parts := strings.Split(s, "_")
+	var b strings.Builder
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+		if len(p) == 1 {
+			b.WriteString(strings.ToUpper(p))
+			continue
+		}
+		b.WriteString(strings.ToUpper(p[:1]))
+		b.WriteString(strings.ToLower(p[1:]))
+	}
+	return b.String()
 }
 
 func formatScrollCursor(field reflect.Value) string {

@@ -206,12 +206,12 @@ func (s *Scope) UpdateColumnWithIncr(field string, v int64) error {
 
 func (s *Scope) Delete(conds ...interface{}) error {
 	if _, ok := s.model.(ProtoDeletedAt); ok {
-		if len(conds) > 1 {
-			s.Where(conds[0], conds[1:])
+		if len(conds) > 0 {
+			s.Where(conds[0], conds[1:]...)
 		}
 		return s.UpdateColumn(ProtoMessageFieldDeletedAt, time.Now().Unix())
 	}
-	return s.DB.Delete(s.model, conds).Error
+	return s.DB.Delete(s.model, conds...).Error
 }
 
 func (s *Scope) First(dest interface{}, conds ...interface{}) error {
@@ -256,6 +256,30 @@ func (s *Scope) Like(field string, value string) *Scope {
 
 func (s *Scope) LikePrefix(field string, value string) *Scope {
 	s.Where(fmt.Sprintf("%s LIKE ?", field), value+"%")
+	return s
+}
+
+// LikeSuffix : Where("field LIKE ?", "%value")
+func (s *Scope) LikeSuffix(field string, value string) *Scope {
+	s.Where(fmt.Sprintf("%s LIKE ?", field), "%"+value)
+	return s
+}
+
+// NotLike : Where("field NOT LIKE ?", "%value%")
+func (s *Scope) NotLike(field string, value string) *Scope {
+	s.Where(fmt.Sprintf("%s NOT LIKE ?", field), "%"+value+"%")
+	return s
+}
+
+// IsNull : Where("field IS NULL")
+func (s *Scope) IsNull(field string) *Scope {
+	s.Where(fmt.Sprintf("%s IS NULL", field))
+	return s
+}
+
+// IsNotNull : Where("field IS NOT NULL")
+func (s *Scope) IsNotNull(field string) *Scope {
+	s.Where(fmt.Sprintf("%s IS NOT NULL", field))
 	return s
 }
 

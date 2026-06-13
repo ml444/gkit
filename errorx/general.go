@@ -31,7 +31,7 @@ func IsUnauthorized(err error) bool {
 
 // Forbidden new Forbidden error that is mapped to a 403 response.
 func Forbidden(message string) *Error {
-	return CreateError(http.StatusForbidden, ErrCodeInvalidBodySys, message)
+	return CreateError(http.StatusForbidden, ErrCodeForbiddenSys, message)
 }
 
 // IsForbidden determines if err is an error which indicates a Forbidden error.

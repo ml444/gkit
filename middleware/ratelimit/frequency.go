@@ -58,18 +58,18 @@ func newPeriodLimit(period int64, limit uint64) *periodLimit {
 	}
 }
 
-func (p *periodLimit) reset(now int64) {
-	p.count.Store(1)
-	p.timestamp.Store(now)
-}
-
 func (p *periodLimit) over(now int64) bool {
-	count := p.count.Add(1)
-	if p.timestamp.Load()+p.period > now {
-		return count > p.limit
+	ts := p.timestamp.Load()
+	if ts+p.period <= now {
+		// Window expired: let exactly one goroutine claim the reset via CAS,
+		// so concurrent callers at the boundary do not all reset the window.
+		if p.timestamp.CompareAndSwap(ts, now) {
+			p.count.Store(1)
+			return false
+		}
 	}
-	p.reset(now)
-	return false
+	count := p.count.Add(1)
+	return count > p.limit
 }
 
 type freqLimiter struct {
@@ -98,43 +98,60 @@ type limitSet struct {
 	checkedMethod     map[string]bool
 }
 
-func (s *limitSet) walkAllowLocked(key string) bool {
-	if s.allMethod != nil {
-		if !s.allMethod.Allow() {
-			return false
-		}
+// resolveRegexLocked lazily materializes a per-key limiter from regex configs.
+// It must mutate the maps, so it takes the write lock and double-checks to stay
+// correct under concurrency.
+func (s *limitSet) resolveRegexLocked(key string) *freqLimiter {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if l, ok := s.specificMethodMap[key]; ok {
+		return l
 	}
-	limiter, ok := s.specificMethodMap[key]
-	if ok {
-		return limiter.Allow()
-	}
-	if len(s.reMap) <= 0 || s.checkedMethod[key] {
-		return true
+	if s.checkedMethod[key] {
+		return nil
 	}
 	s.checkedMethod[key] = true
+	var limiter *freqLimiter
 	for re, reLimiter := range s.reMap {
 		if !re.MatchString(key) {
 			continue
 		}
-		limiter, ok = s.specificMethodMap[key]
-		if !ok {
+		if limiter == nil {
 			limiter = newFreqLimiter()
-			s.specificMethodMap[key] = limiter
 		}
 		for _, limit := range reLimiter.limits {
 			limiter.limits = append(limiter.limits, newPeriodLimit(limit.period, limit.limit))
 		}
 	}
+	if limiter != nil {
+		s.specificMethodMap[key] = limiter
+	}
+	return limiter
+}
+
+func (s *limitSet) WalkAllow(key string) bool {
+	// allMethod is set only at construction; its Allow() is itself atomic-safe.
+	if s.allMethod != nil && !s.allMethod.Allow() {
+		return false
+	}
+	// Read phase: look up an already-resolved limiter under the read lock only.
+	s.mu.RLock()
+	limiter, ok := s.specificMethodMap[key]
+	checked := s.checkedMethod[key]
+	hasRe := len(s.reMap) > 0
+	s.mu.RUnlock()
+	if ok {
+		return limiter.Allow()
+	}
+	if !hasRe || checked {
+		return true
+	}
+	// Write phase: populate from regex matches under the write lock.
+	limiter = s.resolveRegexLocked(key)
 	if limiter == nil {
 		return true
 	}
 	return limiter.Allow()
-}
-
-func (s *limitSet) WalkAllow(key string) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.walkAllowLocked(key)
 }
 
 func newLimitSet(cfgs ...*LimitCfg) *limitSet {
@@ -198,6 +215,11 @@ func FrequencyLimit(rls ...*LimitCfg) middleware.Middleware {
 // FrequencyLimitWithOptions is like FrequencyLimit with extra configuration.
 func FrequencyLimitWithOptions(rls []*LimitCfg, opts ...Option) middleware.Middleware {
 	o := applyOptions(opts)
+	// If a distributed/custom Store is configured via WithStore, use the
+	// store-backed limiter so the option is actually honored.
+	if o.Store != nil {
+		return FrequencyLimitWithStore(o.Store, rls, opts...)
+	}
 	lSet := newLimitSet(rls...)
 	return func(handler middleware.ServiceHandler) middleware.ServiceHandler {
 		return func(ctx context.Context, req interface{}) (rsp interface{}, err error) {

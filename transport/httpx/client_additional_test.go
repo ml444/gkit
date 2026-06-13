@@ -73,7 +73,7 @@ func TestClientInvokeEncoderAndDoErrors(t *testing.T) {
 	}
 	c.discovery = discovery.NewDiscoveryClient(discovery.NewDefaultRegistry())
 	req := httptest.NewRequest(http.MethodGet, "http://discovery/x", nil)
-	if _, _, err := c.Do(req); err == nil {
+	if _, err := c.Do(req); err == nil {
 		t.Fatal("expected empty discovery service error")
 	}
 
@@ -87,9 +87,10 @@ func TestClientUpdateDiscoveryStatus(t *testing.T) {
 	dc := discovery.NewDiscoveryClient(reg)
 	client := &Client{discovery: dc}
 	inst := &discovery.ServiceInstance{ID: "i1", Name: "svc", Address: "127.0.0.1", Port: 80}
-	client.updateDiscoveryStatus(context.Background(), true)
-	client.updateDiscoveryStatus(context.WithValue(context.Background(), discoveryInstanceKey{}, "bad"), true)
-	client.updateDiscoveryStatus(context.WithValue(context.Background(), discoveryInstanceKey{}, inst), true)
+	instHodler := &instanceHolder{inst: inst}
+	client.updateDiscoveryStatus(context.Background(), instHodler, true)
+	client.updateDiscoveryStatus(context.Background(), &instanceHolder{}, true)
+	client.updateDiscoveryStatus(context.Background(), &instanceHolder{inst: inst}, true)
 }
 
 func TestClientCloseNilAndNonClosingTransport(t *testing.T) {

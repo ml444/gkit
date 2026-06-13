@@ -1,6 +1,8 @@
 module github.com/ml444/gkit/discovery/redis
 
-go 1.23
+go 1.23.0
+
+toolchain go1.23.4
 
 replace github.com/ml444/gkit => ./../..
 
@@ -15,5 +17,5 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
-	golang.org/x/sync v0.10.0 // indirect
+	golang.org/x/sync v0.16.0 // indirect
 )

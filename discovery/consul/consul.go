@@ -32,9 +32,17 @@ type ConsulRegistry struct {
 	deregisterCh chan string
 	healthCheck  bool
 	ttl          int
+	cacheTTL     time.Duration
 	ttlCancels   sync.Map
 	closeOnce    sync.Once
 	closed       chan struct{}
+}
+
+// cacheEntry holds cached instances with an expiry so stale entries are
+// refetched from Consul instead of being served forever.
+type cacheEntry struct {
+	instances []discovery.ServiceInstancer
+	expireAt  time.Time
 }
 
 type ConsulRegistryOption func(*ConsulRegistry)
@@ -48,6 +56,14 @@ func WithHealthCheck(enable bool) ConsulRegistryOption {
 func WithTTL(ttl int) ConsulRegistryOption {
 	return func(r *ConsulRegistry) {
 		r.ttl = ttl
+	}
+}
+
+// WithCacheTTL sets how long discovered instances are cached locally before
+// being refetched from Consul. A value <= 0 disables caching (always query).
+func WithCacheTTL(d time.Duration) ConsulRegistryOption {
+	return func(r *ConsulRegistry) {
+		r.cacheTTL = d
 	}
 }
 
@@ -66,6 +82,7 @@ func NewConsulRegistryWithAPI(agent agentAPI, health healthAPI, options ...Consu
 		deregisterCh: make(chan string, 100),
 		healthCheck:  true,
 		ttl:          60,
+		cacheTTL:     10 * time.Second,
 		closed:       make(chan struct{}),
 	}
 
@@ -147,8 +164,10 @@ func (r *ConsulRegistry) Deregister(ctx context.Context, instance discovery.Serv
 }
 
 func (r *ConsulRegistry) GetServiceInstances(ctx context.Context, serviceName string) ([]discovery.ServiceInstancer, error) {
-	if instances, ok := r.serviceMap.Load(serviceName); ok {
-		return copyInstances(instances.([]discovery.ServiceInstancer)), nil
+	if v, ok := r.serviceMap.Load(serviceName); ok {
+		if entry, ok := v.(*cacheEntry); ok && r.cacheTTL > 0 && time.Now().Before(entry.expireAt) {
+			return copyInstances(entry.instances), nil
+		}
 	}
 
 	services, _, err := r.health.Service(serviceName, "", true, nil)
@@ -157,6 +176,8 @@ func (r *ConsulRegistry) GetServiceInstances(ctx context.Context, serviceName st
 	}
 
 	if len(services) == 0 {
+		// Drop any stale cache entry so we do not keep serving removed instances.
+		r.serviceMap.Delete(serviceName)
 		return nil, discovery.ErrNotFound
 	}
 
@@ -176,7 +197,12 @@ func (r *ConsulRegistry) GetServiceInstances(ctx context.Context, serviceName st
 		})
 	}
 
-	r.serviceMap.Store(serviceName, instances)
+	if r.cacheTTL > 0 {
+		r.serviceMap.Store(serviceName, &cacheEntry{
+			instances: instances,
+			expireAt:  time.Now().Add(r.cacheTTL),
+		})
+	}
 	return copyInstances(instances), nil
 }
 

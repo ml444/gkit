@@ -29,7 +29,15 @@ type NacosRegistry struct {
 	serviceMap   sync.Map
 	deregisterCh chan string
 	timeout      time.Duration
+	cacheTTL     time.Duration
 	closeOnce    sync.Once
+}
+
+// cacheEntry holds cached instances with an expiry so stale entries are
+// refetched from Nacos instead of being served forever.
+type cacheEntry struct {
+	instances []discovery.ServiceInstancer
+	expireAt  time.Time
 }
 
 type NacosRegistryOption func(*NacosRegistry)
@@ -37,6 +45,15 @@ type NacosRegistryOption func(*NacosRegistry)
 func WithTimeout(timeout time.Duration) NacosRegistryOption {
 	return func(r *NacosRegistry) {
 		r.timeout = timeout
+	}
+}
+
+// WithCacheTTL sets how long discovered instances are cached locally before
+// being refetched from Nacos. A value <= 0 disables caching (always query).
+// Note: an active Subscribe keeps the cache fresh via push updates.
+func WithCacheTTL(d time.Duration) NacosRegistryOption {
+	return func(r *NacosRegistry) {
+		r.cacheTTL = d
 	}
 }
 
@@ -60,6 +77,7 @@ func newNacosRegistry(client namingClient, options ...NacosRegistryOption) (*Nac
 		client:       client,
 		deregisterCh: make(chan string, 100),
 		timeout:      5 * time.Second,
+		cacheTTL:     10 * time.Second,
 	}
 
 	for _, option := range options {
@@ -174,8 +192,10 @@ func (r *NacosRegistry) Deregister(ctx context.Context, instance discovery.Servi
 }
 
 func (r *NacosRegistry) GetServiceInstances(ctx context.Context, serviceName string) ([]discovery.ServiceInstancer, error) {
-	if instances, ok := r.serviceMap.Load(serviceName); ok {
-		return copyInstances(instances.([]discovery.ServiceInstancer)), nil
+	if v, ok := r.serviceMap.Load(serviceName); ok {
+		if entry, ok := v.(*cacheEntry); ok && r.cacheTTL > 0 && time.Now().Before(entry.expireAt) {
+			return copyInstances(entry.instances), nil
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
@@ -195,12 +215,25 @@ func (r *NacosRegistry) GetServiceInstances(ctx context.Context, serviceName str
 		return nil, fmt.Errorf("failed to get service instances: %w", err)
 	}
 	if len(instances) == 0 {
+		// Drop any stale cache entry so we do not keep serving removed instances.
+		r.serviceMap.Delete(serviceName)
 		return nil, discovery.ErrNotFound
 	}
 
 	discoveryInstances := toDiscoveryInstances(serviceName, instances)
-	r.serviceMap.Store(serviceName, discoveryInstances)
+	r.storeCache(serviceName, discoveryInstances)
 	return copyInstances(discoveryInstances), nil
+}
+
+// storeCache caches instances with a TTL-based expiry (no-op when caching is off).
+func (r *NacosRegistry) storeCache(serviceName string, instances []discovery.ServiceInstancer) {
+	if r.cacheTTL <= 0 {
+		return
+	}
+	r.serviceMap.Store(serviceName, &cacheEntry{
+		instances: instances,
+		expireAt:  time.Now().Add(r.cacheTTL),
+	})
 }
 
 func (r *NacosRegistry) Close() error {
@@ -218,7 +251,7 @@ func (r *NacosRegistry) Subscribe(serviceName string, listener func([]discovery.
 				return
 			}
 			discoveryInstances := toDiscoveryInstances(serviceName, services)
-			r.serviceMap.Store(serviceName, discoveryInstances)
+			r.storeCache(serviceName, discoveryInstances)
 			if listener != nil {
 				listener(copyInstances(discoveryInstances))
 			}

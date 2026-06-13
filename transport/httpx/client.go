@@ -47,22 +47,34 @@ type Client struct {
 // NewClient returns an HTTP client.
 func NewClient(opts ...ClientOption) (*Client, error) {
 	client := Client{
-		timeout:   2000 * time.Millisecond,
-		encoder:   DefaultRequestEncoder,
-		decoder:   DefaultResponseDecoder,
-		transport: http.DefaultTransport,
+		timeout: 2000 * time.Millisecond,
+		encoder: DefaultRequestEncoder,
+		decoder: DefaultResponseDecoder,
 	}
 	for _, o := range opts {
 		o(&client)
 	}
+	// Resolve the RoundTripper without mutating the process-wide
+	// http.DefaultTransport. When a TLS config is supplied we clone a transport
+	// so other clients sharing DefaultTransport are not affected.
+	if client.transport == nil {
+		if client.tlsConf != nil {
+			tr := http.DefaultTransport.(*http.Transport).Clone()
+			tr.TLSClientConfig = client.tlsConf
+			client.transport = tr
+		} else {
+			client.transport = http.DefaultTransport
+		}
+	} else if client.tlsConf != nil {
+		if tr, ok := client.transport.(*http.Transport); ok {
+			cloned := tr.Clone()
+			cloned.TLSClientConfig = client.tlsConf
+			client.transport = cloned
+		}
+	}
 	client.cc = &http.Client{
 		Timeout:   client.timeout,
 		Transport: client.transport,
-	}
-	if client.tlsConf != nil {
-		if tr, ok := client.transport.(*http.Transport); ok {
-			tr.TLSClientConfig = client.tlsConf
-		}
 	}
 	client.insecure = client.tlsConf == nil
 	target, err := parseTarget(client.endpoint, client.insecure)
@@ -115,24 +127,28 @@ func (client *Client) Invoke(ctx context.Context, method, path string, args inte
 }
 
 func (client *Client) invoke(ctx context.Context, req *http.Request, args interface{}, reply interface{}, c callInfo, opts ...CallOption) error {
+	// holder receives the discovery instance picked inside Do so the
+	// load-balancer feedback below targets the instance that was actually used.
+	holder := &instanceHolder{}
+	ctx = context.WithValue(ctx, instanceHolderKey{}, holder)
 	h := func(ctx context.Context, in interface{}) (interface{}, error) {
-		res, req, err := client.Do(req.WithContext(ctx))
+		res,  err := client.Do(req.WithContext(ctx))
 		if err != nil {
-			client.updateDiscoveryStatus(req.Context(), false)
+			client.updateDiscoveryStatus(ctx, holder, false)
 			return nil, err
 		}
 		defer res.Body.Close()
 		if err = client.decoder(ctx, res, reply); err != nil {
-			client.updateDiscoveryStatus(req.Context(), false)
+			client.updateDiscoveryStatus(ctx, holder, false)
 			return nil, err
 		}
 		if c.onResponse != nil {
 			if err = c.onResponse(res); err != nil {
-				client.updateDiscoveryStatus(req.Context(), false)
+				client.updateDiscoveryStatus(ctx, holder, false)
 				return nil, err
 			}
 		}
-		client.updateDiscoveryStatus(req.Context(), res.StatusCode < 500)
+		client.updateDiscoveryStatus(ctx, holder, res.StatusCode < 500)
 		return reply, nil
 	}
 	if len(client.middleware) > 0 {
@@ -142,7 +158,7 @@ func (client *Client) invoke(ctx context.Context, req *http.Request, args interf
 	return err
 }
 
-func (client *Client) Do(req *http.Request) (*http.Response, *http.Request, error) {
+func (client *Client) Do(req *http.Request) (*http.Response, error) {
 	if client.insecure {
 		req.URL.Scheme = "http"
 	} else {
@@ -154,13 +170,17 @@ func (client *Client) Do(req *http.Request) (*http.Response, *http.Request, erro
 			svc = client.target.DiscoveryService
 		}
 		if svc == "" {
-			return nil, req, fmt.Errorf("httpx: discovery enabled but service name is empty")
+			return nil, fmt.Errorf("httpx: discovery enabled but service name is empty")
 		}
 		inst, err := client.discovery.GetServiceInstance(req.Context(), svc)
 		if err != nil {
-			return nil, req, err
+			return nil, err
 		}
-		req = req.WithContext(context.WithValue(req.Context(), discoveryInstanceKey{}, inst))
+		if v := req.Context().Value(instanceHolderKey{}); v != nil {
+			if hd, ok := v.(*instanceHolder); ok {
+				hd.inst = inst
+			}
+		}
 		req.URL.Host = fmt.Sprintf("%s:%d", inst.GetAddress(), inst.GetPort())
 		req.Host = req.URL.Host
 	} else if client.endpoint != "" {
@@ -168,7 +188,7 @@ func (client *Client) Do(req *http.Request) (*http.Response, *http.Request, erro
 		req.Host = client.endpoint
 	}
 	res, err := client.cc.Do(req)
-	return res, req, err
+	return res, err
 }
 
 // Close tears down the Transport and all underlying connections.
@@ -182,21 +202,20 @@ func (client *Client) Close() error {
 	return nil
 }
 
-type discoveryInstanceKey struct{}
+type instanceHolderKey struct{}
 
-func (client *Client) updateDiscoveryStatus(ctx context.Context, success bool) {
-	if client == nil || client.discovery == nil {
+type instanceHolder struct {
+	inst discovery.ServiceInstancer
+}
+
+func (client *Client) updateDiscoveryStatus(ctx context.Context, holder *instanceHolder, success bool) {
+	if client == nil || client.discovery == nil || holder == nil {
 		return
 	}
-	v := ctx.Value(discoveryInstanceKey{})
-	if v == nil {
+	if holder.inst == nil {
 		return
 	}
-	inst, ok := v.(discovery.ServiceInstancer)
-	if !ok || inst == nil {
-		return
-	}
-	client.discovery.UpdateLoadBalancerStatus(ctx, inst, success)
+	client.discovery.UpdateLoadBalancerStatus(ctx, holder.inst, success)
 }
 
 // Target is resolver target

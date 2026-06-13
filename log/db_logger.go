@@ -90,7 +90,7 @@ func (l *dbLogger) Warn(ctx context.Context, msg string, data ...interface{}) {
 // Error print error messages
 func (l *dbLogger) Error(ctx context.Context, msg string, data ...interface{}) {
 	if l.LogLevel >= gormlogger.Error {
-		l.Writer.Error(l.errStr, msg, fmt.Sprintln(data...))
+		l.Writer.Errorf(l.errStr, msg, fmt.Sprintln(data...))
 	}
 }
 

@@ -12,4 +12,5 @@ const (
 	ErrCodeInvalidBodySys           int32 = 40003
 	ErrCodeRecordNotFoundSys        int32 = 40004
 	ErrCodeUpdateRowAffectedZeroSys int32 = 40005
+	ErrCodeForbiddenSys             int32 = 40006
 )

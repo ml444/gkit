@@ -212,7 +212,7 @@ func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, fiel
 			}
 			forceORM, tagStr := orm.JoinORMTags(tags)
 			fieldName := field.GoName
-			oldType := goType(field)
+			oldType := goType(g, field)
 			ormField := &orm.ORMField{
 				FieldName: fieldName,
 				NewType:   oldType,
@@ -235,7 +235,7 @@ func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, fiel
 				continue
 			}
 
-			sType := serializeType(field)
+			sType := serializeType(g, field)
 			sd := orm.SerializeDesc{
 				SerializerName:     strings.ToLower(typ),
 				SerializerTypeName: sType,
@@ -322,19 +322,19 @@ func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, fiel
 	}
 }
 
-func goType(field *protogen.Field) string {
+func goType(g *protogen.GeneratedFile, field *protogen.Field) string {
 	typ := fieldDescToType(field.Desc)
 	if typ != "" {
 		return typ
 	}
-	return specialType(field)
+	return specialType(g, field)
 }
 
-func serializeType(field *protogen.Field) string {
+func serializeType(g *protogen.GeneratedFile, field *protogen.Field) string {
 	if field.Desc.Cardinality() == protoreflect.Repeated || field.Desc.IsMap() {
 		return field.GoIdent.GoName
 	}
-	typ := specialType(field)
+	typ := specialType(g, field)
 	if typ != "" {
 		return strings.TrimPrefix(typ, "*")
 	}
@@ -404,7 +404,7 @@ func fieldDescToType(fieldDesc protoreflect.FieldDescriptor) string {
 	return ""
 }
 
-func specialType(field *protogen.Field) string {
+func specialType(g *protogen.GeneratedFile, field *protogen.Field) string {
 	switch field.Desc.Kind() {
 	case protoreflect.MessageKind, protoreflect.GroupKind:
 		if field.Desc.IsMap() {
@@ -423,17 +423,19 @@ func specialType(field *protogen.Field) string {
 			}
 			return "map[" + key + "]" + value
 		} else if field.Desc.Cardinality() == protoreflect.Repeated {
-			typ := typeName(field.Desc.Message())
+			// QualifiedGoIdent adds a package selector + import when the type
+			// lives in another generated Go package.
+			typ := g.QualifiedGoIdent(field.Message.GoIdent)
 			return "[]*" + typ
 		}
 
-		typ := field.Message.GoIdent.GoName
+		typ := g.QualifiedGoIdent(field.Message.GoIdent)
 		if field.Desc.HasPresence() {
 			return "*" + typ
 		}
 		return typ
 	case protoreflect.EnumKind:
-		typ := field.Enum.GoIdent.GoName
+		typ := g.QualifiedGoIdent(field.Enum.GoIdent)
 		if field.Desc.HasPresence() {
 			return "*" + typ
 		}

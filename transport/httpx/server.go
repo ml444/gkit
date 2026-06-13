@@ -28,6 +28,11 @@ type Server struct {
 	network             string
 	address             string
 	timeout             time.Duration
+	readTimeout         time.Duration
+	readHeaderTimeout   time.Duration
+	writeTimeout        time.Duration
+	idleTimeout         time.Duration
+	maxHeaderBytes      int
 	maxRequestBodyBytes int64
 	router              IRouter
 	routerCfg           *RouterCfg
@@ -51,8 +56,13 @@ func NewServer(opts ...ServerOption) *Server {
 	srv.router.Use(srv.globalMiddleware())
 	srv.router.Use(srv.httpMiddlewares...)
 	srv.Server = &http.Server{
-		Handler:   srv.router,
-		TLSConfig: srv.tlsConf,
+		Handler:           srv.router,
+		TLSConfig:         srv.tlsConf,
+		ReadTimeout:       srv.readTimeout,
+		ReadHeaderTimeout: srv.readHeaderTimeout,
+		WriteTimeout:      srv.writeTimeout,
+		IdleTimeout:       srv.idleTimeout,
+		MaxHeaderBytes:    srv.maxHeaderBytes,
 	}
 	return srv
 }
@@ -156,7 +166,14 @@ func (s *Server) Start(ctx context.Context) error {
 // Stop the HTTP server.
 func (s *Server) Stop(ctx context.Context) error {
 	log.Info("[HTTP] server stopping")
-	return s.Shutdown(ctx)
+	err := s.Shutdown(ctx)
+	// Shutdown closes listeners the server is actively serving on; close any
+	// listener created early (e.g. via Endpoint()) but never served, so the
+	// port is always released.
+	if s.listener != nil {
+		_ = s.listener.Close()
+	}
+	return err
 }
 
 func (s *Server) listenAndEndpoint() error {

@@ -102,7 +102,7 @@ func (r *RSA) DecryptPKCS1v15(ciphertext []byte) ([]byte, error) {
 func (r *RSA) SetPublicKey(public []byte) error {
 	block, _ := pem.Decode(public)
 	if block == nil {
-		return errors.New("private key error")
+		return errors.New("public key error")
 	}
 	ifc, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
@@ -126,7 +126,11 @@ func (r *RSA) SetPrivateKey(private []byte) error {
 	if err != nil {
 		return err
 	}
-	r.privateKey = key.(*rsa.PrivateKey)
+	priv, ok := key.(*rsa.PrivateKey)
+	if !ok {
+		return errors.New("cryptox: parsed key is not an RSA private key")
+	}
+	r.privateKey = priv
 	r.publicKey = &r.privateKey.PublicKey
 	return nil
 }
@@ -140,7 +144,11 @@ func ParsePrivatePem(privatePEM []byte) (*rsa.PrivateKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	return key.(*rsa.PrivateKey), nil
+	priv, ok := key.(*rsa.PrivateKey)
+	if !ok {
+		return nil, errors.New("cryptox: parsed key is not an RSA private key")
+	}
+	return priv, nil
 }
 
 // SetEncoder sets the encoder for encoding and decoding
@@ -154,7 +162,10 @@ func (r *RSA) SetHash(h hash.Hash) {
 }
 
 func GenerateRSAKey(bits int) (privateBytes, publicBytes []byte, err error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if bits <= 0 {
+		bits = 2048
+	}
+	privateKey, err := rsa.GenerateKey(rand.Reader, bits)
 	if err != nil {
 		return nil, nil, err
 	}

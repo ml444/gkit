@@ -295,6 +295,10 @@ func genMessage(file *protogen.File, message *protogen.Message, needWKn *ctx.Nee
 		}
 		msgCtx.SubMessageCtxs = append(msgCtx.SubMessageCtxs, subMsgCtx)
 		imports = append(imports, subImports...)
+		// Retain this (possibly rule-less) parent so nested messages that DO
+		// have rules are not dropped together with it. The parent gets a
+		// no-op Validate(), and the nested validators are emitted.
+		needGen = true
 	}
 	return needGen, msgCtx, imports
 }

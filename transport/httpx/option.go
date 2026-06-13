@@ -49,6 +49,31 @@ func MaxRequestBodySize(n int64) ServerOption {
 	}
 }
 
+// ReadTimeout sets http.Server.ReadTimeout (0 means no timeout).
+func ReadTimeout(d time.Duration) ServerOption {
+	return func(s *Server) { s.readTimeout = d }
+}
+
+// ReadHeaderTimeout sets http.Server.ReadHeaderTimeout (0 means no timeout).
+func ReadHeaderTimeout(d time.Duration) ServerOption {
+	return func(s *Server) { s.readHeaderTimeout = d }
+}
+
+// WriteTimeout sets http.Server.WriteTimeout (0 means no timeout).
+func WriteTimeout(d time.Duration) ServerOption {
+	return func(s *Server) { s.writeTimeout = d }
+}
+
+// IdleTimeout sets http.Server.IdleTimeout (0 means no timeout).
+func IdleTimeout(d time.Duration) ServerOption {
+	return func(s *Server) { s.idleTimeout = d }
+}
+
+// MaxHeaderBytes sets http.Server.MaxHeaderBytes (0 uses http.DefaultMaxHeaderBytes).
+func MaxHeaderBytes(n int) ServerOption {
+	return func(s *Server) { s.maxHeaderBytes = n }
+}
+
 // TLSConfig with TLS config.
 func TLSConfig(c *tls.Config) ServerOption {
 	return func(o *Server) {

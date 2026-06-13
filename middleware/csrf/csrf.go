@@ -20,7 +20,14 @@ type Options struct {
 	SkipSafe bool
 	// SkipBearer skips CSRF when Authorization: Bearer is present (default true).
 	// Pure Bearer/token APIs do not need double-submit CSRF; enable CSRF only for cookie/session web apps.
+	//
+	// SECURITY NOTE: for hybrid apps that authenticate with BOTH a session cookie
+	// and a Bearer header, leaving this true bypasses CSRF for the cookie path.
+	// Set it to false in that case.
 	SkipBearer bool
+	// Secure marks the CSRF cookie as Secure so it is only sent over HTTPS.
+	// Enable this in production (HTTPS) deployments.
+	Secure bool
 }
 
 // DefaultOptions returns options suited for browser cookie/session apps.
@@ -52,7 +59,7 @@ func HTTPMiddleware(opt Options) middleware.HttpMiddleware {
 			cookie, err := r.Cookie(opt.CookieName)
 			if err != nil || cookie.Value == "" {
 				token := newToken()
-				http.SetCookie(w, &http.Cookie{Name: opt.CookieName, Value: token, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
+				http.SetCookie(w, &http.Cookie{Name: opt.CookieName, Value: token, Path: "/", HttpOnly: true, Secure: opt.Secure, SameSite: http.SameSiteLaxMode})
 				if isSafeMethod(r.Method) {
 					w.Header().Set(opt.HeaderName, token)
 					next.ServeHTTP(w, r)

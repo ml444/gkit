@@ -68,28 +68,39 @@ JWnolfgo1JrHd3S4K2mTOfiRCerUHkpM4pjFD4KD1rK7LMOX+s76uD82PbQBZO7t
 `
 
 func TestGenRSAKey(t *testing.T) {
-	type args struct {
-		bits int
-	}
+	// GenerateRSAKey returns a freshly generated random key, so it cannot be
+	// compared against a fixed constant. Validate it parses back and that the
+	// requested key size is honored instead.
 	tests := []struct {
 		name    string
-		args    args
-		wantOut string
+		bits    int
 		wantErr bool
 	}{
-		// TODO: Add test cases.
-		{"test", args{2048}, testPrivateKeyPKCS8, false},
+		{"default", 0, false},
+		{"2048", 2048, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			privPEM, pubPEM, err := GenerateRSAKey(tt.args.bits)
+			privPEM, pubPEM, err := GenerateRSAKey(tt.bits)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("GenRSAKey() error = %v, wantErr %v", err, tt.wantErr)
+				t.Fatalf("GenerateRSAKey() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
 				return
 			}
-			if gotOut := string(privPEM); gotOut != tt.wantOut {
-				t.Errorf("GenRSAKey() gotOut = %v, want %v", gotOut, tt.wantOut)
-				t.Errorf("PublicKey: %s", string(pubPEM))
+			r, err := NewRSA(privPEM)
+			if err != nil {
+				t.Fatalf("NewRSA() with generated key error = %v", err)
+			}
+			if err := r.SetPublicKey(pubPEM); err != nil {
+				t.Fatalf("SetPublicKey() with generated key error = %v", err)
+			}
+			wantBits := tt.bits
+			if wantBits == 0 {
+				wantBits = 2048
+			}
+			if got := r.privateKey.N.BitLen(); got != wantBits {
+				t.Errorf("generated key size = %d bits, want %d", got, wantBits)
 			}
 		})
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/pkg/errors"
@@ -40,7 +39,9 @@ func toStatusError(err error) error {
 	if !ok {
 		pbErr = errorx.CreateError(errorx.UnknownStatusCode, errorx.ErrCodeUnknown, cause.Error())
 	}
-	st := status.New(codes.Internal, cause.Error())
+	// Map the business HTTP status to the proper gRPC code instead of always
+	// returning codes.Internal, so e.g. a 404 surfaces as codes.NotFound.
+	st := status.New(errorx.ToGRPCCode(int(pbErr.Status)), pbErr.Message)
 	st, e := st.WithDetails(pbErr)
 	if e != nil {
 		// make sure pbErr implements proto.Message interface

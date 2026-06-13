@@ -11,10 +11,10 @@ var {{ .EnumName }}Map = map[int32]*errorx.ErrCodeDetail{
 	{{ $f.Name }}: &errorx.ErrCodeDetail{
 		Status:   {{ $f.Status }},
 		Code:     {{ $f.ErrCode }},
-		Message:  "{{ $f.Message }}",
+		Message:  {{ printf "%q" $f.Message }},
 		Polyglot: map[string]string{
 			{{- range $key, $value := $f.Polyglot }}
-			"{{ $key }}": "{{ $value }}",
+			{{ printf "%q" $key }}: {{ printf "%q" $value }},
 			{{- end }}
 		},
 	},

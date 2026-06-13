@@ -184,7 +184,7 @@ func testAccept(t *testing.T, srv *Server) {
 			t.Errorf("expected nil got %v", err)
 		}
 		req.Header.Set("Content-Type", test.contentType)
-		resp, req, err := client.Do(req)
+		resp, err := client.Do(req)
 		if err != nil {
 			t.Errorf("expected nil got %v", err)
 			continue
@@ -211,7 +211,7 @@ func testHeader(t *testing.T, srv *Server) {
 		t.Errorf("expected nil got %v", err)
 	}
 	req.Header.Set("content-type", "application/grpc-web+json")
-	resp, req, err := client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Println(err.Error())
 		t.Errorf("expected nil got %v", err)
@@ -259,7 +259,7 @@ func testClient(t *testing.T, srv *Server) {
 			t.Fatal(err)
 		}
 		//req.Header.Set("content-type", "application/json")
-		resp, req, err := client.Do(req)
+		resp, err := client.Do(req)
 		if err != nil {
 			t.Fatalf("want %v, but got %v", test, err)
 		}

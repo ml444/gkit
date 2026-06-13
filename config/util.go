@@ -7,9 +7,23 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ml444/gkit/log"
 )
+
+// parseDuration accepts a Go duration string (e.g. "30s", "1h30m") and falls
+// back to interpreting a bare integer as nanoseconds.
+func parseDuration(s string) (time.Duration, error) {
+	if d, err := time.ParseDuration(s); err == nil {
+		return d, nil
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid duration %q: %w", s, err)
+	}
+	return time.Duration(n), nil
+}
 
 // str2Any Only the type of the base is processed and converted
 func str2Any(strValue string, t reflect.Type) (v interface{}, err error) {
@@ -20,6 +34,19 @@ func str2Any(strValue string, t reflect.Type) (v interface{}, err error) {
 	if t.Kind() == reflect.Ptr {
 		isPtr = true
 		t = t.Elem()
+	}
+
+	// time.Duration has an int64 kind, so handle it before the kind switch to
+	// accept human-friendly strings like "30s"/"1h30m" (and plain ns integers).
+	if t == reflect.TypeOf(time.Duration(0)) {
+		d, derr := parseDuration(strValue)
+		if derr != nil {
+			return nil, derr
+		}
+		if isPtr {
+			return &d, nil
+		}
+		return d, nil
 	}
 
 	// Convert various types through reflection and assertions

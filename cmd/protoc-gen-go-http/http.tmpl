@@ -77,7 +77,7 @@ func {{$svrType}}_{{.Name}}{{.Num}}_HTTP_Handler(srv {{$svrType}}HTTPServer, mws
 		rsp := out.(*{{ .Output }})
 		{{- if .RspHeaders }}
 		{{- range $k, $v := .RspHeaders }}
-		ctx.Response().Header().Set("{{$k}}", "{{$v}}")
+		ctx.Response().Header().Set({{printf "%q" $k}}, {{printf "%q" $v}})
 		{{- end}}
 		{{- end }}
 		{{- if .RspHeadersField }}
@@ -136,7 +136,7 @@ func (c *{{$svrType}}HTTPClientImpl) {{.ClientName}}(ctx context.Context, in *{{
 {{- end }}
 {{- if .ReqHeaders }}
 	{{- range $k, $v := .ReqHeaders }}
-	opts = append(opts, httpx.AddRequestHeader("{{$k}}", "{{$v}}"))
+	opts = append(opts, httpx.AddRequestHeader({{printf "%q" $k}}, {{printf "%q" $v}}))
 	{{- end}}
 {{- end }}
 {{- if .RspHeadersField }}

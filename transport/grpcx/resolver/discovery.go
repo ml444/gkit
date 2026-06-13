@@ -102,11 +102,12 @@ func parseServiceName(target resolver.Target) string {
 }
 
 type discoveryResolver struct {
-	dc      *discovery.DiscoveryClient
-	service string
-	cc      resolver.ClientConn
-	refresh time.Duration
-	stop    chan struct{}
+	dc       *discovery.DiscoveryClient
+	service  string
+	cc       resolver.ClientConn
+	refresh  time.Duration
+	stop     chan struct{}
+	stopOnce sync.Once
 }
 
 func (r *discoveryResolver) start() {
@@ -130,10 +131,15 @@ func (r *discoveryResolver) update() {
 	defer cancel()
 	instances, err := r.dc.GetAllInstances(ctx, r.service)
 	if err != nil {
-		if err != discovery.ErrNotFound {
-			log.Errorf("discovery resolver: get instances for %q: %v", r.service, err)
+		if err == discovery.ErrNotFound {
+			// Service genuinely has no instances; reflect the empty state.
+			_ = r.cc.UpdateState(resolver.State{Addresses: []resolver.Address{}})
+			return
 		}
-		_ = r.cc.UpdateState(resolver.State{Addresses: nil})
+		// Transient error (registry blip): keep the last-good address set and
+		// only report the error instead of dropping all backends.
+		log.Errorf("discovery resolver: get instances for %q: %v", r.service, err)
+		r.cc.ReportError(err)
 		return
 	}
 	addrs := make([]resolver.Address, 0, len(instances))
@@ -153,5 +159,7 @@ func (r *discoveryResolver) ResolveNow(resolver.ResolveNowOptions) {
 }
 
 func (r *discoveryResolver) Close() {
-	close(r.stop)
+	r.stopOnce.Do(func() {
+		close(r.stop)
+	})
 }

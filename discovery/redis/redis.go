@@ -21,6 +21,7 @@ type RedisRegistry struct {
 	prefix     string
 	serviceMap sync.Map
 	closeCh    chan struct{}
+	closeOnce  sync.Once
 	wg         sync.WaitGroup
 }
 
@@ -284,8 +285,9 @@ func (r *RedisRegistry) startWatching() {
 			case <-r.closeCh:
 				return
 			case <-ticker.C:
-				// Refresh all services in the background
-				go r.refreshAllServices()
+				// Refresh synchronously within this tracked goroutine so we do
+				// not spawn an unbounded number of untracked goroutines.
+				r.refreshAllServices()
 			}
 		}
 	}()
@@ -294,22 +296,28 @@ func (r *RedisRegistry) startWatching() {
 // refreshAllServices refreshes all services in the local cache
 func (r *RedisRegistry) refreshAllServices() {
 	// In Redis, we don't have a direct way to list all service keys
-	// Instead, we'll refresh services that are already in our local cache
+	// Instead, we'll refresh services that are already in our local cache.
 	r.serviceMap.Range(func(key, _ interface{}) bool {
 		serviceName := key.(string)
-		r.GetServiceInstances(context.Background(), serviceName)
+		// Drop the cached entry first so GetServiceInstances actually re-reads
+		// from Redis; otherwise the refresh is a no-op (cache hit) and expired
+		// instances are never evicted.
+		r.serviceMap.Delete(serviceName)
+		_, _ = r.GetServiceInstances(context.Background(), serviceName)
 		return true
 	})
 }
 
 // Close closes the registry
 func (r *RedisRegistry) Close() error {
-	// Signal goroutines to stop
-	close(r.closeCh)
-
-	// Wait for goroutines to finish
-	r.wg.Wait()
-
-	// Close the client connection
-	return r.client.Close()
+	var err error
+	r.closeOnce.Do(func() {
+		// Signal goroutines to stop
+		close(r.closeCh)
+		// Wait for goroutines to finish
+		r.wg.Wait()
+		// Close the client connection
+		err = r.client.Close()
+	})
+	return err
 }

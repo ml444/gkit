@@ -86,6 +86,9 @@ func (x *AES) Decrypt(ciphertext any) (any, error) {
 }
 
 func (x *AES) EncryptWithString(plaintext string) (string, error) {
+	if plaintext == "" {
+		return "", nil
+	}
 	cipherBuf, err := x.EncryptWithBytes([]byte(plaintext))
 	if err != nil {
 		log.Errorf("Encrypt err: %v", err)
@@ -95,15 +98,26 @@ func (x *AES) EncryptWithString(plaintext string) (string, error) {
 }
 
 func (x *AES) EncryptWithBytes(plaintext []byte) ([]byte, error) {
+	if len(plaintext) == 0 {
+		return []byte{}, nil
+	}
 	nonce := x.FixedNonce
 	if nonce == nil {
-		nonce = x.NewNonce()
+		var err error
+		nonce, err = genNonce(x.nonceSize)
+		if err != nil {
+			log.Errorf("generate nonce err: %v", err)
+			return nil, err
+		}
 	}
 	ciphertext := x.gcm.Seal(nil, nonce, plaintext, x.AdditionalData)
 	return append(nonce, ciphertext...), nil
 }
 
 func (x *AES) DecryptWithString(ciphertext string) (string, error) {
+	if ciphertext == "" {
+		return "", nil
+	}
 	cipherBuf, err := x.encoder.DecodeString(ciphertext)
 	if err != nil {
 		log.Errorf("DecodeString err: %v\n", err)
@@ -118,6 +132,13 @@ func (x *AES) DecryptWithString(ciphertext string) (string, error) {
 }
 
 func (x *AES) DecryptWithBytes(cipherBuf []byte) ([]byte, error) {
+	if len(cipherBuf) == 0 {
+		return []byte{}, nil
+	}
+	if len(cipherBuf) < x.nonceSize {
+		log.Errorf("cipherBuf len %d less than nonce size %d\n", len(cipherBuf), x.nonceSize)
+		return nil, fmt.Errorf("cipherBuf len %d less than nonce size %d", len(cipherBuf), x.nonceSize)
+	}
 	plaintext, err := x.gcm.Open(nil, cipherBuf[:x.nonceSize], cipherBuf[x.nonceSize:], x.AdditionalData)
 	if err != nil {
 		log.Errorf("Decrypt err: %v\n", err)
@@ -127,17 +148,27 @@ func (x *AES) DecryptWithBytes(cipherBuf []byte) ([]byte, error) {
 }
 
 func (x *AES) NewNonce() []byte {
-	return genNonce(x.nonceSize)
+	nonce, err := genNonce(x.nonceSize)
+	if err != nil {
+		log.Errorf("generate nonce err: %v", err)
+		return nil
+	}
+	return nonce
 }
 
 func (x *AES) NewNonceStr() string {
 	return x.encoder.EncodeToString(x.NewNonce())
 }
 
-func genNonce(size int) []byte {
+// genNonce returns a cryptographically secure random nonce.
+// It returns an error if the system CSPRNG fails, so callers never
+// accidentally encrypt with a predictable/zero nonce.
+func genNonce(size int) ([]byte, error) {
 	nonce := make([]byte, size)
-	_, _ = rand.Read(nonce)
-	return nonce
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, err
+	}
+	return nonce, nil
 }
 
 type OptFunc func(c *AES)

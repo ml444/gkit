@@ -75,10 +75,22 @@ func Timeout(timeout time.Duration) ServerOption {
 	}
 }
 
-// Middlewares appends service middleware (unary RPC only).
+// Middlewares appends service middleware. By default it applies to unary RPCs;
+// enable EnableStreamMiddleware to also run the chain on streaming RPCs.
 func Middlewares(middlewares ...middleware.Middleware) ServerOption {
 	return func(s *Server) {
 		s.middlewares = append(s.middlewares, middlewares...)
+	}
+}
+
+// EnableStreamMiddleware runs the gkit middleware chain on streaming RPCs too.
+// The chain executes once when the stream opens (with a nil request); the ctx
+// it produces is propagated to the stream handler. Use only with middleware
+// that is safe for streams (e.g. logging, recovery, metrics, auth). Off by
+// default to preserve existing behavior.
+func EnableStreamMiddleware() ServerOption {
+	return func(s *Server) {
+		s.streamMiddleware = true
 	}
 }
 

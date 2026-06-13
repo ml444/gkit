@@ -3,6 +3,7 @@ package recovery
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"runtime"
 
 	"google.golang.org/grpc"
@@ -47,6 +48,30 @@ func Recovery(fns ...middleware.LurkerFunc) middleware.Middleware {
 	}
 }
 
+// HTTPMiddleware returns HTTP middleware that recovers from panics in HTTP
+// handlers (and HTTP-only middleware) and responds with 500.
+func HTTPMiddleware(fns ...middleware.LurkerFunc) middleware.HttpMiddleware {
+	if len(fns) == 0 {
+		fns = []middleware.LurkerFunc{defaultRecoveryHandler()}
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				if rec := recover(); rec != nil {
+					buf := make([]byte, 64<<10) //nolint:gomnd
+					n := runtime.Stack(buf, false)
+					buf = buf[:n]
+					pctx := context.WithValue(r.Context(), RecoverKey{}, rec)
+					pctx = context.WithValue(pctx, RequestKey{}, r.URL.Path)
+					_ = middleware.LurkerChain(pctx, buf, fns...)
+					w.WriteHeader(http.StatusInternalServerError)
+				}
+			}()
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // UnaryServerInterceptor returns a new unary server interceptor for panic recovery.
 func UnaryServerInterceptor(fns ...middleware.LurkerFunc) grpc.UnaryServerInterceptor {
 	if len(fns) == 0 {
@@ -81,6 +106,7 @@ func StreamServerInterceptor(fns ...middleware.LurkerFunc) grpc.StreamServerInte
 				buf = buf[:n]
 				ctx := stream.Context()
 				pctx := context.WithValue(ctx, RecoverKey{}, r)
+				pctx = context.WithValue(pctx, RequestKey{}, info.FullMethod)
 				err = middleware.LurkerChain(pctx, buf, fns...)
 			}
 		}()
