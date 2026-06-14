@@ -13,7 +13,6 @@ import (
 type AES struct {
 	AdditionalData []byte
 	key            []byte
-	FixedNonce     []byte
 	nonceSize      int
 	gcm            cipher.AEAD
 	encoder        encoder
@@ -101,14 +100,10 @@ func (x *AES) EncryptWithBytes(plaintext []byte) ([]byte, error) {
 	if len(plaintext) == 0 {
 		return []byte{}, nil
 	}
-	nonce := x.FixedNonce
-	if nonce == nil {
-		var err error
-		nonce, err = genNonce(x.nonceSize)
-		if err != nil {
-			log.Errorf("generate nonce err: %v", err)
-			return nil, err
-		}
+	nonce, err := genNonce(x.nonceSize)
+	if err != nil {
+		log.Errorf("generate nonce err: %v", err)
+		return nil, err
 	}
 	ciphertext := x.gcm.Seal(nil, nonce, plaintext, x.AdditionalData)
 	return append(nonce, ciphertext...), nil
@@ -176,25 +171,9 @@ type OptFunc func(c *AES)
 // AESOptWithNonceSize sets the nonce size for the AES encryption.
 // The default nonce size is 12 bytes, which is the recommended size.
 // If you need to use a different nonce size, you can set it using this option.
-// NOTE: If you set a fixed nonce, this setting will be invalid.
 func AESOptWithNonceSize(size int) OptFunc {
 	return func(c *AES) {
-		if c.FixedNonce != nil {
-			return
-		}
 		c.nonceSize = size
-	}
-}
-
-// AESOptWithFixedNonce sets the fixed nonce for the AES encryption.
-// This setting enables the same string to be encrypted with the same result.
-// This is needed in some business scenarios. However, it should be used with
-// caution as it can lead to security vulnerabilities.
-// If not sets this option will generate a new nonce for each encryption.
-func AESOptWithFixedNonce(nonce []byte) OptFunc {
-	return func(c *AES) {
-		c.FixedNonce = nonce
-		c.nonceSize = len(nonce)
 	}
 }
 

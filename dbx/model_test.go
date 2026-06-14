@@ -162,9 +162,8 @@ func testGetDB() *gorm.DB {
 }
 
 func testGetCipher() ICipher {
-	cryptor, err := cryptox.NewAES(
-		[]byte("1234567890123456"),
-		cryptox.AESOptWithFixedNonce([]byte("123456789098")),
+	cryptor, err := cryptox.NewAESSIV(
+		[]byte("12345678901234561234567890123456"),
 	)
 	if err != nil {
 		panic(err)
@@ -241,14 +240,14 @@ func TestT_CheckAndEncrypt(t *testing.T) {
 			name:    "ok_struct",
 			opts:    []TOption{SetTableCipher(testGetCipher())},
 			args:    args{&testModel{ID: 123, Name: "test"}, cipherKindEncrypt, false},
-			want:    &testModel{ID: 123, Name: "MTIzNDU2Nzg5MDk4hRwcyLRJ5UF8B0knCxfpcMYxjrY"},
+			want:    &testModel{ID: 123, Name: "Az36BOtQnusGVt96NQ396xvo/i4"},
 			wantErr: false,
 		},
 		{
 			name:    "ok_struct_specify_field",
 			opts:    []TOption{SetTableCipher(testGetCipher()), SetSpecifyFieldCipherMap(map[string]FieldCipher{"addresses": {"Addresses", testGetCipher()}})},
 			args:    args{&testModel{ID: 123, Name: "test", Addresses: []string{"foo", "bar"}}, cipherKindEncrypt, false},
-			want:    &testModel{ID: 123, Name: "MTIzNDU2Nzg5MDk4hRwcyLRJ5UF8B0knCxfpcMYxjrY", Addresses: []string{"MTIzNDU2Nzg5MDk4lxYASANRd9OSafwxd9W3GsU9EQ", "MTIzNDU2Nzg5MDk4kxgdFWKbhWqdp7u7BHN/IWvokg"}},
+			want:    &testModel{ID: 123, Name: "Az36BOtQnusGVt96NQ396xvo/i4", Addresses: []string{"apQeSdWLmK+s2P3iLrKNzm8idw", "IqihEl2B7hNHyJUvwV90i3YfXw"}},
 			wantErr: false,
 		},
 		{
@@ -262,14 +261,14 @@ func TestT_CheckAndEncrypt(t *testing.T) {
 			name:    "ok_map",
 			opts:    []TOption{SetTableCipher(testGetCipher())},
 			args:    args{map[string]any{"id": 123, "name": "test"}, cipherKindEncrypt, false},
-			want:    map[string]any{"id": 123, "name": "MTIzNDU2Nzg5MDk4hRwcyLRJ5UF8B0knCxfpcMYxjrY"},
+			want:    map[string]any{"id": 123, "name": "Az36BOtQnusGVt96NQ396xvo/i4"},
 			wantErr: false,
 		},
 		{
 			name:    "ok_map_specify_field",
 			opts:    []TOption{SetTableCipher(testGetCipher()), SetSpecifyFieldCipherMap(map[string]FieldCipher{"addresses": {"", testGetCipher()}})},
 			args:    args{map[string]any{"id": 123, "name": "test", "addresses": []string{"foo", "bar"}}, cipherKindEncrypt, false},
-			want:    map[string]any{"id": 123, "name": "MTIzNDU2Nzg5MDk4hRwcyLRJ5UF8B0knCxfpcMYxjrY", "addresses": []string{"MTIzNDU2Nzg5MDk4lxYASANRd9OSafwxd9W3GsU9EQ", "MTIzNDU2Nzg5MDk4kxgdFWKbhWqdp7u7BHN/IWvokg"}},
+			want:    map[string]any{"id": 123, "name": "Az36BOtQnusGVt96NQ396xvo/i4", "addresses": []string{"apQeSdWLmK+s2P3iLrKNzm8idw", "IqihEl2B7hNHyJUvwV90i3YfXw"}},
 			wantErr: false,
 		},
 		{
@@ -289,14 +288,14 @@ func TestT_CheckAndEncrypt(t *testing.T) {
 		{
 			name:    "ok_map_decrypt",
 			opts:    []TOption{SetTableCipher(testGetCipher())},
-			args:    args{map[string]string{"name": "MTIzNDU2Nzg5MDk4hRwcyLRJ5UF8B0knCxfpcMYxjrY"}, cipherKindDecrypt, false},
+			args:    args{map[string]string{"name": "Az36BOtQnusGVt96NQ396xvo/i4"}, cipherKindDecrypt, false},
 			want:    map[string]string{"name": "test"},
 			wantErr: false,
 		},
 		{
 			name:    "ok_map_specify_field_decrypt",
 			opts:    []TOption{SetTableCipher(testGetCipher()), SetSpecifyFieldCipherMap(map[string]FieldCipher{"addresses": {"", testGetCipher()}})},
-			args:    args{map[string]any{"id": 123, "name": "MTIzNDU2Nzg5MDk4hRwcyLRJ5UF8B0knCxfpcMYxjrY", "addresses": []string{"MTIzNDU2Nzg5MDk4lxYASANRd9OSafwxd9W3GsU9EQ", "MTIzNDU2Nzg5MDk4kxgdFWKbhWqdp7u7BHN/IWvokg"}}, cipherKindDecrypt, false},
+			args:    args{map[string]any{"id": 123, "name": "Az36BOtQnusGVt96NQ396xvo/i4", "addresses": []string{"apQeSdWLmK+s2P3iLrKNzm8idw", "IqihEl2B7hNHyJUvwV90i3YfXw"}}, cipherKindDecrypt, false},
 			want:    map[string]any{"id": 123, "name": "test", "addresses": []string{"foo", "bar"}},
 			wantErr: false,
 		},
@@ -304,14 +303,14 @@ func TestT_CheckAndEncrypt(t *testing.T) {
 			name:    "ok_slice",
 			opts:    []TOption{SetTableCipher(testGetCipher())},
 			args:    args{m: []*testModel{{ID: 1, Name: "test"}, {ID: 2, Name: "test2"}}},
-			want:    []*testModel{{ID: 1, Name: "MTIzNDU2Nzg5MDk4hRwcyLRJ5UF8B0knCxfpcMYxjrY"}, {ID: 2, Name: "MTIzNDU2Nzg5MDk4hRwcyC8+/YT06otATC5KMGl1cnIj"}},
+			want:    []*testModel{{ID: 1, Name: "Az36BOtQnusGVt96NQ396xvo/i4"}, {ID: 2, Name: "h2FlUVM+y4bO91PQFQjNnKF/hbuS"}},
 			wantErr: false,
 		},
 		{
 			name:    "ok_slice_ptr",
 			opts:    []TOption{SetTableCipher(testGetCipher())},
 			args:    args{m: &[]*testModel{{ID: 1, Name: "test"}, {ID: 2, Name: "test2"}}},
-			want:    &[]*testModel{{ID: 1, Name: "MTIzNDU2Nzg5MDk4hRwcyLRJ5UF8B0knCxfpcMYxjrY"}, {ID: 2, Name: "MTIzNDU2Nzg5MDk4hRwcyC8+/YT06otATC5KMGl1cnIj"}},
+			want:    &[]*testModel{{ID: 1, Name: "Az36BOtQnusGVt96NQ396xvo/i4"}, {ID: 2, Name: "h2FlUVM+y4bO91PQFQjNnKF/hbuS"}},
 			wantErr: false,
 		},
 	}
