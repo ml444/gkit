@@ -24,11 +24,24 @@ type ErrCodeDetail struct {
 	Polyglot map[string]string
 }
 
+// errCodeMapHolder wraps the error-code map so it can be stored in atomic.Value.
+type errCodeMapHolder struct {
+	m map[int32]*ErrCodeDetail
+}
+
 var (
-	gMsgLanguage atomic.Value // string
-	errCodeMap   = map[int32]*ErrCodeDetail{}
-	lock         sync.RWMutex
+	gMsgLanguage  atomic.Value // string
+	errCodeMapVal atomic.Value // stores errCodeMapHolder
+	registerMu    sync.Mutex   // protects COW merge in RegisterError only
 )
+
+func init() {
+	errCodeMapVal.Store(errCodeMapHolder{m: map[int32]*ErrCodeDetail{}})
+}
+
+func loadErrCodeMap() map[int32]*ErrCodeDetail {
+	return errCodeMapVal.Load().(errCodeMapHolder).m
+}
 
 func SetLang(l string) {
 	gMsgLanguage.Store(l)
@@ -58,15 +71,22 @@ func cloneErrCodeDetail(d *ErrCodeDetail) *ErrCodeDetail {
 }
 
 func RegisterError(codeMap map[int32]*ErrCodeDetail) {
-	lock.Lock()
-	defer lock.Unlock()
+	registerMu.Lock()
+	defer registerMu.Unlock()
+
+	old := loadErrCodeMap()
+	newMap := make(map[int32]*ErrCodeDetail, len(old)+len(codeMap))
+	for k, v := range old {
+		newMap[k] = v
+	}
 	for k, detail := range codeMap {
 		cp := cloneErrCodeDetail(detail)
 		if cp.Status == 0 {
 			cp.Status = DefaultStatusCode
 		}
-		errCodeMap[k] = cp
+		newMap[k] = cp
 	}
+	errCodeMapVal.Store(errCodeMapHolder{m: newMap})
 }
 
 // Error is a status error.
@@ -134,9 +154,7 @@ func (e *Error) ConvertMsgByLang(langs ...string) {
 	if len(langs) == 0 {
 		return
 	}
-	lock.RLock()
-	detail, ok := errCodeMap[e.Code]
-	lock.RUnlock()
+	detail, ok := loadErrCodeMap()[e.Code]
 	if !ok || len(detail.Polyglot) == 0 {
 		return
 	}
@@ -178,9 +196,7 @@ func pickMsg(detail *ErrCodeDetail) string {
 }
 
 func getErrDetail(errCode int32) *ErrCodeDetail {
-	lock.RLock()
-	detail, ok := errCodeMap[errCode]
-	lock.RUnlock()
+	detail, ok := loadErrCodeMap()[errCode]
 	if !ok {
 		return &ErrCodeDetail{Status: DefaultStatusCode}
 	}

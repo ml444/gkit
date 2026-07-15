@@ -84,11 +84,9 @@ func TestRegisterErrorDoesNotMutateCallerMap(t *testing.T) {
 	if detail.Status != 0 {
 		t.Fatalf("caller detail mutated: status=%d", detail.Status)
 	}
-	lock.RLock()
-	registered := errCodeMap[99]
-	lock.RUnlock()
-	if registered.Status != DefaultStatusCode {
-		t.Fatalf("registered status = %d, want %d", registered.Status, DefaultStatusCode)
+	got := New(99)
+	if got.Status != DefaultStatusCode {
+		t.Fatalf("registered status = %d, want %d", got.Status, DefaultStatusCode)
 	}
 }
 
@@ -136,6 +134,23 @@ func TestErrorsIsStatusAndCode(t *testing.T) {
 	b := CreateError(400, 1, "b")
 	if !errors.Is(a, b) {
 		t.Fatal("same status+code should match via Error.Is")
+	}
+}
+
+func TestRegisterErrorPreservesPriorCodes(t *testing.T) {
+	const codeA int32 = 88010
+	const codeB int32 = 88011
+	RegisterError(map[int32]*ErrCodeDetail{
+		codeA: {Status: 400, Code: codeA, Message: "a"},
+	})
+	RegisterError(map[int32]*ErrCodeDetail{
+		codeB: {Status: 404, Code: codeB, Message: "b"},
+	})
+	if New(codeA).Message != "a" {
+		t.Fatalf("codeA message = %q, want %q", New(codeA).Message, "a")
+	}
+	if New(codeB).Message != "b" {
+		t.Fatalf("codeB message = %q, want %q", New(codeB).Message, "b")
 	}
 }
 
