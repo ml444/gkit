@@ -366,12 +366,12 @@ func main() {
 
 ### dbx
 
-基于gorm的数据库模块和Proto格式的model做了一些预处理的工作，主要包含以下几个功能：
+基于 SQL Builder 内核的数据库访问层，默认通过 `dbx/gorm` 驱动 GORM。核心 `dbx` 包不依赖 GORM；GORM 专有方法（`Preload`、`Clauses`、deferred join 分页）在 `dbx/gorm` 中。
 
-- 封装gorm的增删改查，查询封装了链式方法(Eq\Gt\Lt\In\NotIn\Between...)，使其更易于使用，并支持软删除以及分页查询。
-- 封装了复杂查询的参数结构`QueryOpts`, 在一些复杂的查询下，可以更方便地处理查询条件。
-- 针对NotFoundRecord的错误处理，可以自定义错误码和错误信息。
-- 封装列表的分页查询`dbx.pagination`，使分页查询更易于使用。
+- 封装增删改查，链式方法（Eq、Gt、Lt、In、NotIn、Between…），软删除与分页。
+- `QueryOpts` 处理复杂列表查询。
+- 可自定义 NotFound 错误码。
+- `dbx/pagination` 分页查询。
 
 基础使用：
 
@@ -381,7 +381,9 @@ package main
 import (
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+
 	"github.com/ml444/gkit/dbx"
+	gormdriver "github.com/ml444/gkit/dbx/gorm"
 	"github.com/ml444/gkit/dbx/pagination"
 )
 
@@ -398,52 +400,55 @@ type ModelUser struct {
 	Avatar    string `gorm:"type:varchar(255);comment:头像"`
 }
 
-type GroupBy struct {
-	Name  string `json:"name"`
-	Total uint32 `json:"total"`
-}
+var gdb *gorm.DB
 
-func getDB() *gorm.DB {
-	db, err := gorm.Open(mysql.Open("dsn"), &gorm.Config{})
-	if err != nil {
-		panic(err)
-	}
-	return db
+func getConn() dbx.Conn {
+	return gormdriver.NewConn(gdb)
 }
 
 func main() {
 	var err error
-	scope := dbx.NewScope(getDB(), &ModelUser{})
-	// create data: INSERT INTO `model_user` (`name`,`age`,`created_at`,`updated_at`) VALUES ('test',18,1625673600,1625673600)
+	gdb, err = gorm.Open(mysql.Open("dsn"), &gorm.Config{})
+	if err != nil {
+		panic(err)
+	}
+
+	scope := dbx.NewScope(getConn(), &ModelUser{})
 	err = scope.Create(&ModelUser{Name: "test", Age: 18})
-
-	// update data: UPDATE `model_user` SET `name`='test2',`age`=20,`updated_at`=1625673600 WHERE `id` = 1
 	err = scope.Eq("id", 1).Update(&ModelUser{Name: "test2", Age: 20})
-
-	// soft delete data: UPDATE `model_user` SET `deleted_at`=1625673600 WHERE `id` IN (1,2,3)
 	err = scope.In("id", []uint64{1, 2, 3}).Delete()
 
-	// select data: SELECT * FROM `model_user` WHERE `id` = 1 AND `deleted_at` = 0 LIMIT 1
 	var user ModelUser
 	err = scope.Eq("id", 1).First(&user)
-	err = scope.SetNotFoundErr(notFoundErrCode).Eq("id", 1).First(&user)
-	// if not found record, return error: errorx.New(notFoundErrCode)
 
-	// select data: SELECT * FROM `model_user` WHERE `deleted_at` = 0 AND `name` Like 'test%' AND `age` <= 25 LIMIT 10 OFFSET 0
 	var users []*ModelUser
 	err = scope.LikePrefix("name", "test").Lte("age", 25).Limit(10).Offset(0).Find(&users)
-	// Or use pagination query to get total count
-	pag, err := scope.LikePrefix("name", "test").Lte("age", 25).PaginateQuery(&pagination.Pagination{Page: 1, Size: 10, SkipCount: false}, &users)
-	// return pagination: Paginate{Total: 100, Page: 1, Size: 10} 
+	pag, err := scope.LikePrefix("name", "test").Lte("age", 25).PaginateQuery(&pagination.Pagination{Page: 1, Size: 10}, &users)
 
-	// GroupBy and Having
-	var userGroup []*GroupBy
-	err = scope.Select("name", "count(*) AS total").Group("name").Having("age > 18").Find(&userGroup)
-
-	// OrderBy
-	err = scope.Order("age DESC").Find(&users)
+	repo := dbx.NewT[ModelUser](getConn, dbx.SetNotFoundErrCode(404))
+	_ = repo
 }
 ```
+
+#### 从旧版 API 迁移（v2 破坏性变更）
+
+| 旧写法 | 新写法 |
+|--------|--------|
+| `dbx.NewScope(db, model)` | `dbx.NewScope(gormdriver.NewConn(db), model)` |
+| `dbx.NewT[M](func() *gorm.DB)` | `dbx.NewT[M](func() dbx.Conn)` |
+| `dbx.TxGo(ctx, db, func(tx *gorm.DB)…)` | `gormdriver.TxGo(ctx, gormdriver.NewConn(db), func(tx *gorm.DB)…)` |
+| `dbx.RunTxItems(ctx, db, items…)` | `dbx.RunTxItems(ctx, gormdriver.NewConn(db), items…)` |
+| `scope.Preload` / `scope.Clauses` | `gormdriver.NewGormScope(tx, model).Preload` / `.Clauses` |
+| `TxItem.Preload(tx *gorm.DB)` | `TxItem.Preload(d dbx.Driver)`，需要时用 `gormdriver.RawDB(d)` |
+| 事务内 `dbx.NewScope(tx, m)` | `dbx.NewScope(gormdriver.TxConn(tx), m)` 或 `gormdriver.NewGormScope(tx, m)` |
+
+`dbx/gorm` 辅助函数：
+
+- `NewConn(*gorm.DB) dbx.Conn` — 包装连接池
+- `TxConn(*gorm.DB) dbx.Conn` — 包装事务连接
+- `NewGormScope(tx, model) *GormScope` — GORM 链式扩展
+- `TxGo(ctx, conn, func(*gorm.DB) error)` — 仍使用 raw GORM 回调时的便捷事务
+- `RawDB(dbx.Driver) (*gorm.DB, bool)` — 解包底层 GORM
 
 #### 分页查询
 
@@ -548,7 +553,7 @@ func (s *UserService) ListUser(ctx context.Context, req *user.ListUserReq) (*use
 	scope := getDBScope()
 	err := optx.NewProcessor().
 		AddUint64List(user.ListUserReq_ListOptIdList, func(valList []uint64) error {
-			scope.In("id", ids)
+			scope.In("id", valList)
 			return nil
 		}).
 		AddString(user.ListUserReq_ListOptLikeName, func(val string) error {
@@ -622,7 +627,7 @@ func (s *UserService) ListUser(ctx context.Context, req *user.ListUserReq) (*use
 	if err != nil {
 		return nil, err
 	}
-	err = db.Find(&users)
+	err = scope.Find(&users)
 	if err != nil {
 		return nil, err
 	}
@@ -795,6 +800,66 @@ func main() {
 }
 ```
 
+#### 主流日志库适配
+
+gkit 提供独立子包，将常用日志库桥接为 `log.Logger`，接入时无需替换现有日志框架。各子包按需引入，不会增加根模块的第三方依赖。
+
+| 子包 | 依赖 |
+|------|------|
+| `github.com/ml444/gkit/log/slog` | 标准库 `log/slog` |
+| `github.com/ml444/gkit/log/zap` | `go.uber.org/zap` |
+| `github.com/ml444/gkit/log/logrus` | `github.com/sirupsen/logrus` |
+| `github.com/ml444/gkit/log/zerolog` | `github.com/rs/zerolog` |
+| `github.com/ml444/gkit/log/glog` | `github.com/ml444/glog` |
+
+统一 API：`New(underlying, opts...)`，可选 `WithSyncGkitLevel(true)` 让 `log.SetLogLevel()` 作为额外过滤层，可选 `WithLoggerName(name)`。
+
+```go
+// zap 示例
+import (
+    "github.com/ml444/gkit/log"
+    gkitzap "github.com/ml444/gkit/log/zap"
+    "go.uber.org/zap"
+)
+
+z, _ := zap.NewProduction()
+log.SetLogger(gkitzap.New(z, gkitzap.WithSyncGkitLevel(true)))
+```
+
+```go
+// slog 示例
+import (
+    "log/slog"
+    "os"
+
+    "github.com/ml444/gkit/log"
+    gkitslog "github.com/ml444/gkit/log/slog"
+)
+
+h := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})
+log.SetLogger(gkitslog.New(slog.New(h)))
+```
+
+```go
+// glog 适配器（推荐）
+import (
+    "github.com/ml444/gkit/log"
+    gkitglog "github.com/ml444/gkit/log/glog"
+    glog "github.com/ml444/glog"
+)
+
+lg, err := gkitglog.NewFromInit(
+    glog.SetLoggerName("service"),
+    glog.SetWorkerConfigs(glog.NewDefaultStdoutWorkerConfig()),
+)
+if err != nil {
+    panic(err)
+}
+log.SetLogger(lg)
+```
+
+> **注意**：gkit 默认 `DefaultLogger.Fatal` **不会**终止进程；接入 zap / logrus / zerolog / slog / glog 适配器后，`log.Fatal` 将遵循各库原生语义，**可能调用 `os.Exit`**。
+
 ### middleware
 
 gkit 提供 **Service** 中间件（`middleware.Middleware`，用于 httpx/grpcx 生成的 Handler）和 **HTTP** 中间件（`middleware.HttpMiddleware`，用于路由层）。
@@ -914,7 +979,7 @@ conn, err := xds.NewClient("xds:///your-listener-name")
     - 自定义claim
 - **env**: 用于工作环境的判断，如：是否为开发环境、测试环境、生产环境等
 - **header**: 请求头相关的处理及httpHeader与Context的转换
-- **routine**: 用于协程的安全处理，在协程中使用`routine.Go()`代替`go`关键字，可以捕获协程中的panic，并记录日志。
+- **routine**: 协程安全封装。使用 `routine.Go(ctx, fn)` 代替裸 `go`，自动捕获 panic 并记录日志；`ctx` 已取消时不启动任务。高并发场景可用 `routine.NewPool(n)` 限制后台协程数（池满阻塞，等待期间 `ctx` 取消则放弃入队）。
 - **tracing**: 链路追踪模块，主要包含以下几个功能：
     - 生成链路追踪的`trace id`和`span id`
     - 从http请求头中获取链路追踪的`trace id`和`span id`

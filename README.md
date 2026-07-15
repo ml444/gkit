@@ -265,7 +265,7 @@ If you put these import files elsewhere, you can modify it to `import "your/path
 - **log**: The log module defines a log interface and outputs to standard output by default. The log implementation can be customized.Also encapsulates gorm’s log output,unified output to the specified logger.
 - **middleware**: The middleware module, It mainly includes middleware such as request and response logs, ratelimit, recovery, tracking, and parameter verification.
 - **transport**: Communication transport module,It mainly includes the transport modules of http and grpc.
-- **pkg**: The public module includes some basic tool classes, such as authentication, environment judgment, request headers, coroutine security processing, link tracking, etc.
+- **pkg**: The public module includes some basic tool classes, such as authentication, environment judgment, request headers, coroutine safety (`routine.Go` with context cancellation awareness and optional `routine.Pool` for concurrency limits), link tracking, etc.
 
 ## Core module description
 ### errorx
@@ -360,14 +360,14 @@ func main() {
 
 ### dbx
 
-Secondary encapsulation based on gorm mainly includes the following functions:
+Driver-agnostic database access built on a SQL builder kernel, with GORM as the default driver (`dbx/gorm`). Core `dbx` has no GORM import; GORM-specific helpers (`Preload`, `Clauses`, deferred join pagination) live in `dbx/gorm`.
 
-- Encapsulates the creation, update, query, and deletion of gorm. The query encapsulates the chain method (Eq\Gt\Lt\In\Not In\Between...), making it easier to use, and supports soft deletion and pagination query.
-- The parameter structure `QueryOpts` that encapsulates complex queries can make it easier to process query conditions under some complex queries.
-- For `Not Found Record` error handling, the error code and error message can be customized.
-- The `dbx.pagination` module of list paging query makes paging list query easier to use.
+- Encapsulates create, update, query, and delete with chain methods (Eq, Gt, Lt, In, Not In, Between…), soft delete, and pagination.
+- `QueryOpts` for complex list queries.
+- Customizable not-found error handling.
+- `dbx/pagination` for list paging.
 
-Basic usage：
+Basic usage:
 
 ```go
 package main
@@ -375,21 +375,23 @@ package main
 import (
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+
 	"github.com/ml444/gkit/dbx"
+	gormdriver "github.com/ml444/gkit/dbx/gorm"
 	"github.com/ml444/gkit/dbx/pagination"
 )
 
 type ModelUser struct {
-  Id        uint64 `gorm:"comment:主键;primarykey"`
-  CreatedAt uint32 `gorm:"comment:创建时间"`
-  UpdatedAt uint32 `gorm:"comment:更新时间"`
-  DeletedAt uint32 `gorm:"comment:删除时间"`
-  Name      string `gorm:"type:varchar(50);comment:名称;index:idx_age_name,priority:2"`
-  Phone     string `gorm:"not null;type:varchar(25);comment:名称;uniqueIndex:uidx_phone"`
-  Age       uint32 `gorm:"type:int;comment:年龄;index:idx_age_name,priority:1"`
-  Sex       uint32 `gorm:"type:tinyint;comment:性别"`
-  Email     string `gorm:"type:varchar(255);comment:邮箱;uniqueIndex:uidx_email"`
-  Avatar    string `gorm:"type:varchar(255);comment:头像"`
+	Id        uint64 `gorm:"comment:主键;primarykey"`
+	CreatedAt uint32 `gorm:"comment:创建时间"`
+	UpdatedAt uint32 `gorm:"comment:更新时间"`
+	DeletedAt uint32 `gorm:"comment:删除时间"`
+	Name      string `gorm:"type:varchar(50);comment:名称;index:idx_age_name,priority:2"`
+	Phone     string `gorm:"not null;type:varchar(25);comment:名称;uniqueIndex:uidx_phone"`
+	Age       uint32 `gorm:"type:int;comment:年龄;index:idx_age_name,priority:1"`
+	Sex       uint32 `gorm:"type:tinyint;comment:性别"`
+	Email     string `gorm:"type:varchar(255);comment:邮箱;uniqueIndex:uidx_email"`
+	Avatar    string `gorm:"type:varchar(255);comment:头像"`
 }
 
 type GroupBy struct {
@@ -397,47 +399,67 @@ type GroupBy struct {
 	Total uint32 `json:"total"`
 }
 
-func getDB() *gorm.DB {
-	db, err := gorm.Open(mysql.Open("user:password@tcp(192.168.1.100:3306)/gkit?charset=utf8&parseTime=True&loc=Local"), &gorm.Config{})
-	if err != nil {
-		panic(err)
-	}
-	return db
+var gdb *gorm.DB
+
+func getConn() dbx.Conn {
+	return gormdriver.NewConn(gdb)
 }
 
 func main() {
 	var err error
-	scope := dbx.NewScope(getDB(), &ModelUser{})
-	// create data: INSERT INTO `model_user` (`name`,`age`,`created_at`,`updated_at`) VALUES ('test',18,1625673600,1625673600)
+	gdb, err = gorm.Open(mysql.Open("user:password@tcp(192.168.1.100:3306)/gkit?charset=utf8&parseTime=True&loc=Local"), &gorm.Config{})
+	if err != nil {
+		panic(err)
+	}
+
+	scope := dbx.NewScope(getConn(), &ModelUser{})
+	// create: INSERT INTO `model_user` ...
 	err = scope.Create(&ModelUser{Name: "test", Age: 18})
 
-	// update data: UPDATE `model_user` SET `name`='test2',`age`=20,`updated_at`=1625673600 WHERE `id` = 1
+	// update: UPDATE `model_user` SET ...
 	err = scope.Eq("id", 1).Update(&ModelUser{Name: "test2", Age: 20})
 
-	// soft delete data: UPDATE `model_user` SET `deleted_at`=1625673600 WHERE `id` IN (1,2,3)
+	// soft delete: UPDATE `model_user` SET `deleted_at`=...
 	err = scope.In("id", []uint64{1, 2, 3}).Delete()
 
-	// select data: SELECT * FROM `model_user` WHERE `id` = 1 AND `deleted_at` = 0 LIMIT 1
 	var user ModelUser
 	err = scope.Eq("id", 1).First(&user)
-	err = scope.SetNotFoundErr(notFoundErrCode).Eq("id", 1).First(&user)
-	// if not found record, return error: errorx.New(notFoundErrCode)
 
-	// select data: SELECT * FROM `model_user` WHERE `deleted_at` = 0 AND `name` Like 'test%' AND `age` <= 25 LIMIT 10 OFFSET 0
 	var users []*ModelUser
 	err = scope.LikePrefix("name", "test").Lte("age", 25).Limit(10).Offset(0).Find(&users)
-	// Or use pagination query to get total count
-	pagination, err := scope.LikePrefix("name", "test").Lte("age", 25).PaginateQuery(&pagination.Pagination{Page: 1, Size: 10, SkipCount: false}, &users)
-	// pagination: Paginate{Total: 100, Page: 1, Size: 10} 
 
-	// GroupBy and Having
+	pagination, err := scope.LikePrefix("name", "test").Lte("age", 25).PaginateQuery(&pagination.Pagination{Page: 1, Size: 10}, &users)
+
 	var userGroup []*GroupBy
 	err = scope.Select("name", "count(*) AS total").Group("name").Having("age > 18").Find(&userGroup)
 
-	// OrderBy
 	err = scope.Order("age DESC").Find(&users)
+
+	// typed repo
+	repo := dbx.NewT[ModelUser](getConn, dbx.SetNotFoundErrCode(404))
+	_ = repo
 }
 ```
+
+#### Migration from pre-v2 (GORM-coupled API)
+
+| Before | After |
+|--------|-------|
+| `dbx.NewScope(db, model)` | `dbx.NewScope(gormdriver.NewConn(db), model)` |
+| `dbx.NewT[M](func() *gorm.DB)` | `dbx.NewT[M](func() dbx.Conn)` |
+| `dbx.TxGo(ctx, db, func(tx *gorm.DB)…)` | `gormdriver.TxGo(ctx, gormdriver.NewConn(db), func(tx *gorm.DB)…)` |
+| `dbx.RunTxItems(ctx, db, items…)` | `dbx.RunTxItems(ctx, gormdriver.NewConn(db), items…)` |
+| `scope.Preload` / `scope.Clauses` | `gormdriver.NewGormScope(tx, model).Preload` / `.Clauses` |
+| `TxItem.Preload(tx *gorm.DB)` | `TxItem.Preload(d dbx.Driver)` + `gormdriver.RawDB(d)` when raw GORM is needed |
+| Inside tx callback: `dbx.NewScope(tx, m)` | `dbx.NewScope(gormdriver.TxConn(tx), m)` or `gormdriver.NewGormScope(tx, m)` |
+
+Helpers in `dbx/gorm`:
+
+- `NewConn(*gorm.DB) dbx.Conn` — wrap a pool handle
+- `TxConn(*gorm.DB) dbx.Conn` — wrap a transaction handle for `NewScope` inside callbacks
+- `NewGormScope(tx, model) *GormScope` — GORM chain extensions (`Preload`, `Clauses`, deferred-join pagination)
+- `TxGo(ctx, conn, func(*gorm.DB) error)` — transaction helper when the callback still uses raw GORM
+- `RawDB(dbx.Driver) (*gorm.DB, bool)` — unwrap the underlying `*gorm.DB`
 
 #### Paging query
 
@@ -557,7 +579,7 @@ func (s *UserService) ListUser(ctx context.Context, req *user.ListUserReq) (*use
 	scope := getDBScope()
 	err := optx.NewProcessor(req.ListOption).
 		AddUint64List(user.ListUserReq_ListOptIdList, func(valList []uint64) error {
-			scope.In("id", ids)
+			scope.In("id", valList)
 			return nil
 		}).
 		AddString(user.ListUserReq_ListOptLikeName, func(val string) error {
@@ -631,7 +653,7 @@ func (s *UserService) ListUser(ctx context.Context, req *user.ListUserReq) (*use
 	if err != nil {
 		return nil, err
 	}
-	err = db.Find(&users)
+	err = scope.Find(&users)
 	if err != nil {
 		return nil, err
 	}
@@ -805,6 +827,66 @@ func main() {
 	log.Fatalf("hi, %s! this is fatal", name)
 }
 ```
+
+#### Log library adapters
+
+gkit ships optional subpackages that bridge popular loggers to `log.Logger`, so you can keep your existing logging stack. Each subpackage is imported on demand and does not add third-party deps to the root module.
+
+| Subpackage | Dependency |
+|------------|------------|
+| `github.com/ml444/gkit/log/slog` | stdlib `log/slog` |
+| `github.com/ml444/gkit/log/zap` | `go.uber.org/zap` |
+| `github.com/ml444/gkit/log/logrus` | `github.com/sirupsen/logrus` |
+| `github.com/ml444/gkit/log/zerolog` | `github.com/rs/zerolog` |
+| `github.com/ml444/gkit/log/glog` | `github.com/ml444/glog` |
+
+Unified API: `New(underlying, opts...)`, optional `WithSyncGkitLevel(true)` to apply `log.SetLogLevel()` as an extra filter, optional `WithLoggerName(name)`.
+
+```go
+// zap
+import (
+    "github.com/ml444/gkit/log"
+    gkitzap "github.com/ml444/gkit/log/zap"
+    "go.uber.org/zap"
+)
+
+z, _ := zap.NewProduction()
+log.SetLogger(gkitzap.New(z, gkitzap.WithSyncGkitLevel(true)))
+```
+
+```go
+// slog
+import (
+    "log/slog"
+    "os"
+
+    "github.com/ml444/gkit/log"
+    gkitslog "github.com/ml444/gkit/log/slog"
+)
+
+h := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})
+log.SetLogger(gkitslog.New(slog.New(h)))
+```
+
+```go
+// glog adapter
+import (
+    "github.com/ml444/gkit/log"
+    gkitglog "github.com/ml444/gkit/log/glog"
+    glog "github.com/ml444/glog"
+)
+
+lg, err := gkitglog.NewFromInit(
+    glog.SetLoggerName("service"),
+    glog.SetWorkerConfigs(glog.NewDefaultStdoutWorkerConfig()),
+)
+if err != nil {
+    panic(err)
+}
+log.SetLogger(lg)
+```
+
+> **Note:** gkit's default `DefaultLogger.Fatal` does **not** exit the process. After wiring an external adapter, `log.Fatal` follows the underlying library semantics and **may call `os.Exit`**.
 
 ### middleware
 

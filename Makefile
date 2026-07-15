@@ -1,3 +1,11 @@
+
+.PHONY: test-dbx
+# run the dbx core unit tests and each adapter module's integration contract
+test-dbx:
+	go test ./dbx/...
+	cd dbx/gorm && go test ./...
+	cd dbx/sqlx && go test ./...
+
 .PHONY: error-pb
 # generate error proto
 error-pb:
