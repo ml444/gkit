@@ -50,6 +50,9 @@ func Server(opts ...gkitotel.Option) middleware.Middleware {
 				header.SetOutgoing(ctx, header.TraceIDKey, id)
 				gkitotel.SyncTraceIDToCache(ctx)
 			}
+			if id := gkitotel.SpanID(ctx); id != "" {
+				ctx = header.WithSpanID(ctx, id)
+			}
 			defer gkitotel.ClearTraceIDCache()
 			return next(ctx, req)
 		}
@@ -76,6 +79,9 @@ func HTTPMiddleware(opts ...gkitotel.Option) middleware.HttpMiddleware {
 				header.SetTraceID(w.Header(), id)
 				ctx = header.WithTraceID(ctx, id)
 				gkitotel.SyncTraceIDToCache(ctx)
+			}
+			if id := gkitotel.SpanID(ctx); id != "" {
+				ctx = header.WithSpanID(ctx, id)
 			}
 			defer gkitotel.ClearTraceIDCache()
 			next.ServeHTTP(w, r.WithContext(ctx))

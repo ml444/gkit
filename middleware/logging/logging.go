@@ -22,8 +22,12 @@ func defaultLogging() middleware.LurkerFunc {
 		if tr, ok := transport.FromContext(ctx); ok {
 			path = tr.Path()
 		}
-		traceID := header.CorrelationID(ctx)
-		log.Infof("trace=%s path=%s took=%vms req=%+v", traceID, path, took, req)
+		ti := header.TraceInfoFromContext(ctx)
+		trace := ti.TraceID
+		if trace == "" {
+			trace = header.CorrelationID(ctx)
+		}
+		log.Infof("trace=%s span=%s path=%s took=%vms req=%+v", trace, ti.SpanID, path, took, req)
 		return nil
 	}
 }

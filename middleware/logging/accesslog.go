@@ -36,9 +36,9 @@ func HTTPMiddleware() middleware.HttpMiddleware {
 			start := time.Now()
 			sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(sw, r)
-			log.Infof("access method=%s path=%s status=%d bytes=%d latency_ms=%d trace=%s",
+			log.Infof("access method=%s path=%s status=%d bytes=%d latency_ms=%d trace=%s span=%s",
 				r.Method, r.URL.Path, sw.status, sw.bytes, time.Since(start).Milliseconds(),
-				header.TraceIDFromRequest(r),
+				header.LogTraceID(r), header.TraceInfoFromRequest(r).SpanID,
 			)
 		})
 	}

@@ -3,6 +3,7 @@ package header
 import "context"
 
 type traceIDKey struct{}
+type spanIDKey struct{}
 type requestIDKey struct{}
 
 // WithTraceID stores trace ID in context.
@@ -16,6 +17,22 @@ func WithTraceID(ctx context.Context, traceID string) context.Context {
 // GetTraceID returns trace ID from context only.
 func GetTraceID(ctx context.Context) string {
 	if v, ok := ctx.Value(traceIDKey{}).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// WithSpanID stores span ID in context.
+func WithSpanID(ctx context.Context, spanID string) context.Context {
+	if spanID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, spanIDKey{}, spanID)
+}
+
+// GetSpanID returns span ID from context only.
+func GetSpanID(ctx context.Context) string {
+	if v, ok := ctx.Value(spanIDKey{}).(string); ok {
 		return v
 	}
 	return ""

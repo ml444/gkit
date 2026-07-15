@@ -254,7 +254,7 @@ httpx.Middleware(validate.Validator())
 | API | Layer | Description |
 |-----|-------|-------------|
 | `LogRequest(fns...)` | Service | After handler: logs latency, path, trace ID, request (customizable via `LurkerFunc`) |
-| `HTTPMiddleware()` | HTTP | Structured access log: method, path, status, bytes, latency, trace ID |
+| `HTTPMiddleware()` | HTTP | Structured access log: method, path, status, bytes, latency, trace ID, span ID (from request context) |
 
 Context keys for Service logging: `logging.Took` (duration ms), `logging.Reply` (response).
 
@@ -270,10 +270,12 @@ httpx.Middleware(logging.LogRequest())
 | API | Layer | Description |
 |-----|-------|-------------|
 | `Server()` | Service | Ensures trace ID in context; sets outbound metadata |
-| `HTTPMiddleware()` | HTTP | Reads/generates `X-Trace-Id`, echoes on response |
+| `HTTPMiddleware()` | HTTP | Parses W3C `traceparent` or `X-Trace-Id`, injects into context, echoes trace on response |
 | `UnaryServerInterceptor()` | gRPC | Trace ID on unary RPC |
 
-Uses headers from [`pkg/header`](../pkg/header/header.go): `X-Trace-Id`, `X-Request-ID`.
+Uses headers from [`pkg/header`](../pkg/header/header.go): W3C `traceparent`, `X-Trace-Id`, `X-Request-ID`.
+
+**Middleware order:** place `tracing` (or `otel`) **before** `logging` and `metrics` so they read trace info from `r.Context()`. Do **not** enable `tracing.HTTPMiddleware()` and `otel.HTTPMiddleware()` on the same server.
 
 For full OpenTelemetry integration, see [`pkg/tracing`](../pkg/tracing/) (separate module).
 
@@ -293,12 +295,12 @@ For full OpenTelemetry integration, see [`pkg/tracing`](../pkg/tracing/) (separa
 
 | API | Layer | Description |
 |-----|-------|-------------|
-| `HTTPMiddleware()` | HTTP | Records count + duration per method/path |
+| `HTTPMiddleware()` | HTTP | Records count + duration per method/path; histogram attaches trace exemplars when trace ID is present |
 | `Server()` | Service | Records per transport path |
 | `SetRecorder(r)` | — | Plug in custom `Recorder` |
 | `NewInMemoryRecorder()` | — | Test helper |
 
-**Build tag `prometheus`:** registers Prometheus counters/histograms (`gkit_http_requests_total`, `gkit_http_request_duration_seconds`). Build with:
+**Build tag `prometheus`:** registers Prometheus counters/histograms (`gkit_http_requests_total`, `gkit_http_request_duration_seconds`). Histogram latency may include `trace_id` / `span_id` exemplars — expose metrics with `promhttp.HandlerOpts{EnableOpenMetrics: true}`. Build with:
 
 ```bash
 go build -tags prometheus ./...

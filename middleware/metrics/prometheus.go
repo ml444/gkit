@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ml444/gkit/pkg/header"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -33,4 +34,21 @@ func (prometheusRecorder) IncRequests(method, path string, status int) {
 
 func (prometheusRecorder) ObserveDuration(method, path string, d time.Duration) {
 	reqDuration.WithLabelValues(method, path).Observe(d.Seconds())
+}
+
+func (prometheusRecorder) ObserveDurationWithTrace(method, path string, d time.Duration, ti header.TraceInfo) {
+	observer := reqDuration.WithLabelValues(method, path)
+	if ti.TraceID == "" {
+		observer.Observe(d.Seconds())
+		return
+	}
+	labels := prometheus.Labels{"trace_id": ti.TraceID}
+	if ti.SpanID != "" {
+		labels["span_id"] = ti.SpanID
+	}
+	if ex, ok := observer.(prometheus.ExemplarObserver); ok {
+		ex.ObserveWithExemplar(d.Seconds(), labels)
+		return
+	}
+	observer.Observe(d.Seconds())
 }

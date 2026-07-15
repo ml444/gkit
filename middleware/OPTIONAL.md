@@ -41,16 +41,22 @@ Example: `gkit:rl:user-api:api/v1/users/{id}:60000`
 
 ## OpenTelemetry tracing
 
-Lightweight trace ID propagation: `middleware/tracing` (no OTel SDK).
+Lightweight trace ID propagation: `middleware/tracing` (no OTel SDK). Parses W3C `traceparent` and legacy `X-Trace-Id`.
 
 Full OTel spans: import `middleware/tracing/otel` (depends on `pkg/tracing`):
 
 ```go
 import "github.com/ml444/gkit/middleware/tracing/otel"
 
-httpx.SetHTTPMiddlewares(otel.HTTPMiddleware())
+httpx.SetHTTPMiddlewares(
+    otel.HTTPMiddleware(),
+    logging.HTTPMiddleware(),
+    metrics.HTTPMiddleware(),
+)
 httpx.Middleware(otel.Server())
 ```
+
+**Do not** combine `tracing.HTTPMiddleware()` and `otel.HTTPMiddleware()` on the same server. Place tracing/otel **before** logging and metrics middleware.
 
 ## CSRF
 

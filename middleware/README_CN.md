@@ -235,7 +235,7 @@ httpx.Middleware(validate.Validator())
 | API | 层级 | 说明 |
 |-----|------|------|
 | `LogRequest(fns...)` | Service | Handler 结束后记录耗时、路径、Trace ID、请求体（可自定义 `LurkerFunc`） |
-| `HTTPMiddleware()` | HTTP | 结构化访问日志：method、path、status、字节数、耗时、trace |
+| `HTTPMiddleware()` | HTTP | 结构化访问日志：method、path、status、字节数、耗时、trace、span（从 request context 读取） |
 
 Service 日志上下文键：`logging.Took`（毫秒）、`logging.Reply`（响应）。
 
@@ -251,10 +251,10 @@ httpx.Middleware(logging.LogRequest())
 | API | 层级 | 说明 |
 |-----|------|------|
 | `Server()` | Service | 保证 context 中有 trace ID，写入出站 metadata |
-| `HTTPMiddleware()` | HTTP | 读取/生成 `X-Trace-Id` 并回写响应头 |
+| `HTTPMiddleware()` | HTTP | 解析 W3C `traceparent` 或 `X-Trace-Id`，注入 context 并回写响应头 |
 | `UnaryServerInterceptor()` | gRPC | 一元 RPC trace |
 
-请求头定义见 [`pkg/header`](../pkg/header/header.go)。完整 OpenTelemetry 见 [`pkg/tracing`](../pkg/tracing/)（独立子模块）。
+请求头定义见 [`pkg/header`](../pkg/header/header.go)（含 W3C `traceparent`）。**中间件顺序：** `tracing`（或 `otel`）须在 `logging`、`metrics` 之前；同一服务勿同时启用 `tracing.HTTPMiddleware()` 与 `otel.HTTPMiddleware()`。完整 OpenTelemetry 见 [`pkg/tracing`](../pkg/tracing/)（独立子模块）。
 
 ---
 
@@ -272,7 +272,7 @@ httpx.Middleware(logging.LogRequest())
 
 | API | 层级 | 说明 |
 |-----|------|------|
-| `HTTPMiddleware()` | HTTP | 按 method/path 计数与耗时 |
+| `HTTPMiddleware()` | HTTP | 按 method/path 计数与耗时；有 trace ID 时 histogram 附加 exemplar |
 | `Server()` | Service | 按 transport path 记录 |
 | `SetRecorder(r)` | — | 注入自定义 `Recorder` |
 | `NewInMemoryRecorder()` | — | 测试用 |

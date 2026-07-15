@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ml444/gkit/middleware"
+	"github.com/ml444/gkit/pkg/header"
 	"github.com/ml444/gkit/transport"
 )
 
@@ -14,12 +15,15 @@ import (
 type Recorder interface {
 	IncRequests(method, path string, status int)
 	ObserveDuration(method, path string, duration time.Duration)
+	ObserveDurationWithTrace(method, path string, duration time.Duration, trace header.TraceInfo)
 }
 
 type nopRecorder struct{}
 
 func (nopRecorder) IncRequests(string, string, int)              {}
 func (nopRecorder) ObserveDuration(string, string, time.Duration) {}
+func (nopRecorder) ObserveDurationWithTrace(string, string, time.Duration, header.TraceInfo) {
+}
 
 var defaultRecorder Recorder = nopRecorder{}
 
@@ -38,7 +42,7 @@ func HTTPMiddleware() middleware.HttpMiddleware {
 			sw := &statusCapture{ResponseWriter: w}
 			next.ServeHTTP(sw, r)
 			defaultRecorder.IncRequests(r.Method, r.URL.Path, sw.status)
-			defaultRecorder.ObserveDuration(r.Method, r.URL.Path, time.Since(start))
+			defaultRecorder.ObserveDurationWithTrace(r.Method, r.URL.Path, time.Since(start), header.TraceInfoFromRequest(r))
 		})
 	}
 }
@@ -58,7 +62,7 @@ func Server() middleware.Middleware {
 				status = 500
 			}
 			defaultRecorder.IncRequests("RPC", path, status)
-			defaultRecorder.ObserveDuration("RPC", path, time.Since(start))
+			defaultRecorder.ObserveDurationWithTrace("RPC", path, time.Since(start), header.TraceInfoFromContext(ctx))
 			return rsp, err
 		}
 	}
@@ -100,6 +104,10 @@ func (r *InMemoryRecorder) IncRequests(method, path string, status int) {
 }
 
 func (r *InMemoryRecorder) ObserveDuration(method, path string, d time.Duration) {
+	r.ObserveDurationWithTrace(method, path, d, header.TraceInfo{})
+}
+
+func (r *InMemoryRecorder) ObserveDurationWithTrace(method, path string, d time.Duration, _ header.TraceInfo) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.Durations = append(r.Durations, d)

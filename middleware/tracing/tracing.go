@@ -29,11 +29,14 @@ func Server() middleware.Middleware {
 func HTTPMiddleware() middleware.HttpMiddleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			traceID := header.TraceIDFromRequest(r)
-			if traceID == "" {
-				traceID = newTraceID()
+			ti := header.TraceInfoFromHeaders(r.Header)
+			if ti.TraceID == "" {
+				ti.TraceID = newTraceID()
 			}
-			ctx := header.WithTraceID(r.Context(), traceID)
+			ctx := header.WithTraceID(r.Context(), ti.TraceID)
+			if ti.SpanID != "" {
+				ctx = header.WithSpanID(ctx, ti.SpanID)
+			}
 			header.PropagateToResponse(w, ctx)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

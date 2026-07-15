@@ -33,8 +33,20 @@ gkit:rl:{service}:{path}:{windowMs}
 
 ## OpenTelemetry
 
-- 轻量 Trace ID：`middleware/tracing`
+- 轻量 Trace ID：`middleware/tracing`（解析 W3C `traceparent` 与 `X-Trace-Id`，无 OTel SDK）
 - 完整 Span：`middleware/tracing/otel` + `pkg/tracing`
+
+```go
+import "github.com/ml444/gkit/middleware/tracing/otel"
+
+httpx.SetHTTPMiddlewares(
+    otel.HTTPMiddleware(),
+    logging.HTTPMiddleware(),
+    metrics.HTTPMiddleware(),
+)
+```
+
+**勿**在同一服务上同时启用 `tracing.HTTPMiddleware()` 与 `otel.HTTPMiddleware()`。tracing/otel 须在 logging、metrics 之前。
 
 ## CSRF
 
