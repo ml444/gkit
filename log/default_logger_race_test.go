@@ -19,7 +19,7 @@ func (discardWriter) WriteString(s string) (int, error) { return len(s), nil }
 func TestGlobalLoggerNoRace(t *testing.T) {
 	// Restore the default logger/level after the test mutates global state.
 	orig := GetLogger()
-	origLevel := getLevel()
+	origLevel := CurrentLevel()
 	t.Cleanup(func() {
 		SetLogger(orig)
 		SetLogLevel(origLevel)
@@ -45,7 +45,7 @@ func TestGlobalLoggerNoRace(t *testing.T) {
 				Infof("hello %d", j)
 				Debug("x")
 				_ = GetLogger()
-				_ = getLevel()
+				_ = CurrentLevel()
 			}
 		}()
 	}

@@ -22,7 +22,6 @@ type loggerHolder struct {
 //   - levelVal holds the current LogLevel as an int32.
 var (
 	loggerVal atomic.Value // stores loggerHolder
-	levelVal  atomic.Int32
 )
 
 type Logger interface {
@@ -84,7 +83,7 @@ type DefaultLogger struct {
 }
 
 func (l *DefaultLogger) Log(lvl LogLevel, value string) {
-	if lvl < getLevel() {
+	if lvl < CurrentLevel() {
 		return
 	}
 	_, _ = l.writer.WriteString(ColorLevel(lvl))
@@ -152,14 +151,6 @@ func (l *nopLogger) Infof(string, ...interface{})  {}
 func (l *nopLogger) Warnf(string, ...interface{})  {}
 func (l *nopLogger) Errorf(string, ...interface{}) {}
 func (l *nopLogger) Fatalf(string, ...interface{}) {}
-
-func SetLogLevel(lvl LogLevel) {
-	levelVal.Store(int32(lvl))
-}
-
-func getLevel() LogLevel {
-	return LogLevel(levelVal.Load())
-}
 
 func GetLoggerName() string {
 	return currentLogger().GetLoggerName()
