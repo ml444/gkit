@@ -2,10 +2,11 @@ package routine
 
 import (
 	"context"
-	"fmt"
-	"github.com/ml444/gkit/log"
+	"errors"
 	"runtime/debug"
 	"strings"
+
+	"github.com/ml444/gkit/log"
 )
 
 func CatchPanic(cb func(err interface{})) {
@@ -27,17 +28,23 @@ func CatchPanic(cb func(err interface{})) {
 	}
 }
 
-func Go(ctx *context.Context, logic func(ctx *context.Context) error) {
+// Go runs fn in a new goroutine with panic recovery.
+// If ctx is already cancelled or timed out, fn is not started.
+// fn should respect ctx cancellation during blocking I/O.
+func Go(ctx context.Context, fn func(context.Context) error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return
+	}
 	name := log.GetLoggerName()
 	go func() {
 		defer CatchPanic(func(err interface{}) {
-			msg := fmt.Sprintf("%v %s: catch panic in go-routine, err %v", ctx, name, err)
-			log.Error(msg)
+			log.Errorf("%s: catch panic in goroutine, err %v", name, err)
 		})
-		err := logic(ctx)
-		if err != nil {
-			msg := fmt.Sprintf("%s: go-routine err %v", name, err)
-			log.Error(msg)
+		if err := fn(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			log.Errorf("%s: goroutine err %v", name, err)
 		}
 	}()
 }
