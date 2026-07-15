@@ -7,14 +7,9 @@ import (
 	"runtime/debug"
 
 	"github.com/ml444/gkit/log"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
-type (
-	TxHandler  func(tx *gorm.DB) error
-	TxCallback func() (model interface{}, execute func(scope *Scope) error)
-)
+type TxCallback func() (model any, execute func(scope *Scope) error)
 
 func recoverTxPanic(err *error) {
 	if r := recover(); r != nil {
@@ -24,26 +19,25 @@ func recoverTxPanic(err *error) {
 	}
 }
 
-func TxGo(ctx context.Context, db *gorm.DB, executes ...TxHandler) (err error) {
+func TxGo(ctx context.Context, conn Conn, executes ...func(d Driver) error) (err error) {
 	defer recoverTxPanic(&err)
-	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return conn.Driver(ctx).Transaction(ctx, func(d Driver) error {
 		for _, execute := range executes {
-			if err := execute(tx); err != nil {
+			if err := execute(d); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
-	return
 }
 
-func ScopeTxGo(ctx context.Context, db *gorm.DB, callbacks ...TxCallback) (err error) {
+func ScopeTxGo(ctx context.Context, conn Conn, callbacks ...TxCallback) (err error) {
 	defer recoverTxPanic(&err)
 
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return conn.Driver(ctx).Transaction(ctx, func(d Driver) error {
 		for _, callback := range callbacks {
 			model, exec := callback()
-			scope := NewScope(tx, model)
+			scope := newScopeWithDriver(wrapTxConn(conn, d), d, ctx, model)
 			if err := exec(scope); err != nil {
 				return err
 			}
@@ -52,17 +46,17 @@ func ScopeTxGo(ctx context.Context, db *gorm.DB, callbacks ...TxCallback) (err e
 	})
 }
 
-// ScopeTxGoWithT runs callbacks with Scope built from repository T (soft-delete filter, etc.).
 func ScopeTxGoWithT(ctx context.Context, repo *T, callbacks ...TxCallback) (err error) {
 	defer recoverTxPanic(&err)
 
-	return repo.getDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	conn := repo.getConn()
+	return conn.Driver(ctx).Transaction(ctx, func(d Driver) error {
 		for _, callback := range callbacks {
 			model, exec := callback()
 			if model == nil {
 				model = repo.getModel()
 			}
-			scope := NewScope(tx, model)
+			scope := newScopeWithDriver(wrapTxConn(conn, d), d, ctx, model)
 			if err := exec(scope); err != nil {
 				return err
 			}
@@ -71,11 +65,11 @@ func ScopeTxGoWithT(ctx context.Context, repo *T, callbacks ...TxCallback) (err 
 	})
 }
 
-func TxCreateMultiModels(ctx context.Context, db *gorm.DB, models ...any) error {
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+func TxCreateMultiModels(ctx context.Context, conn Conn, models ...any) error {
+	return conn.Driver(ctx).Transaction(ctx, func(d Driver) error {
 		for _, m := range models {
-			err := tx.Create(m).Error
-			if err != nil {
+			b := newQueryBuilder(m)
+			if _, err := d.Create(ctx, b, m); err != nil {
 				return err
 			}
 		}
@@ -84,24 +78,24 @@ func TxCreateMultiModels(ctx context.Context, db *gorm.DB, models ...any) error 
 }
 
 type TxItem interface {
-	Preload(tx *gorm.DB) error
-	Execute(tx *gorm.DB) error
+	Preload(d Driver) error
+	Execute(d Driver) error
 }
 
-func RunTxItems(ctx context.Context, db *gorm.DB, items ...TxItem) (err error) {
+func RunTxItems(ctx context.Context, conn Conn, items ...TxItem) (err error) {
 	if len(items) == 0 {
 		return nil
 	}
 	defer recoverTxPanic(&err)
 
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) (err error) {
+	return conn.Driver(ctx).Transaction(ctx, func(d Driver) error {
 		for _, item := range items {
-			if err := item.Preload(tx); err != nil {
+			if err := item.Preload(d); err != nil {
 				return err
 			}
 		}
 		for _, item := range items {
-			if err := item.Execute(tx); err != nil {
+			if err := item.Execute(d); err != nil {
 				return err
 			}
 		}
@@ -109,21 +103,26 @@ func RunTxItems(ctx context.Context, db *gorm.DB, items ...TxItem) (err error) {
 	})
 }
 
-// RunTxItemsWithT runs transaction items using Scope from repository T.
+type ScopeTxItem interface {
+	Preload(repo *T, d Driver) error
+	Execute(repo *T, d Driver) error
+}
+
 func RunTxItemsWithT(ctx context.Context, repo *T, items ...ScopeTxItem) (err error) {
 	if len(items) == 0 {
 		return nil
 	}
 	defer recoverTxPanic(&err)
 
-	return repo.getDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	conn := repo.getConn()
+	return conn.Driver(ctx).Transaction(ctx, func(d Driver) error {
 		for _, item := range items {
-			if err := item.Preload(repo, tx); err != nil {
+			if err := item.Preload(repo, d); err != nil {
 				return err
 			}
 		}
 		for _, item := range items {
-			if err := item.Execute(repo, tx); err != nil {
+			if err := item.Execute(repo, d); err != nil {
 				return err
 			}
 		}
@@ -131,46 +130,37 @@ func RunTxItemsWithT(ctx context.Context, repo *T, items ...ScopeTxItem) (err er
 	})
 }
 
-// ScopeTxItem runs preload/execute through Scope (soft-delete, model binding).
-type ScopeTxItem interface {
-	Preload(repo *T, tx *gorm.DB) error
-	Execute(repo *T, tx *gorm.DB) error
-}
-
 func NewInsertItem(models any) *InsertItem {
-	return &InsertItem{
-		Models: models,
-	}
+	return &InsertItem{Models: models}
 }
 
 type InsertItem struct {
 	Models any
 }
 
-func (i *InsertItem) Preload(tx *gorm.DB) error {
-	return nil
-}
-func (i *InsertItem) Execute(tx *gorm.DB) error {
+func (i *InsertItem) Preload(d Driver) error { return nil }
+
+func (i *InsertItem) Execute(d Driver) error {
 	if i.Models == nil {
 		return nil
 	}
-	return tx.Create(i.Models).Error
+	b := newQueryBuilder(i.Models)
+	_, err := d.Create(context.Background(), b, i.Models)
+	return err
 }
 
-// ScopeInsertItem inserts models within a Scope (respects soft-delete model binding).
 type ScopeInsertItem struct {
 	Models any
 }
 
-func (i *ScopeInsertItem) Preload(repo *T, tx *gorm.DB) error {
-	return nil
-}
+func (i *ScopeInsertItem) Preload(repo *T, d Driver) error { return nil }
 
-func (i *ScopeInsertItem) Execute(repo *T, tx *gorm.DB) error {
+func (i *ScopeInsertItem) Execute(repo *T, d Driver) error {
 	if i.Models == nil {
 		return nil
 	}
-	return NewScope(tx, i.Models).Create(i.Models)
+	scope := newScopeWithDriver(wrapTxConn(repo.getConn(), d), d, context.Background(), i.Models)
+	return scope.Create(i.Models)
 }
 
 type UpdateItem struct {
@@ -179,48 +169,47 @@ type UpdateItem struct {
 	Updates map[string]any
 }
 
-func (i *UpdateItem) Preload(tx *gorm.DB) error {
-	if err := tx.Model(i.Model).
-		Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where(i.Where).
-		First(i.Model).Error; err != nil {
-		return err
+func (i *UpdateItem) Preload(d Driver) error {
+	scope := newScopeWithDriver(nil, d, context.Background(), i.Model).SetForUpdate()
+	if len(i.Where) > 0 {
+		scope = scope.Where(i.Where)
 	}
-	return nil
+	return scope.First(i.Model)
 }
-func (i *UpdateItem) Execute(tx *gorm.DB) error {
+
+func (i *UpdateItem) Execute(d Driver) error {
 	if i.Model == nil || i.Where == nil {
 		return nil
 	}
+	scope := newScopeWithDriver(nil, d, context.Background(), i.Model).Where(i.Where)
 	if len(i.Updates) == 0 {
-		return tx.Model(i.Model).Where(i.Where).Updates(i.Model).Error
+		return scope.Update(i.Model)
 	}
-	return tx.Model(i.Model).Where(i.Where).Updates(i.Updates).Error
+	return scope.Update(i.Updates)
 }
 
-// ScopeUpdateItem updates via Scope with optional encryption through repository T.
 type ScopeUpdateItem struct {
 	Model   any
 	Where   map[string]any
 	Updates map[string]any
 }
 
-func (i *ScopeUpdateItem) Preload(repo *T, tx *gorm.DB) error {
-	scope := NewScope(tx, i.Model)
+func (i *ScopeUpdateItem) Preload(repo *T, d Driver) error {
+	scope := newScopeWithDriver(wrapTxConn(repo.getConn(), d), d, context.Background(), i.Model).SetForUpdate()
 	if len(i.Where) > 0 {
 		if err := repo.CheckAndCrypto(i.Where, cipherKindEncrypt, false); err != nil {
 			return err
 		}
 		scope = scope.Where(i.Where)
 	}
-	return scope.Clauses(clause.Locking{Strength: "UPDATE"}).First(i.Model)
+	return scope.First(i.Model)
 }
 
-func (i *ScopeUpdateItem) Execute(repo *T, tx *gorm.DB) error {
+func (i *ScopeUpdateItem) Execute(repo *T, d Driver) error {
 	if i.Model == nil || i.Where == nil {
 		return nil
 	}
-	scope := NewScope(tx, i.Model).Where(i.Where)
+	scope := newScopeWithDriver(wrapTxConn(repo.getConn(), d), d, context.Background(), i.Model).Where(i.Where)
 	updates := i.Updates
 	if updates == nil {
 		updates = map[string]any{}
@@ -242,59 +231,61 @@ type SaveItem struct {
 	Where map[string]any
 }
 
-// Preload loads the model with row lock; record not found does not abort the transaction.
-func (i *SaveItem) Preload(tx *gorm.DB) error {
+func (i *SaveItem) Preload(d Driver) error {
 	if i.Model == nil {
 		return fmt.Errorf("model is nil")
 	}
-	if err := tx.Model(i.Model).
-		Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where(i.Where).
-		First(i.Model).Error; err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
+	scope := newScopeWithDriver(nil, d, context.Background(), i.Model).SetForUpdate()
+	if len(i.Where) > 0 {
+		scope = scope.Where(i.Where)
+	}
+	if err := scope.First(i.Model); err != nil {
+		if !errors.Is(err, ErrRecordNotFound) {
 			return err
 		}
 	}
 	return nil
 }
-func (i *SaveItem) Execute(tx *gorm.DB) error {
+
+func (i *SaveItem) Execute(d Driver) error {
 	if i.Model == nil {
 		return nil
 	}
-	return tx.Model(i.Model).Save(i.Model).Error
+	scope := newScopeWithDriver(nil, d, context.Background(), i.Model)
+	return scope.Save(i.Model)
 }
 
-// ScopeSaveItem saves via Scope with soft-delete and encryption support.
 type ScopeSaveItem struct {
 	Model any
 	Where map[string]any
 }
 
-func (i *ScopeSaveItem) Preload(repo *T, tx *gorm.DB) error {
+func (i *ScopeSaveItem) Preload(repo *T, d Driver) error {
 	if i.Model == nil {
 		return fmt.Errorf("model is nil")
 	}
-	scope := NewScope(tx, i.Model)
+	scope := newScopeWithDriver(wrapTxConn(repo.getConn(), d), d, context.Background(), i.Model).SetForUpdate()
 	if len(i.Where) > 0 {
 		if err := repo.CheckAndCrypto(i.Where, cipherKindEncrypt, false); err != nil {
 			return err
 		}
 		scope = scope.Where(i.Where)
 	}
-	if err := scope.Clauses(clause.Locking{Strength: "UPDATE"}).First(i.Model); err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := scope.First(i.Model); err != nil {
+		if !errors.Is(err, ErrRecordNotFound) {
 			return err
 		}
 	}
 	return nil
 }
 
-func (i *ScopeSaveItem) Execute(repo *T, tx *gorm.DB) error {
+func (i *ScopeSaveItem) Execute(repo *T, d Driver) error {
 	if i.Model == nil {
 		return nil
 	}
 	if err := repo.CheckAndCrypto(i.Model, cipherKindEncrypt, false); err != nil {
 		return err
 	}
-	return NewScope(tx, i.Model).Save(i.Model)
+	scope := newScopeWithDriver(wrapTxConn(repo.getConn(), d), d, context.Background(), i.Model)
+	return scope.Save(i.Model)
 }

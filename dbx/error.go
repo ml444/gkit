@@ -1,6 +1,7 @@
 package dbx
 
 import (
+	"database/sql"
 	"errors"
 	"net/http"
 	"strings"
@@ -10,6 +11,20 @@ import (
 
 	"github.com/ml444/gkit/errorx"
 )
+
+// ErrRecordNotFound is returned when a single row query finds no result.
+var ErrRecordNotFound = errors.New("dbx: record not found")
+
+// MapDriverError normalizes driver-specific not-found errors.
+func MapDriverError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrRecordNotFound
+	}
+	return err
+}
 
 func GetNotFoundErr(err error) *errorx.Error {
 	return errorx.CreateError(

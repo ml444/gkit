@@ -105,3 +105,22 @@ func JoinStringsByCamel(ss []string) string {
 	}
 	return res
 }
+
+// IgnoreEmptyCondition returns a Go boolean expression that is true when the
+// ORM field should be copied (non-zero), matching copier.Option{IgnoreEmpty: true}.
+func IgnoreEmptyCondition(oldType, newType, fieldName string) string {
+	accessor := "x." + fieldName
+	switch {
+	case oldType == "string" || newType == "string":
+		return accessor + ` != ""`
+	case oldType == "bool" || newType == "bool":
+		return accessor
+	case strings.HasPrefix(oldType, "*") || strings.HasPrefix(newType, "*"):
+		return accessor + " != nil"
+	case strings.HasPrefix(oldType, "[]") || strings.HasPrefix(newType, "[]"),
+		strings.HasPrefix(oldType, "map[") || strings.HasPrefix(newType, "map["):
+		return "len(" + accessor + ") > 0"
+	default:
+		return accessor + " != 0"
+	}
+}

@@ -59,6 +59,38 @@ func (x *T{{ .Name }}) ToSource() dbx.IModel {
 	}
 }
 
+func (x *T{{ .Name }}) CopyToSource(dst dbx.IModel) error {
+	d, ok := dst.(*{{ .Name }})
+	if !ok {
+		return fmt.Errorf("T{{ .Name }}.CopyToSource: expected *{{ .Name }}, got %T", dst)
+	}
+{{ range .Fields -}}
+	{{ if eq .NewType .OldType -}}
+	d.{{ .FieldName }} = x.{{ .FieldName }}
+	{{ else -}}
+	d.{{ .FieldName }} = {{ .OldType }}(x.{{ .FieldName }})
+	{{ end -}}
+{{ end }}
+	return nil
+}
+
+func (x *T{{ .Name }}) CopyToSourceIgnoreEmpty(dst dbx.IModel) error {
+	d, ok := dst.(*{{ .Name }})
+	if !ok {
+		return fmt.Errorf("T{{ .Name }}.CopyToSourceIgnoreEmpty: expected *{{ .Name }}, got %T", dst)
+	}
+{{ range .Fields -}}
+	if {{ IgnoreEmptyCondition .OldType .NewType .FieldName }} {
+	{{ if eq .NewType .OldType -}}
+		d.{{ .FieldName }} = x.{{ .FieldName }}
+	{{ else -}}
+		d.{{ .FieldName }} = {{ .OldType }}(x.{{ .FieldName }})
+	{{ end -}}
+	}
+{{ end }}
+	return nil
+}
+
 // ForceTModel reports whether dbx must convert through T{{ .Name }} for GORM.
 func (x *T{{ .Name }}) ForceTModel() bool {
 		{{- if .ForceORM }}

@@ -41,15 +41,44 @@ func TestSetNextPage(t *testing.T) {
 	}
 }
 
-func TestOffset(t *testing.T) {
+func TestPaginationMutatorsAndOffset(t *testing.T) {
 	p := NewDefaultPagination()
-	if p.Offset() != 0 {
-		t.Errorf("Offset() = %d, want 0", p.Offset())
+	if p.SetPage(0) != p || p.Page != 1 {
+		t.Fatal("SetPage should normalize zero and chain")
 	}
-
-	p.SetPage(2)
+	if p.SetPageAndSize(3, 20) != p || p.Page != 3 || p.Size != 20 {
+		t.Fatalf("SetPageAndSize = %+v", p)
+	}
+	if p.SetSize(30) != p || p.Size != 30 {
+		t.Fatalf("SetSize = %+v", p)
+	}
 	p.SetSize(20)
-	if p.Offset() != 20 {
-		t.Errorf("Offset() = %d, want 20", p.Offset())
+	if p.SetSkipCount() != p || !p.SkipCount {
+		t.Fatal("SetSkipCount should chain and set flag")
+	}
+	if p.Offset() != 40 {
+		t.Errorf("Offset() = %d, want 40", p.Offset())
+	}
+	p.SetPage(1)
+	if p.Offset() != 0 {
+		t.Errorf("Offset page 1 = %d", p.Offset())
+	}
+}
+
+func TestSetNextPageNormalizesZeroAndDetectsLastPage(t *testing.T) {
+	p := &Pagination{Page: 0, Size: 2, Total: 10}
+	if !p.SetNextPage() || p.Page != 2 {
+		t.Fatalf("SetNextPage zero = page %d", p.Page)
+	}
+	p = &Pagination{Page: 4, Size: 2, Total: 10}
+	if p.SetNextPage() || p.Page != 5 {
+		t.Fatalf("SetNextPage last = page %d", p.Page)
+	}
+}
+
+func TestScrollMutators(t *testing.T) {
+	s := (&Scroll{}).SetSize(30).SetCursor("cursor-1")
+	if s.Size != 30 || s.Cursor != "cursor-1" {
+		t.Fatalf("Scroll = %+v", s)
 	}
 }

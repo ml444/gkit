@@ -9,9 +9,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/jinzhu/copier"
-	"gorm.io/gorm"
-
 	"github.com/ml444/gkit/dbx/pagination"
 	"github.com/ml444/gkit/log"
 )
@@ -21,6 +18,14 @@ type cipherKind int
 const (
 	cipherKindEncrypt cipherKind = 0
 	cipherKindDecrypt cipherKind = 1
+)
+
+// CipherKind identifies encrypt/decrypt operations for exported test APIs.
+type CipherKind = cipherKind
+
+const (
+	CipherKindEncrypt = cipherKindEncrypt
+	CipherKindDecrypt = cipherKindDecrypt
 )
 
 type ICipher interface {
@@ -34,6 +39,8 @@ type IModel interface {
 type ITModel interface {
 	ToSource() IModel
 	ForceTModel() bool
+	CopyToSource(dst IModel) error
+	CopyToSourceIgnoreEmpty(dst IModel) error
 }
 
 type GenerateIDFunc func() uint64
@@ -44,7 +51,7 @@ type cryptoField struct {
 }
 
 type T struct {
-	getDB             func() *gorm.DB
+	getConn           func() Conn
 	model             any
 	ormModel          any
 	forceTModel       bool
@@ -68,9 +75,9 @@ type T struct {
 	IdGenerator GenerateIDFunc
 }
 
-func NewT[M any](fn func() *gorm.DB, opts ...TOption) *T {
+func NewT[M any](fn func() Conn, opts ...TOption) *T {
 	t := T{
-		getDB:           fn,
+		getConn:         fn,
 		BatchCreateSize: 100,
 		PrimaryKey:      "id",
 		EncryptFieldMap: map[string]ICipher{},
@@ -212,7 +219,7 @@ func camelToSnake(s string) string {
 
 func (x *T) Clone(opts ...TOption) *T {
 	t := &T{
-		getDB:             x.getDB,
+		getConn:           x.getConn,
 		model:             x.model,
 		ormModel:          x.ormModel,
 		forceTModel:       x.forceTModel,
@@ -248,8 +255,89 @@ func (x *T) getModel() any {
 	return reflect.New(mT).Interface()
 }
 
+func copyFromORM(dst IModel, src ITModel, ignoreEmpty bool) error {
+	if ignoreEmpty {
+		return src.CopyToSourceIgnoreEmpty(dst)
+	}
+	return src.CopyToSource(dst)
+}
+
+func copyORMListToSource(listPtr, valList any, ignoreEmpty bool) error {
+	listPV := reflect.ValueOf(listPtr)
+	if listPV.Kind() != reflect.Ptr {
+		return fmt.Errorf("copyORMListToSource: listPtr must be pointer, got %T", listPtr)
+	}
+
+	valV := reflect.ValueOf(valList)
+	for valV.Kind() == reflect.Ptr {
+		valV = valV.Elem()
+	}
+	if valV.Kind() != reflect.Slice {
+		return fmt.Errorf("copyORMListToSource: valList must be slice, got %v", valV.Kind())
+	}
+
+	holder := listPV.Elem()
+	if holder.Kind() == reflect.Interface {
+		if holder.IsNil() {
+			return fmt.Errorf("copyORMListToSource: nil interface list")
+		}
+		inner := reflect.ValueOf(holder.Interface())
+		if inner.Kind() != reflect.Slice {
+			return fmt.Errorf("copyORMListToSource: interface holds %v, want slice", inner.Kind())
+		}
+		newDst, err := buildCopiedSlice(inner.Type(), valV, ignoreEmpty)
+		if err != nil {
+			return err
+		}
+		holder.Set(newDst)
+		return nil
+	}
+	if holder.Kind() != reflect.Slice {
+		return fmt.Errorf("copyORMListToSource: listPtr must be pointer to slice, got %T", listPtr)
+	}
+	newDst, err := buildCopiedSlice(holder.Type(), valV, ignoreEmpty)
+	if err != nil {
+		return err
+	}
+	holder.Set(newDst)
+	return nil
+}
+
+func buildCopiedSlice(dstType reflect.Type, valV reflect.Value, ignoreEmpty bool) (reflect.Value, error) {
+	n := valV.Len()
+	newDst := reflect.MakeSlice(dstType, n, n)
+	for i := 0; i < n; i++ {
+		src, ok := valV.Index(i).Interface().(ITModel)
+		if !ok {
+			return reflect.Value{}, fmt.Errorf("copyORMListToSource: val element %d is not ITModel", i)
+		}
+		dstElem := newDst.Index(i)
+		if dstElem.Kind() == reflect.Ptr {
+			if dstElem.IsNil() {
+				dstElem.Set(reflect.New(dstElem.Type().Elem()))
+			}
+			dstIM, ok := dstElem.Interface().(IModel)
+			if !ok {
+				return reflect.Value{}, fmt.Errorf("copyORMListToSource: dst element %d is not IModel", i)
+			}
+			if err := copyFromORM(dstIM, src, ignoreEmpty); err != nil {
+				return reflect.Value{}, err
+			}
+			continue
+		}
+		dstIM, ok := dstElem.Addr().Interface().(IModel)
+		if !ok {
+			return reflect.Value{}, fmt.Errorf("copyORMListToSource: dst element %d is not IModel", i)
+		}
+		if err := copyFromORM(dstIM, src, ignoreEmpty); err != nil {
+			return reflect.Value{}, err
+		}
+	}
+	return newDst, nil
+}
+
 func (x *T) Scope(ctx context.Context) *Scope {
-	return NewScope(x.getDB(), x.getModel()).WithContext(ctx)
+	return NewScope(x.getConn(), x.getModel()).WithContext(ctx)
 }
 
 func (x *T) Create(ctx context.Context, m any, omitFields ...string) (err error) {
@@ -258,7 +346,7 @@ func (x *T) Create(ctx context.Context, m any, omitFields ...string) (err error)
 	}
 	scope := x.Scope(ctx)
 	if len(omitFields) > 0 {
-		scope.Omit(omitFields...)
+		scope = scope.Omit(omitFields...)
 	}
 	if x.forceTModel {
 		if im, ok := (m).(IModel); ok {
@@ -266,7 +354,7 @@ func (x *T) Create(ctx context.Context, m any, omitFields ...string) (err error)
 			if err = scope.Create(ormModel); err != nil {
 				return err
 			}
-			return copier.Copy(m, ormModel)
+			return copyFromORM(im, ormModel, false)
 		}
 	}
 	return scope.Create(m)
@@ -282,7 +370,7 @@ func (x *T) BatchCreate(ctx context.Context, list any, omitFields ...string) (er
 	}
 	scope := x.Scope(ctx)
 	if len(omitFields) > 0 {
-		scope.Omit(omitFields...)
+		scope = scope.Omit(omitFields...)
 	}
 	switch listV.Kind() {
 	case reflect.Array, reflect.Slice:
@@ -302,7 +390,7 @@ func (x *T) BatchCreate(ctx context.Context, list any, omitFields ...string) (er
 			if err = scope.CreateInBatches(valList, x.BatchCreateSize); err != nil {
 				return err
 			}
-			return copier.Copy(list, valList)
+			return copyORMListToSource(list, valList, false)
 		}
 		return scope.CreateInBatches(list, x.BatchCreateSize)
 	default:
@@ -316,7 +404,7 @@ func (x *T) Save(ctx context.Context, m any, omitFields ...string) (err error) {
 	}
 	scope := x.Scope(ctx)
 	if len(omitFields) > 0 {
-		scope.Omit(omitFields...)
+		scope = scope.Omit(omitFields...)
 	}
 	if x.forceTModel {
 		if im, ok := (m).(IModel); ok {
@@ -324,7 +412,7 @@ func (x *T) Save(ctx context.Context, m any, omitFields ...string) (err error) {
 			if err = scope.Save(ormModel); err != nil {
 				return err
 			}
-			return copier.Copy(m, ormModel)
+			return copyFromORM(im, ormModel, false)
 		}
 	}
 	return scope.Save(m)
@@ -357,9 +445,9 @@ func (x *T) UpdateByPk(ctx context.Context, m any, pk any, selectFields ...strin
 		return 0, err
 	}
 	scope := x.Scope(ctx)
-	scope.Eq(x.PrimaryKey, pk)
+	scope = scope.Eq(x.PrimaryKey, pk)
 	if len(selectFields) > 0 {
-		scope.Select(selectFields...)
+		scope = scope.Select(selectFields...)
 	}
 	if im, ok := (m).(IModel); ok && x.forceTModel {
 		err = scope.Update(im.ToORM())
@@ -423,7 +511,7 @@ func (x *T) GetOne(ctx context.Context, m any, pk any) (err error) {
 func (x *T) GetOneByWhere(ctx context.Context, m any, query any, args ...any) (err error) {
 	scope := x.Scope(ctx)
 	if x.IgnoreNotFoundErr {
-		scope.IgnoreNotFoundErr()
+		scope = scope.IgnoreNotFoundErr()
 	}
 	if query != nil {
 		if scope, err = x.processOpts(scope, query, args...); err != nil {
@@ -438,7 +526,7 @@ func (x *T) GetOneByWhere(ctx context.Context, m any, query any, args ...any) (e
 		if err = scope.First(mV); err != nil {
 			return err
 		}
-		err = copier.Copy(m, mV)
+		err = copyFromORM(im, mV, false)
 	} else {
 		err = scope.First(m)
 	}
@@ -549,7 +637,7 @@ func (x *T) doBefore(ctx context.Context, opts any, listPtr any) (scope *Scope, 
 
 func (x *T) doAfter(needCopy bool, listPtr, valList any) (err error) {
 	if needCopy {
-		err = copier.CopyWithOption(listPtr, valList, copier.Option{IgnoreEmpty: true})
+		err = copyORMListToSource(listPtr, valList, true)
 		if err != nil {
 			log.Error(err)
 			return err

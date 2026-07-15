@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-gorm v1.0.0
 // - protoc             v6.33.2
-// source: user/user.proto
+// source: user.proto
 
 package user
 
@@ -135,6 +135,40 @@ func (x *TUserInfo) ToSource() dbx.IModel {
 	}
 }
 
+func (x *TUserInfo) CopyToSource(dst dbx.IModel) error {
+	d, ok := dst.(*UserInfo)
+	if !ok {
+		return fmt.Errorf("TUserInfo.CopyToSource: expected *UserInfo, got %T", dst)
+	}
+	d.LoginCount = x.LoginCount
+	d.LastLoginIp = x.LastLoginIp
+	d.LastLoginAt = x.LastLoginAt
+	d.GroupIds = []uint64(x.GroupIds)
+
+	return nil
+}
+
+func (x *TUserInfo) CopyToSourceIgnoreEmpty(dst dbx.IModel) error {
+	d, ok := dst.(*UserInfo)
+	if !ok {
+		return fmt.Errorf("TUserInfo.CopyToSourceIgnoreEmpty: expected *UserInfo, got %T", dst)
+	}
+	if x.LoginCount != 0 {
+		d.LoginCount = x.LoginCount
+	}
+	if x.LastLoginIp != "" {
+		d.LastLoginIp = x.LastLoginIp
+	}
+	if x.LastLoginAt != 0 {
+		d.LastLoginAt = x.LastLoginAt
+	}
+	if len(x.GroupIds) > 0 {
+		d.GroupIds = []uint64(x.GroupIds)
+	}
+
+	return nil
+}
+
 // ForceTModel reports whether dbx must convert through TUserInfo for GORM.
 func (x *TUserInfo) ForceTModel() bool {
 	return true
@@ -225,6 +259,88 @@ func (x *TUser) ToSource() dbx.IModel {
 		State:           x.State,
 		Phone:           x.Phone,
 	}
+}
+
+func (x *TUser) CopyToSource(dst dbx.IModel) error {
+	d, ok := dst.(*User)
+	if !ok {
+		return fmt.Errorf("TUser.CopyToSource: expected *User, got %T", dst)
+	}
+	d.Id = x.Id
+	d.IsValidated = x.IsValidated
+	d.Name = x.Name
+	d.Age = x.Age
+	d.CreatedAt = uint32(x.CreatedAt)
+	d.UpdatedAt = uint32(x.UpdatedAt)
+	d.DeletedAt = uint32(x.DeletedAt)
+	d.Detail1 = x.Detail1
+	d.DetailBlob1 = x.DetailBlob1
+	d.Avatar = []byte(x.Avatar)
+	d.Tags = []string(x.Tags)
+	d.GroupTags = map[string]uint64(x.GroupTags)
+	d.ClientLoginInfo = map[int32]*UserInfo(x.ClientLoginInfo)
+	d.IgnoreData = map[uint64]*UserInfo(x.IgnoreData)
+	d.State = x.State
+	d.Phone = x.Phone
+
+	return nil
+}
+
+func (x *TUser) CopyToSourceIgnoreEmpty(dst dbx.IModel) error {
+	d, ok := dst.(*User)
+	if !ok {
+		return fmt.Errorf("TUser.CopyToSourceIgnoreEmpty: expected *User, got %T", dst)
+	}
+	if x.Id != 0 {
+		d.Id = x.Id
+	}
+	if x.IsValidated {
+		d.IsValidated = x.IsValidated
+	}
+	if x.Name != "" {
+		d.Name = x.Name
+	}
+	if x.Age != nil {
+		d.Age = x.Age
+	}
+	if x.CreatedAt != 0 {
+		d.CreatedAt = uint32(x.CreatedAt)
+	}
+	if x.UpdatedAt != 0 {
+		d.UpdatedAt = uint32(x.UpdatedAt)
+	}
+	if x.DeletedAt != 0 {
+		d.DeletedAt = uint32(x.DeletedAt)
+	}
+	if x.Detail1 != nil {
+		d.Detail1 = x.Detail1
+	}
+	if x.DetailBlob1 != nil {
+		d.DetailBlob1 = x.DetailBlob1
+	}
+	if len(x.Avatar) > 0 {
+		d.Avatar = []byte(x.Avatar)
+	}
+	if len(x.Tags) > 0 {
+		d.Tags = []string(x.Tags)
+	}
+	if len(x.GroupTags) > 0 {
+		d.GroupTags = map[string]uint64(x.GroupTags)
+	}
+	if len(x.ClientLoginInfo) > 0 {
+		d.ClientLoginInfo = map[int32]*UserInfo(x.ClientLoginInfo)
+	}
+	if len(x.IgnoreData) > 0 {
+		d.IgnoreData = map[uint64]*UserInfo(x.IgnoreData)
+	}
+	if x.State != 0 {
+		d.State = x.State
+	}
+	if x.Phone != nil {
+		d.Phone = x.Phone
+	}
+
+	return nil
 }
 
 // ForceTModel reports whether dbx must convert through TUser for GORM.
@@ -455,6 +571,60 @@ func (x *TRecord) ToSource() dbx.IModel {
 		Rules:     []*Record_Rule(x.Rules),
 		Status2:   x.Status2,
 	}
+}
+
+func (x *TRecord) CopyToSource(dst dbx.IModel) error {
+	d, ok := dst.(*Record)
+	if !ok {
+		return fmt.Errorf("TRecord.CopyToSource: expected *Record, got %T", dst)
+	}
+	d.Id = x.Id
+	d.CorpId = x.CorpId
+	d.CreatedAt = x.CreatedAt
+	d.UpdatedAt = x.UpdatedAt
+	d.DeletedAt = x.DeletedAt
+	d.Status1 = x.Status1
+	d.Content = x.Content
+	d.Rules = []*Record_Rule(x.Rules)
+	d.Status2 = x.Status2
+
+	return nil
+}
+
+func (x *TRecord) CopyToSourceIgnoreEmpty(dst dbx.IModel) error {
+	d, ok := dst.(*Record)
+	if !ok {
+		return fmt.Errorf("TRecord.CopyToSourceIgnoreEmpty: expected *Record, got %T", dst)
+	}
+	if x.Id != 0 {
+		d.Id = x.Id
+	}
+	if x.CorpId != 0 {
+		d.CorpId = x.CorpId
+	}
+	if x.CreatedAt != 0 {
+		d.CreatedAt = x.CreatedAt
+	}
+	if x.UpdatedAt != 0 {
+		d.UpdatedAt = x.UpdatedAt
+	}
+	if x.DeletedAt != 0 {
+		d.DeletedAt = x.DeletedAt
+	}
+	if x.Status1 != 0 {
+		d.Status1 = x.Status1
+	}
+	if x.Content != "" {
+		d.Content = x.Content
+	}
+	if len(x.Rules) > 0 {
+		d.Rules = []*Record_Rule(x.Rules)
+	}
+	if x.Status2 != nil {
+		d.Status2 = x.Status2
+	}
+
+	return nil
 }
 
 // ForceTModel reports whether dbx must convert through TRecord for GORM.

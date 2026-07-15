@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"tests/user"
+	user "github.com/ml444/gkit/cmd/protoc-gen-go-gorm/tests/user"
 )
 
 func initDb() (*gorm.DB, error) {

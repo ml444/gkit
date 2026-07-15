@@ -14,13 +14,13 @@ const (
 	MaxLimit     int = 100000
 )
 
-func (s *Scope) PaginationQuery(list interface{}, page, size uint32) (*pagination.Pagination, error) {
+func (s *Scope) PaginationQuery(list any, page, size uint32) (*pagination.Pagination, error) {
 	return s.PaginationQueryWithOpt(list, s.HandlePagination(page, size))
 }
 
-// PaginationQueryWithOpt runs paginated find using a pre-built Pagination option.
-func (s *Scope) PaginationQueryWithOpt(list interface{}, opt *pagination.Pagination) (*pagination.Pagination, error) {
-	if s == nil || s.DB == nil {
+// PaginationQueryWithOpt runs paginated find using standard LIMIT/OFFSET.
+func (s *Scope) PaginationQueryWithOpt(list any, opt *pagination.Pagination) (*pagination.Pagination, error) {
+	if s == nil || s.driver == nil {
 		return nil, errors.New("invalid scope or transaction")
 	}
 	if opt == nil {
@@ -30,15 +30,19 @@ func (s *Scope) PaginationQueryWithOpt(list interface{}, opt *pagination.Paginat
 
 	var total int64
 	if !opt.SkipCount {
-		if err := s.DB.Count(&total).Error; err != nil {
+		var err error
+		total, err = s.Count()
+		if err != nil {
 			return nil, err
 		}
 	}
 
-	// Apply limit/offset on a chained query without mutating s.DB, so the
-	// same Scope can be safely reused (e.g. for count or another page).
 	offset := opt.Offset()
-	if err := s.DB.Limit(int(opt.Size)).Offset(offset).Find(list).Error; err != nil {
+	limit := int(opt.Size)
+	b := s.builder.Clone()
+	b.Limit = limit
+	b.Offset = offset
+	if err := s.driver.Find(s.context(), b, list); err != nil {
 		return nil, err
 	}
 
@@ -50,8 +54,7 @@ func (s *Scope) PaginationQueryWithOpt(list interface{}, opt *pagination.Paginat
 	}, nil
 }
 
-// QueryPagination is deprecated; use PaginationQuery or PaginationQueryWithOpt.
-func (s *Scope) QueryPagination(list interface{}, page, size uint32, skipCount bool) (total int64, err error) {
+func (s *Scope) QueryPagination(list any, page, size uint32, skipCount bool) (total int64, err error) {
 	opt := s.HandlePagination(page, size)
 	opt.SkipCount = skipCount
 	p, err := s.PaginationQueryWithOpt(list, opt)
@@ -81,9 +84,8 @@ func normalizePagination(opt *pagination.Pagination) {
 	}
 }
 
-// ScrollQuery fetches the next page using keyset pagination on the primary key column (default "id").
-func (s *Scope) ScrollQuery(list interface{}, cursor string, size uint32, cursorField ...string) (*pagination.Scroll, error) {
-	if s == nil || s.DB == nil {
+func (s *Scope) ScrollQuery(list any, cursor string, size uint32, cursorField ...string) (*pagination.Scroll, error) {
+	if s == nil || s.driver == nil {
 		return nil, errors.New("invalid scope or transaction")
 	}
 	field := "id"
@@ -93,15 +95,16 @@ func (s *Scope) ScrollQuery(list interface{}, cursor string, size uint32, cursor
 	opt := s.HandlePagination(1, size)
 	limit := int(opt.Size)
 
-	q := s.DB.Order(field + " ASC").Limit(limit)
+	ns := s.Order(field + " ASC").Limit(limit)
 	if cursor != "" {
 		cursorVal, err := parseScrollCursor(cursor)
 		if err != nil {
 			return nil, err
 		}
-		q = q.Where(field+" > ?", cursorVal)
+		ns = ns.Where(field+" > ?", cursorVal)
 	}
-	if err := q.Find(list).Error; err != nil {
+	b := ns.builder.Clone()
+	if err := ns.driver.Find(ns.context(), b, list); err != nil {
 		return nil, err
 	}
 
@@ -116,8 +119,6 @@ func (s *Scope) ScrollQuery(list interface{}, cursor string, size uint32, cursor
 			last = last.Elem()
 		}
 		if last.Kind() == reflect.Struct {
-			// Resolve the cursor from the same column used for ORDER BY/WHERE
-			// (default "id"), so a custom cursorField yields the correct cursor.
 			cursorVal := fieldByColumn(last, field)
 			if cursorVal.IsValid() {
 				scroll.Cursor = formatScrollCursor(cursorVal)
@@ -137,18 +138,12 @@ func parseScrollCursor(cursor string) (any, error) {
 	return cursor, nil
 }
 
-// fieldByColumn finds the struct field that maps to the given DB column name.
-// Match order:
-//  1. explicit gorm:"column:..." tag
-//  2. camelToSnake(field) == column (disambiguates e.g. foo_sar vs foos_ar)
-//  3. field.Name == snakeToPascal(column) (case-sensitive)
-//  4. simple names without underscores, e.g. column "id" -> field ID
 func fieldByColumn(v reflect.Value, column string) reflect.Value {
 	t := v.Type()
 
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
-		if col := gormColumnName(field); col != "" && strings.EqualFold(col, column) {
+		if col := columnNameFromTag(field); col != "" && strings.EqualFold(col, column) {
 			return v.Field(i)
 		}
 	}
@@ -178,7 +173,10 @@ func fieldByColumn(v reflect.Value, column string) reflect.Value {
 	return reflect.Value{}
 }
 
-func gormColumnName(field reflect.StructField) string {
+func columnNameFromTag(field reflect.StructField) string {
+	if jsonTag := field.Tag.Get("json"); jsonTag != "" {
+		return strings.Split(jsonTag, ",")[0]
+	}
 	tag := field.Tag.Get("gorm")
 	if tag == "" {
 		return ""

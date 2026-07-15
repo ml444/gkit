@@ -76,8 +76,9 @@ func getBaseTemplate() (*template.Template, error) {
 				err := execTmpl.ExecuteTemplate(&b, tmplName, data)
 				return b.String(), err
 			},
-			"SnakeToCamel":       orm.SnakeToCamel,
-			"JoinStringsByCamel": orm.JoinStringsByCamel,
+			"SnakeToCamel":           orm.SnakeToCamel,
+			"JoinStringsByCamel":     orm.JoinStringsByCamel,
+			"IgnoreEmptyCondition":   orm.IgnoreEmptyCondition,
 		})
 		baseTmpl, baseTmplErr = baseTmpl.Parse(strings.TrimSpace(serializerTemplate))
 	})
@@ -116,6 +117,7 @@ func genContent(file *protogen.File, g *protogen.GeneratedFile, fieldFuncs map[s
 		}
 	}
 
+	importMap["fmt"] = true
 	imports := sortedKeys(importMap)
 	commons := sortedCommons(commonMap)
 	fd := &orm.FileDesc{
