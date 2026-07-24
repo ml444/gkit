@@ -11,7 +11,6 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"github.com/ml444/gkit/errorx"
-	"github.com/ml444/gkit/log"
 )
 
 const (
@@ -172,38 +171,30 @@ func (s *Scope) Update(v any, conds ...any) error {
 		ns.ResetSysDateTimeField(v)
 	} else {
 		if vv, okk := v.(map[string]any); okk {
-			if _, ok := ns.model.(ProtoUpdatedAt); ok {
-				vv[ProtoMessageFieldUpdatedAt] = time.Now().Unix()
+			cp := make(map[string]any, len(vv)+1)
+			for k, val := range vv {
+				cp[k] = val
 			}
+			if _, ok := ns.model.(ProtoUpdatedAt); ok {
+				cp[ProtoMessageFieldUpdatedAt] = time.Now().Unix()
+			}
+			v = cp
 		}
 	}
 	if len(conds) > 0 {
 		ns = ns.Where(conds[0], conds[1:]...)
 	}
-	b := ns.builder.Clone()
-	rows, err := ns.driver.Update(ns.context(), b, v)
-	ns.RowsAffected = rows
-	*s = *ns
-	if err != nil {
-		return err
-	}
-	if s.RowsAffected == 0 {
-		log.Warnf("model: %v, RowsAffected: 0", v)
-	}
-	return nil
+
+	rows, err := ns.driver.Update(ns.context(), ns.builder.Clone(), v)
+	s.RowsAffected = rows
+	return err
 }
 
 func (s *Scope) UpdateColumn(field string, value any) error {
 	b := s.builder.Clone()
 	rows, err := s.driver.UpdateColumn(s.context(), b, field, value)
 	s.RowsAffected = rows
-	if err != nil {
-		return err
-	}
-	if s.RowsAffected == 0 {
-		log.Warnf("value: %v, RowsAffected: 0", value)
-	}
-	return nil
+	return err
 }
 
 func (s *Scope) UpdateColumnWithIncr(field string, v int64) error {
@@ -219,7 +210,6 @@ func (s *Scope) UpdateColumnWithIncr(field string, v int64) error {
 		return err
 	}
 	if s.RowsAffected == 0 {
-		log.Warnf("model: %v, RowsAffected: 0", v)
 		return ErrUpdateRowAffectedZero
 	}
 	return nil
@@ -284,11 +274,18 @@ func (s *Scope) Exist(conds ...any) (bool, error) {
 	if len(conds) > 0 {
 		ns = ns.Where(conds[0], conds[1:]...)
 	}
-	n, err := ns.Count()
+	// 使用 Select("1") 和 Limit(1) 替代 Count()，大幅提升大表查询性能
+	var dummy int
+	err := ns.Select("1").Limit(1).First(&dummy)
+
 	if err != nil {
+		if errors.Is(err, ErrRecordNotFound) {
+			return false, nil
+		}
 		return false, err
 	}
-	return n > 0, nil
+
+	return true, nil
 }
 
 func (s *Scope) Find(dest any, conds ...any) error {
@@ -306,20 +303,28 @@ func (s *Scope) Select(fields ...string) *Scope {
 	return ns
 }
 
+func escapeLikeValue(value string) string {
+	// 必须先转义转义符本身
+	v := strings.ReplaceAll(value, `\`, `\\`)
+	v = strings.ReplaceAll(v, `%`, `\%`)
+	v = strings.ReplaceAll(v, `_`, `\_`)
+	return v
+}
+
 func (s *Scope) Like(field string, value string) *Scope {
-	return s.Where(fmt.Sprintf("%s LIKE ?", field), "%"+value+"%")
+	return s.Where(fmt.Sprintf("%s LIKE ? ESCAPE '\\'", field), "%"+escapeLikeValue(value)+"%")
 }
 
 func (s *Scope) LikePrefix(field string, value string) *Scope {
-	return s.Where(fmt.Sprintf("%s LIKE ?", field), value+"%")
+	return s.Where(fmt.Sprintf("%s LIKE ? ESCAPE '\\'", field), escapeLikeValue(value)+"%")
 }
 
 func (s *Scope) LikeSuffix(field string, value string) *Scope {
-	return s.Where(fmt.Sprintf("%s LIKE ?", field), "%"+value)
+	return s.Where(fmt.Sprintf("%s LIKE ? ESCAPE '\\'", field), "%"+escapeLikeValue(value))
 }
 
 func (s *Scope) NotLike(field string, value string) *Scope {
-	return s.Where(fmt.Sprintf("%s NOT LIKE ?", field), "%"+value+"%")
+	return s.Where(fmt.Sprintf("%s NOT LIKE ? ESCAPE '\\'", field), "%"+escapeLikeValue(value)+"%")
 }
 
 func (s *Scope) IsNull(field string) *Scope {
@@ -368,7 +373,7 @@ type QueryOpts struct {
 	Between        map[string][2]any
 	Like           map[string]string
 	Or             []WhereClause
-	OrLike         [][2]string	// [["field1","abc"],["field2", "def"]]
+	OrLike         [][2]string // [["field1","abc"],["field2", "def"]]
 	OrBetween      map[string][2]any
 	IsLikePrefix   bool
 	IsOrLikePrefix bool
@@ -440,14 +445,16 @@ func isNonEmptySlice(v any) bool {
 
 func (s *Scope) In(field string, values any) *Scope {
 	if !isNonEmptySlice(values) {
-		return s
+		return s.Where("1 = 0") // 空切片生成永假条件 1=0, 空 IN 结果集为空，杜绝全表
+		// return s
 	}
 	return s.Where(fmt.Sprintf("%s IN ?", field), values)
 }
 
 func (s *Scope) NotIn(field string, values any) *Scope {
 	if !isNonEmptySlice(values) {
-		return s
+		return s.Where("1 = 0") // 空切片生成永假条件 1=0, 空 IN 结果集为空，杜绝全表
+		// return s
 	}
 	return s.Where(fmt.Sprintf("%s NOT IN ?", field), values)
 }
@@ -515,13 +522,14 @@ func (s *Scope) MultiOrLike(opts [][2]string, isPrefix bool) *Scope {
 	var values []any
 	var orQueryList []string
 	for _, opt := range opts {
-		// Note: Please ensure that opt[0] (field name) does not contain 
+		// Note: Please ensure that opt[0] (field name) does not contain
 		// special characters, especially backticks `
-		orQueryList = append(orQueryList, fmt.Sprintf("(`%s` LIKE ?)", opt[0]))
+		orQueryList = append(orQueryList, fmt.Sprintf("(`%s` LIKE ? ESCAPE '\\')", opt[0]))
+		escapedValue := escapeLikeValue(opt[1])
 		if isPrefix {
-			values = append(values, opt[1]+"%")
+			values = append(values, escapedValue+"%")
 		} else {
-			values = append(values, "%"+opt[1]+"%")
+			values = append(values, "%"+escapedValue+"%")
 		}
 	}
 	finalQuery := fmt.Sprintf("(%s)", strings.Join(orQueryList, " OR "))
@@ -629,6 +637,7 @@ func (s *Scope) Model() any {
 func (s *Scope) SetIncludeDeleted() *Scope {
 	ns := s.fork()
 	ns.includeDeleted = true
+	ns.builder.Unscoped = true
 	ns.builder.removeSoftDeleteFilter()
 	return ns
 }

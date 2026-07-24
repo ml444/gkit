@@ -147,9 +147,9 @@ func TestTransactionItemBranches(t *testing.T) {
 		t.Fatal(err)
 	}
 	updNil := &dbx.UpdateItem{Model: nil, Where: nil}
-	_ = updNil.Execute(d)
+	_ = updNil.Execute(ctx, d)
 	updEmpty := &dbx.UpdateItem{Model: &testRow{ID: 1}, Where: map[string]any{"id": int64(1)}}
-	if err := updEmpty.Execute(d); err != nil {
+	if err := updEmpty.Execute(ctx, d); err != nil {
 		t.Fatal(err)
 	}
 
@@ -157,14 +157,14 @@ func TestTransactionItemBranches(t *testing.T) {
 	if err := dbx.RunTxItems(ctx, conn, save); err != nil {
 		t.Fatal(err)
 	}
-	if err := (&dbx.SaveItem{}).Preload(d); err == nil {
+	if err := (&dbx.SaveItem{}).Preload(ctx, d); err == nil {
 		t.Fatal("SaveItem nil model")
 	}
-	_ = (&dbx.SaveItem{Model: &testRow{ID: 11}}).Execute(d)
+	_ = (&dbx.SaveItem{Model: &testRow{ID: 11}}).Execute(ctx, d)
 
 	si := &dbx.ScopeInsertItem{Models: nil}
-	_ = si.Preload(repo, d)
-	_ = si.Execute(repo, d)
+	_ = si.Preload(ctx, repo, d)
+	_ = si.Execute(ctx, repo, d)
 	if err := dbx.RunTxItemsWithT(ctx, repo, &dbx.ScopeInsertItem{Models: &testRow{ID: 12, Name: "si"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -173,9 +173,9 @@ func TestTransactionItemBranches(t *testing.T) {
 	if err := dbx.RunTxItemsWithT(ctx, repo, su); err != nil {
 		t.Fatal(err)
 	}
-	_ = (&dbx.ScopeUpdateItem{Model: nil, Where: nil}).Execute(repo, d)
+	_ = (&dbx.ScopeUpdateItem{Model: nil, Where: nil}).Execute(ctx, repo, d)
 	su2 := &dbx.ScopeUpdateItem{Model: &testRow{ID: 1}, Where: map[string]any{"id": int64(1)}}
-	if err := su2.Execute(repo, d); err != nil {
+	if err := su2.Execute(ctx, repo, d); err != nil {
 		t.Fatal(err)
 	}
 
@@ -183,10 +183,10 @@ func TestTransactionItemBranches(t *testing.T) {
 	if err := dbx.RunTxItemsWithT(ctx, repo, ss); err != nil {
 		t.Fatal(err)
 	}
-	if err := (&dbx.ScopeSaveItem{}).Preload(repo, d); err == nil {
+	if err := (&dbx.ScopeSaveItem{}).Preload(ctx, repo, d); err == nil {
 		t.Fatal("ScopeSaveItem nil")
 	}
-	_ = (&dbx.ScopeSaveItem{Model: &testRow{ID: 14}}).Execute(repo, d)
+	_ = (&dbx.ScopeSaveItem{Model: &testRow{ID: 14}}).Execute(ctx, repo, d)
 
 	if err := dbx.ScopeTxGoWithT(ctx, repo, func() (any, func(*dbx.Scope) error) {
 		return nil, func(s *dbx.Scope) error { return s.Create(&testRow{ID: 15, Name: "tx"}) }

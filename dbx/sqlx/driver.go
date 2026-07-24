@@ -79,9 +79,9 @@ func (d *Driver) WithContext(ctx context.Context) dbx.Driver {
 
 func (d *Driver) execContext(ctx context.Context, q string, args ...any) (sql.Result, error) {
 	if d.tx != nil {
-		return d.tx.ExecContext(ctx, q, args...)
+		return d.tx.ExecContext(ctx, d.tx.Rebind(q), args...)
 	}
-	return d.db.ExecContext(ctx, q, args...)
+	return d.db.ExecContext(ctx, d.db.Rebind(q), args...)
 }
 
 func (d *Driver) selectContext(ctx context.Context, dest any, q string, args ...any) error {
@@ -138,7 +138,10 @@ func (d *Driver) Create(ctx context.Context, b *dbx.QueryBuilder, v any) (int64,
 	if err != nil {
 		return 0, err
 	}
-	res, err := d.execContext(d.context(), q, args...)
+	if ctx == nil {
+		ctx = d.context()
+	}
+	res, err := d.execContext(ctx, q, args...)
 	if err != nil {
 		return 0, err
 	}
@@ -163,7 +166,16 @@ func (d *Driver) CreateInBatches(ctx context.Context, b *dbx.QueryBuilder, value
 }
 
 func (d *Driver) Save(ctx context.Context, b *dbx.QueryBuilder, v any) (int64, error) {
-	return d.Create(ctx, b, v)
+	q, args, err := compileUpsert(b, v, d.db.DriverName()) // 新增：INSERT ... ON CONFLICT/DUPLICATE
+	if err != nil {
+		return 0, err
+	}
+	res, err := d.execContext(ctx, q, args...) // 注意：用参数 ctx（见 B-sqlx-ctx）
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
 }
 
 func (d *Driver) Update(ctx context.Context, b *dbx.QueryBuilder, v any) (int64, error) {
@@ -219,6 +231,12 @@ func (d *Driver) Transaction(ctx context.Context, fn func(dbx.Driver) error, opt
 		return err
 	}
 	td := &Driver{db: d.db, tx: tx, ctx: ctx}
+	defer func() {
+		if r := recover(); r != nil {
+			_ = tx.Rollback()
+			panic(r) // 保留 panic 语义
+		}
+	}()
 	if err := fn(td); err != nil {
 		_ = tx.Rollback()
 		return err
@@ -301,20 +319,27 @@ func compileCount(b *dbx.QueryBuilder) (string, []any, error) {
 }
 
 func compileWhere(b *dbx.QueryBuilder) (string, []any) {
-	var parts []string
 	var args []any
+	var andParts, orParts []string
 	for _, w := range b.Wheres {
-		parts = append(parts, w.Query)
+		andParts = append(andParts, w.Query)
 		args = append(args, w.Args...)
 	}
 	for _, w := range b.OrWheres {
-		parts = append(parts, w.Query)
+		orParts = append(orParts, w.Query)
 		args = append(args, w.Args...)
 	}
-	if len(parts) == 0 {
+	var groups []string
+	if len(andParts) > 0 {
+		groups = append(groups, strings.Join(andParts, " AND "))
+	}
+	if len(orParts) > 0 {
+		groups = append(groups, "("+strings.Join(orParts, " OR ")+")")
+	}
+	if len(groups) == 0 {
 		return "", args
 	}
-	return " WHERE " + strings.Join(parts, " AND "), args
+	return " WHERE " + strings.Join(groups, " AND "), args
 }
 
 func compileOrder(b *dbx.QueryBuilder) string {
@@ -418,6 +443,7 @@ func structColumns(v any) ([]string, []any, error) {
 		}
 		col := columnName(f)
 		cols = append(cols, col)
+		// TODO: zero value Omit
 		vals = append(vals, rv.Field(i).Interface())
 	}
 	return cols, vals, nil
@@ -440,6 +466,8 @@ func columnName(f reflect.StructField) string {
 	return camelToSnake(f.Name)
 }
 
+// camelToSnake
+// Note: DisplayID → display_i_d
 func camelToSnake(s string) string {
 	var b strings.Builder
 	for i, r := range s {
@@ -452,4 +480,208 @@ func camelToSnake(s string) string {
 		b.WriteRune(r)
 	}
 	return b.String()
+}
+
+// compileUpsert 生成基于不同方言的 Upsert SQL 语句及参数
+func compileUpsert(b *dbx.QueryBuilder, v any, dialect string) (string, []any, error) {
+	// 1. 获取模型元数据 (你需要桥接 gkit/dbx 内部的反射/解析逻辑)
+	tableName := tableName(b) // 替换为实际获取表名的方法
+
+	// 伪方法：解析模型 v，返回所有列名、对应的值、以及主键列名
+	// columns = []string{"id", "name", "age", "created_at"}
+	// values = []any{1, "Alice", 25, "2023-10-01"}
+	// pks = []string{"id"}
+	columns, values, pks, err := parseModelForUpsert(v)
+	if err != nil {
+		return "", nil, err
+	}
+	if len(columns) == 0 {
+		return "", nil, errors.New("sqlx: no columns to upsert")
+	}
+
+	// 2. 构建基础 INSERT 部分
+	// 结果如: INSERT INTO users (id, name, age) VALUES (?, ?, ?)
+	var query strings.Builder
+	query.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES (", tableName, strings.Join(columns, ", ")))
+
+	placeholders := make([]string, len(columns))
+	for i := range placeholders {
+		placeholders[i] = "?" // sqlx 后续如果需要 PG 的 $1，通常由 sqlx.Rebind 处理
+	}
+	query.WriteString(strings.Join(placeholders, ", "))
+	query.WriteString(")")
+
+	// 3. 筛选需要 Update 的字段 (排除主键，防止更新时修改主键)
+	var updateCols []string
+	for _, col := range columns {
+		isPk := false
+		for _, pk := range pks {
+			if col == pk {
+				isPk = true
+				break
+			}
+		}
+		if !isPk {
+			updateCols = append(updateCols, col)
+		}
+	}
+
+	// 边缘情况：如果除了主键没有其他字段，执行 DO NOTHING
+	if len(updateCols) == 0 {
+		return compileDoNothing(query.String(), dialect)
+	}
+
+	// 4. 根据方言追加 Upsert 子句
+	switch strings.ToLower(dialect) {
+	case "mysql":
+		// MySQL: ON DUPLICATE KEY UPDATE name=VALUES(name), age=VALUES(age)
+		query.WriteString(" ON DUPLICATE KEY UPDATE ")
+		var updates []string
+		for _, col := range updateCols {
+			updates = append(updates, fmt.Sprintf("%s=VALUES(%s)", col, col))
+		}
+		query.WriteString(strings.Join(updates, ", "))
+
+	case "postgres", "postgresql", "sqlite", "sqlite3":
+		// PG/SQLite 必须明确指定冲突的主键
+		if len(pks) == 0 {
+			return "", nil, errors.New("sqlx: upsert in postgres/sqlite requires at least one primary key")
+		}
+		// PG/SQLite: ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, age=EXCLUDED.age
+		query.WriteString(fmt.Sprintf(" ON CONFLICT (%s) DO UPDATE SET ", strings.Join(pks, ", ")))
+		var updates []string
+		for _, col := range updateCols {
+			updates = append(updates, fmt.Sprintf("%s=EXCLUDED.%s", col, col))
+		}
+		query.WriteString(strings.Join(updates, ", "))
+
+	default:
+		return "", nil, fmt.Errorf("sqlx: unsupported dialect %q for upsert", dialect)
+	}
+
+	return query.String(), values, nil
+}
+
+// parseModelForUpsert 解析结构体，支持递归解析嵌套（匿名）结构体
+func parseModelForUpsert(v any) (columns []string, values []any, pks []string, err error) {
+	val := reflect.ValueOf(v)
+
+	// 1. 处理指针类型
+	if val.Kind() == reflect.Ptr {
+		if val.IsNil() {
+			return nil, nil, nil, errors.New("sqlx: nil pointer passed to Save")
+		}
+		val = val.Elem()
+	}
+
+	if val.Kind() != reflect.Struct {
+		return nil, nil, nil, errors.New("sqlx: Save requires a struct or struct pointer")
+	}
+
+	// 2. 使用切片指针收集数据，方便在递归中追加
+	err = extractStructFields(val, &columns, &values, &pks)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	if len(columns) == 0 {
+		return nil, nil, nil, errors.New("sqlx: no valid columns found in struct")
+	}
+
+	return columns, values, pks, nil
+}
+// extractStructFields 递归提取结构体字段
+func extractStructFields(val reflect.Value, columns *[]string, values *[]any, pks *[]string) error {
+	// 确保传入的是结构体 (防备指针等)
+	if val.Kind() == reflect.Ptr {
+		if val.IsNil() {
+			return nil // 遇到空的嵌套指针结构体，直接跳过不提取
+		}
+		val = val.Elem()
+	}
+	
+	if val.Kind() != reflect.Struct {
+		return nil
+	}
+
+	typ := val.Type()
+
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		fieldVal := val.Field(i)
+
+		// 跳过未导出的私有字段
+		if !field.IsExported() {
+			continue
+		}
+
+		// 解析 db 标签
+		dbTag := field.Tag.Get("db")
+		if dbTag == "-" {
+			continue // 忽略明确标记为 "-" 的字段，即使它是嵌套结构体也整体忽略
+		}
+
+		// 【核心逻辑】处理匿名/嵌套结构体 (例如 BaseModel)
+		if field.Anonymous {
+			// 如果它是结构体，或者是指向结构体的指针，递归解析
+			kind := fieldVal.Kind()
+			if kind == reflect.Struct || (kind == reflect.Ptr && fieldVal.Type().Elem().Kind() == reflect.Struct) {
+				err := extractStructFields(fieldVal, columns, values, pks)
+				if err != nil {
+					return err
+				}
+				continue // 递归解析完毕后，继续看下一个字段
+			}
+		}
+
+		// 常规字段处理逻辑
+		colName := field.Name
+		isPk := false
+
+		if dbTag != "" {
+			parts := strings.Split(dbTag, ",")
+			if parts[0] != "" {
+				colName = parts[0] // 使用 tag 指定的列名
+			}
+			
+			// 检查是否包含 pk 标识
+			for _, part := range parts[1:] {
+				if strings.TrimSpace(part) == "pk" {
+					isPk = true
+					break
+				}
+			}
+		} else {
+			// 无 db 标签时，降级使用字段名的小写
+			colName = strings.ToLower(colName)
+		}
+
+		// 补充主键识别：如果字段名为 ID/Id 且尚未标记为主键
+		if !isPk && strings.EqualFold(field.Name, "ID") {
+			isPk = true
+		}
+
+		// 追加数据到切片指针引用的底层数组
+		*columns = append(*columns, colName)
+		*values = append(*values, fieldVal.Interface())
+		if isPk {
+			*pks = append(*pks, colName)
+		}
+	}
+
+	return nil
+}
+
+// compileDoNothing 处理只有主键时的退化情况
+func compileDoNothing(baseQuery, dialect string) (string, []any, error) {
+	switch strings.ToLower(dialect) {
+	case "mysql":
+		// MySQL 没有优雅的 DO NOTHING，通常用更新主键自身来作为 Hack
+		// 注意：这会导致自增 ID 增加 (InnoDB 行为)
+		return baseQuery + " ON DUPLICATE KEY UPDATE id=id", nil, nil
+	case "postgres", "postgresql", "sqlite", "sqlite3":
+		return baseQuery + " ON CONFLICT DO NOTHING", nil, nil
+	default:
+		return "", nil, fmt.Errorf("sqlx: unsupported dialect %q", dialect)
+	}
 }

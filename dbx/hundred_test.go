@@ -292,8 +292,9 @@ func TestPaginationCountErrorAndExistError(t *testing.T) {
 	if _, err := s.PaginationQueryWithOpt(&rows, nil); err == nil {
 		t.Fatal("count error")
 	}
+	s = NewScope(stubTxConn{d: firstErrDriver{}}, &testRow{})
 	if _, err := s.Exist(); err == nil {
-		t.Fatal("exist count error")
+		t.Fatalf("exist count error")
 	}
 }
 
@@ -445,12 +446,13 @@ func TestTxCreateMultiModelsError(t *testing.T) {
 }
 
 func TestSaveUpdateItemNonNotFoundAndNilExecute(t *testing.T) {
+	ctx := context.Background()
 	d := firstErrDriver{}
 	item := &SaveItem{Model: &testRow{ID: 1}, Where: map[string]any{"id": int64(1)}}
-	if err := item.Preload(d); err == nil {
+	if err := item.Preload(ctx, d); err == nil {
 		t.Fatal("preload non-not-found")
 	}
-	if err := (&SaveItem{}).Execute(d); err != nil {
+	if err := (&SaveItem{}).Execute(ctx, d); err != nil {
 		t.Fatal(err)
 	}
 
@@ -461,23 +463,23 @@ func TestSaveUpdateItemNonNotFoundAndNilExecute(t *testing.T) {
 		}),
 	)
 	su := &ScopeUpdateItem{Model: &encryptRow{ID: 1, Name: "a"}, Where: map[string]any{"id": uint64(1)}, Updates: map[string]any{"name": "z"}}
-	if err := su.Execute(repo, d); err == nil {
+	if err := su.Execute(ctx, repo, d); err == nil {
 		t.Fatal("updates encrypt")
 	}
 	su2 := &ScopeUpdateItem{Model: &encryptRow{ID: 1, Name: "a"}, Where: map[string]any{"id": uint64(1)}, Updates: map[string]any{}}
-	if err := su2.Execute(repo, d); err == nil {
+	if err := su2.Execute(ctx, repo, d); err == nil {
 		t.Fatal("model encrypt")
 	}
 
 	ss := &ScopeSaveItem{Model: &encryptRow{ID: 1}, Where: map[string]any{"id": uint64(1)}}
-	if err := ss.Preload(repo, firstErrDriver{}); err == nil {
+	if err := ss.Preload(ctx, repo, firstErrDriver{}); err == nil {
 		t.Fatal("scopesave preload")
 	}
-	if err := (&ScopeSaveItem{}).Execute(repo, d); err != nil {
+	if err := (&ScopeSaveItem{}).Execute(ctx, repo, d); err != nil {
 		t.Fatal(err)
 	}
 	ss2 := &ScopeSaveItem{Model: &encryptRow{ID: 1, Name: "a"}}
-	if err := ss2.Execute(repo, d); err == nil {
+	if err := ss2.Execute(ctx, repo, d); err == nil {
 		t.Fatal("scopesave execute encrypt")
 	}
 }

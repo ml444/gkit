@@ -59,6 +59,7 @@ func TestProtoUpdatedAndPlainDriverTx(t *testing.T) {
 	if err := s.Update(map[string]any{"name": "n"}, "id = ?", int64(1)); err != nil {
 		t.Fatal(err)
 	}
+	ctx := context.Background()
 
 	pc := plainConn{d: plainDriver{}}
 	if err := dbx.TxGo(context.Background(), pc, func(d dbx.Driver) error {
@@ -87,15 +88,15 @@ func TestProtoUpdatedAndPlainDriverTx(t *testing.T) {
 
 	d, _ := testConn()
 	su := &dbx.ScopeUpdateItem{Model: &encryptRow{ID: 1}, Where: map[string]any{"name": "a"}, Updates: nil}
-	_ = su.Preload(er, d)
-	_ = su.Execute(er, d)
+	_ = su.Preload(ctx, er, d)
+	_ = su.Execute(ctx, er, d)
 	ss := &dbx.ScopeSaveItem{Model: &encryptRow{ID: 1, Name: "a"}, Where: map[string]any{"name": "a"}}
-	_ = ss.Preload(er, d)
-	_ = ss.Execute(er, d)
+	_ = ss.Preload(ctx, er, d)
+	_ = ss.Execute(ctx, er, d)
 	si := &dbx.SaveItem{Model: &testRow{ID: 1}, Where: map[string]any{"id": int64(1)}}
-	_ = si.Preload(d)
+	_ = si.Preload(ctx, d)
 	upd := &dbx.UpdateItem{Model: &testRow{}, Where: map[string]any{"id": int64(1)}, Updates: nil}
-	_ = upd.Execute(d)
+	_ = upd.Execute(ctx, d)
 
 	er2 := dbx.NewT[encryptRow](func() dbx.Conn { return conn }, dbx.SetSpecifyFieldCipherMap(map[string]dbx.FieldCipher{
 		"name": {StructField: "Name", Cipher: failCipher{err: errors.New("q")}},

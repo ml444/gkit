@@ -461,7 +461,7 @@ func (x *T) DeleteByPk(ctx context.Context, pk any) error {
 	if x.PrimaryKey == "" {
 		return errors.New("unable to find a unique primary key field")
 	}
-	return x.Scope(ctx).Where(x.PrimaryKey, pk).Delete()
+	return x.Scope(ctx).Eq(x.PrimaryKey, pk).Delete()
 }
 
 func (x *T) DeleteByWhere(ctx context.Context, query any, args ...any) error {
@@ -510,15 +510,14 @@ func (x *T) GetOne(ctx context.Context, m any, pk any) (err error) {
 
 func (x *T) GetOneByWhere(ctx context.Context, m any, query any, args ...any) (err error) {
 	scope := x.Scope(ctx)
-	if x.IgnoreNotFoundErr {
-		scope = scope.IgnoreNotFoundErr()
-	}
 	if query != nil {
 		if scope, err = x.processOpts(scope, query, args...); err != nil {
 			return err
 		}
 	}
-	if !x.IgnoreNotFoundErr && x.NotFoundErrCode != 0 {
+	if x.IgnoreNotFoundErr {
+		scope = scope.IgnoreNotFoundErr()
+	} else if !x.IgnoreNotFoundErr && x.NotFoundErrCode != 0 {
 		scope = scope.SetNotFoundErr(x.NotFoundErrCode)
 	}
 	if im, ok := (m).(IModel); ok && x.forceTModel {

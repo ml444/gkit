@@ -123,20 +123,20 @@ func TestSoftDeleteScopeAndMoreGaps(t *testing.T) {
 
 type failTxItem struct{}
 
-func (failTxItem) Preload(d dbx.Driver) error { return errors.New("pre") }
-func (failTxItem) Execute(d dbx.Driver) error { return nil }
+func (failTxItem) Preload(ctx context.Context, d dbx.Driver) error { return errors.New("pre") }
+func (failTxItem) Execute(ctx context.Context, d dbx.Driver) error { return nil }
 
 type failExecItem struct{}
 
-func (failExecItem) Preload(d dbx.Driver) error { return nil }
-func (failExecItem) Execute(d dbx.Driver) error { return errors.New("exec") }
+func (failExecItem) Preload(ctx context.Context, d dbx.Driver) error { return nil }
+func (failExecItem) Execute(ctx context.Context, d dbx.Driver) error { return errors.New("exec") }
 
 type failScopeTxItem struct{}
 
-func (failScopeTxItem) Preload(repo *dbx.T, d dbx.Driver) error { return errors.New("pre") }
-func (failScopeTxItem) Execute(repo *dbx.T, d dbx.Driver) error { return nil }
+func (failScopeTxItem) Preload(ctx context.Context, repo *dbx.T, d dbx.Driver) error { return errors.New("pre") }
+func (failScopeTxItem) Execute(ctx context.Context, repo *dbx.T, d dbx.Driver) error { return nil }
 
 type failScopeExecItem struct{}
 
-func (failScopeExecItem) Preload(repo *dbx.T, d dbx.Driver) error { return nil }
-func (failScopeExecItem) Execute(repo *dbx.T, d dbx.Driver) error { return errors.New("exec") }
+func (failScopeExecItem) Preload(ctx context.Context, repo *dbx.T, d dbx.Driver) error { return nil }
+func (failScopeExecItem) Execute(ctx context.Context, repo *dbx.T, d dbx.Driver) error { return errors.New("exec") }

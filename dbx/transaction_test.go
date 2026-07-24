@@ -10,13 +10,13 @@ import (
 
 type txItem struct{ preload, execute error }
 
-func (i txItem) Preload(dbx.Driver) error { return i.preload }
-func (i txItem) Execute(dbx.Driver) error { return i.execute }
+func (i txItem) Preload(ctx context.Context, d dbx.Driver) error { return i.preload }
+func (i txItem) Execute(ctx context.Context, d dbx.Driver) error { return i.execute }
 
 type scopeTxItem struct{ preload, execute error }
 
-func (i scopeTxItem) Preload(*dbx.T, dbx.Driver) error { return i.preload }
-func (i scopeTxItem) Execute(*dbx.T, dbx.Driver) error { return i.execute }
+func (i scopeTxItem) Preload(ctx context.Context, t *dbx.T, d dbx.Driver) error { return i.preload }
+func (i scopeTxItem) Execute(ctx context.Context, t *dbx.T, d dbx.Driver) error { return i.execute }
 
 func TestTransactionHelpers(t *testing.T) {
 	d, conn := testConn()
@@ -64,40 +64,41 @@ func TestTransactionHelpers(t *testing.T) {
 }
 
 func TestTransactionItems(t *testing.T) {
+	ctx := context.Background()
 	d, conn := testConn()
 	repo := dbx.NewT[testRow](func() dbx.Conn { return conn })
 	row := &testRow{ID: 1, Name: "a"}
-	if err := dbx.NewInsertItem(row).Execute(d); err != nil {
+	if err := dbx.NewInsertItem(row).Execute(ctx, d); err != nil {
 		t.Fatal(err)
 	}
-	if err := (&dbx.UpdateItem{Model: row, Where: map[string]any{"id": int64(1)}, Updates: map[string]any{"name": "b"}}).Preload(d); err != nil {
+	if err := (&dbx.UpdateItem{Model: row, Where: map[string]any{"id": int64(1)}, Updates: map[string]any{"name": "b"}}).Preload(ctx, d); err != nil {
 		t.Fatal(err)
 	}
-	if err := (&dbx.UpdateItem{Model: row, Where: map[string]any{"id": int64(1)}}).Execute(d); err != nil {
+	if err := (&dbx.UpdateItem{Model: row, Where: map[string]any{"id": int64(1)}}).Execute(ctx, d); err != nil {
 		t.Fatal(err)
 	}
-	if err := (&dbx.SaveItem{Model: row, Where: map[string]any{"id": int64(1)}}).Preload(d); err != nil {
+	if err := (&dbx.SaveItem{Model: row, Where: map[string]any{"id": int64(1)}}).Preload(ctx, d); err != nil {
 		t.Fatal(err)
 	}
-	if err := (&dbx.SaveItem{Model: row}).Execute(d); err != nil {
+	if err := (&dbx.SaveItem{Model: row}).Execute(ctx, d); err != nil {
 		t.Fatal(err)
 	}
-	if err := (&dbx.ScopeInsertItem{Models: &testRow{ID: 2}}).Execute(repo, d); err != nil {
+	if err := (&dbx.ScopeInsertItem{Models: &testRow{ID: 2}}).Execute(ctx, repo, d); err != nil {
 		t.Fatal(err)
 	}
-	if err := (&dbx.ScopeUpdateItem{Model: row, Where: map[string]any{"id": int64(1)}, Updates: map[string]any{"name": "c"}}).Preload(repo, d); err != nil {
+	if err := (&dbx.ScopeUpdateItem{Model: row, Where: map[string]any{"id": int64(1)}, Updates: map[string]any{"name": "c"}}).Preload(ctx, repo, d); err != nil {
 		t.Fatal(err)
 	}
-	if err := (&dbx.ScopeUpdateItem{Model: row, Where: map[string]any{"id": int64(1)}}).Execute(repo, d); err != nil {
+	if err := (&dbx.ScopeUpdateItem{Model: row, Where: map[string]any{"id": int64(1)}}).Execute(ctx, repo, d); err != nil {
 		t.Fatal(err)
 	}
-	if err := (&dbx.ScopeSaveItem{Model: row, Where: map[string]any{"id": int64(1)}}).Preload(repo, d); err != nil {
+	if err := (&dbx.ScopeSaveItem{Model: row, Where: map[string]any{"id": int64(1)}}).Preload(ctx, repo, d); err != nil {
 		t.Fatal(err)
 	}
-	if err := (&dbx.ScopeSaveItem{Model: row}).Execute(repo, d); err != nil {
+	if err := (&dbx.ScopeSaveItem{Model: row}).Execute(ctx, repo, d); err != nil {
 		t.Fatal(err)
 	}
-	if err := dbx.RunTxItems(ctx(), conn, dbx.NewInsertItem(&testRow{ID: 3})); err != nil {
+	if err := dbx.RunTxItems(ctx, conn, dbx.NewInsertItem(&testRow{ID: 3})); err != nil {
 		t.Fatal(err)
 	}
 }

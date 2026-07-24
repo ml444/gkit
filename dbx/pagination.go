@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	DefaultLimit int = 2000
-	MaxLimit     int = 100000
+	DefaultLimit int = 100
+	MaxLimit     int = 10000
 )
 
 func (s *Scope) PaginationQuery(list any, page, size uint32) (*pagination.Pagination, error) {

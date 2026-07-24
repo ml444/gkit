@@ -43,7 +43,8 @@ func TestDriverInternalHelpers(t *testing.T) {
 		ForUpdate:        true,
 		ReturningColumns: []string{"id"},
 	}
-	tx := (&Driver{db: db}).applyBuilder(b).Find(&[]coverageModel{})
+	ctx := context.Background()
+	tx := (&Driver{db: db}).applyBuilder(ctx, b).Find(&[]coverageModel{})
 	if tx.Error != nil {
 		t.Fatal(tx.Error)
 	}

@@ -30,8 +30,11 @@ func applyTxOptions(opts []dbx.TxOption) sql.TxOptions {
 	return o
 }
 
-func (d *Driver) applyBuilder(b *dbx.QueryBuilder) *gorm.DB {
+func (d *Driver) applyBuilder(ctx context.Context, b *dbx.QueryBuilder) *gorm.DB {
 	tx := d.db
+	if ctx != nil {
+		tx = tx.WithContext(ctx)
+	}
 	if b.Model != nil {
 		tx = tx.Model(b.Model)
 	} else if b.Table != "" {
@@ -129,45 +132,45 @@ func stringsSplitFieldsFunc(s string, fn func(r rune) bool) []string {
 }
 
 func (d *Driver) Find(ctx context.Context, b *dbx.QueryBuilder, dest any) error {
-	tx := d.applyBuilder(b)
+	tx := d.applyBuilder(ctx, b)
 	return mapErr(tx.Find(dest).Error)
 }
 
 func (d *Driver) First(ctx context.Context, b *dbx.QueryBuilder, dest any) error {
-	tx := d.applyBuilder(b)
+	tx := d.applyBuilder(ctx, b)
 	return mapErr(tx.First(dest).Error)
 }
 
 func (d *Driver) Count(ctx context.Context, b *dbx.QueryBuilder) (int64, error) {
-	tx := d.applyBuilder(b)
+	tx := d.applyBuilder(ctx, b)
 	var total int64
 	err := tx.Count(&total).Error
 	return total, err
 }
 
 func (d *Driver) Create(ctx context.Context, b *dbx.QueryBuilder, v any) (int64, error) {
-	tx := d.applyBuilder(b)
+	tx := d.applyBuilder(ctx, b)
 	tx = tx.Create(v)
 	return tx.RowsAffected, tx.Error
 }
 
 func (d *Driver) CreateInBatches(ctx context.Context, b *dbx.QueryBuilder, values any, batchSize int) (int64, error) {
-	tx := d.applyBuilder(b).CreateInBatches(values, batchSize)
+	tx := d.applyBuilder(ctx, b).CreateInBatches(values, batchSize)
 	return tx.RowsAffected, tx.Error
 }
 
 func (d *Driver) Save(ctx context.Context, b *dbx.QueryBuilder, v any) (int64, error) {
-	tx := d.applyBuilder(b).Save(v)
+	tx := d.applyBuilder(ctx, b).Save(v)
 	return tx.RowsAffected, tx.Error
 }
 
 func (d *Driver) Update(ctx context.Context, b *dbx.QueryBuilder, v any) (int64, error) {
-	tx := d.applyBuilder(b).Updates(v)
+	tx := d.applyBuilder(ctx, b).Updates(v)
 	return tx.RowsAffected, tx.Error
 }
 
 func (d *Driver) UpdateColumn(ctx context.Context, b *dbx.QueryBuilder, field string, value any) (int64, error) {
-	tx := d.applyBuilder(b)
+	tx := d.applyBuilder(ctx, b)
 	if b.IncrColumn != "" && b.IncrValue != 0 {
 		col := b.IncrColumn
 		v := b.IncrValue
@@ -183,7 +186,7 @@ func (d *Driver) UpdateColumn(ctx context.Context, b *dbx.QueryBuilder, field st
 }
 
 func (d *Driver) Delete(ctx context.Context, b *dbx.QueryBuilder) (int64, error) {
-	tx := d.applyBuilder(b)
+	tx := d.applyBuilder(ctx, b)
 	if b.Model != nil {
 		tx = tx.Delete(b.Model)
 	} else {
@@ -193,7 +196,7 @@ func (d *Driver) Delete(ctx context.Context, b *dbx.QueryBuilder) (int64, error)
 }
 
 func (d *Driver) Scan(ctx context.Context, b *dbx.QueryBuilder, dest any) error {
-	tx := d.applyBuilder(b)
+	tx := d.applyBuilder(ctx, b)
 	return mapErr(tx.Scan(dest).Error)
 }
 

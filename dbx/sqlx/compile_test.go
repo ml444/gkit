@@ -26,11 +26,11 @@ func TestCompileQueries(t *testing.T) {
 		Limit: 2, Offset: 1, ForUpdate: true,
 	}
 	q, args, err := compileSelect(b)
-	if err != nil || q != "SELECT id, display_id FROM compile_rows WHERE id = ? AND display_id = ? ORDER BY id DESC, display_id ASC LIMIT ? OFFSET ? FOR UPDATE" || !reflect.DeepEqual(args, []any{1, "x", 2, 1}) {
+	if err != nil || q != "SELECT id, display_id FROM compile_rows WHERE id = ? AND (display_id = ?) ORDER BY id DESC, display_id ASC LIMIT ? OFFSET ? FOR UPDATE" || !reflect.DeepEqual(args, []any{1, "x", 2, 1}) {
 		t.Fatalf("compileSelect = %q %#v %v", q, args, err)
 	}
 	q, args, err = compileCount(b)
-	if err != nil || q != "SELECT COUNT(*) FROM compile_rows WHERE id = ? AND display_id = ?" || !reflect.DeepEqual(args, []any{1, "x"}) {
+	if err != nil || q != "SELECT COUNT(*) FROM compile_rows WHERE id = ? AND (display_id = ?)" || !reflect.DeepEqual(args, []any{1, "x"}) {
 		t.Fatalf("compileCount = %q %#v %v", q, args, err)
 	}
 	if q, args := compileWhere(&dbx.QueryBuilder{}); q != "" || args != nil {

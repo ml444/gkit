@@ -1,6 +1,7 @@
 package gorm
 
 import (
+	"context"
 	"errors"
 
 	"gorm.io/gorm"
@@ -30,7 +31,7 @@ func AsGormScope(s *dbx.Scope) (*GormScope, bool) {
 	if !ok {
 		return nil, false
 	}
-	gdb = applyBuilder(gdb, s.Builder())
+	gdb = applyBuilder(s.Context(), gdb, s.Builder())
 	return &GormScope{Scope: s, gormDB: gdb}, true
 }
 
@@ -53,12 +54,12 @@ func WrapScope(s *dbx.Scope, db *gorm.DB) *GormScope {
 	if s == nil {
 		return nil
 	}
-	gdb := applyBuilder(db, s.Builder())
+	gdb := applyBuilder(s.Context(), db, s.Builder())
 	return &GormScope{Scope: s, gormDB: gdb}
 }
 
-func applyBuilder(db *gorm.DB, b *dbx.QueryBuilder) *gorm.DB {
-	return (&Driver{db: db}).applyBuilder(b)
+func applyBuilder(ctx context.Context, db *gorm.DB, b *dbx.QueryBuilder) *gorm.DB {
+	return (&Driver{db: db}).applyBuilder(ctx, b)
 }
 
 func (gs *GormScope) Preload(query string, args ...any) *GormScope {
@@ -106,7 +107,7 @@ func (gs *GormScope) PaginationQueryWithOpt(list any, opt *pagination.Pagination
 	if pk, orderExpr, ok := gs.canDeferredJoin(offset); ok {
 		err = gs.findWithDeferredJoin(list, limit, offset, pk, orderExpr)
 	} else {
-		err = gs.gormDB.Limit(limit).Offset(offset).Find(list).Error
+		err = gs.Scope.Limit(limit).Offset(offset).Find(list)
 	}
 	if err != nil {
 		return nil, err

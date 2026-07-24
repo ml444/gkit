@@ -88,14 +88,17 @@ func TestScopePredicatesAndConfiguration(t *testing.T) {
 	if len(q.Builder().Wheres) != 12 || len(s.Builder().Wheres) != 0 {
 		t.Fatalf("where count or fork isolation incorrect: %d/%d", len(q.Builder().Wheres), len(s.Builder().Wheres))
 	}
-	want := []string{"a = ?", "b != ?", "c IN ?", "d NOT IN ?", "e LIKE ?", "f LIKE ?", "g LIKE ?", "h NOT LIKE ?", "i IS NULL", "j IS NOT NULL", "k BETWEEN ? AND ?", "l NOT BETWEEN ? AND ?"}
+	want := []string{"a = ?", "b != ?", "c IN ?", "d NOT IN ?", "e LIKE ? ESCAPE '\\'", "f LIKE ? ESCAPE '\\'", "g LIKE ? ESCAPE '\\'", "h NOT LIKE ? ESCAPE '\\'", "i IS NULL", "j IS NOT NULL", "k BETWEEN ? AND ?", "l NOT BETWEEN ? AND ?"}
 	for i, clause := range q.Builder().Wheres {
 		if clause.Query != want[i] {
 			t.Fatalf("where[%d] = %q, want %q", i, clause.Query, want[i])
 		}
 	}
-	if s.In("x", []int{}).Builder().Wheres != nil || s.NotIn("x", nil).Builder().Wheres != nil {
-		t.Fatal("empty IN should no-op")
+	if q:=s.In("x", []int{}).Builder().Wheres[0].Query; q != "1 = 0" {
+		t.Fatal("empty IN should: '1 = 0', but: ", q)
+	}
+	if s.NotIn("x", nil).Builder().Wheres[0].Query != "1 = 0" {
+		t.Fatal("empty IN should: '1 = 0'")
 	}
 	if got := s.Gt("a", 1).Gte("b", 2).Lt("c", 3).Lte("d", 4).Builder().Wheres; len(got) != 4 {
 		t.Fatalf("comparison predicates = %#v", got)

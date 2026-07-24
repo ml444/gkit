@@ -285,6 +285,9 @@ func assignRow(dest any, row map[string]any) error {
 	if dv.Kind() != reflect.Ptr {
 		return fmt.Errorf("dest must be pointer")
 	}
+	if len(row) == 0 || dv.Elem().Type().Kind() != reflect.Struct {
+		return nil
+	}
 	return mapToStruct(row, dest)
 }
 
@@ -315,6 +318,9 @@ func structToMap(v any) (map[string]any, error) {
 func mapToStruct(row map[string]any, dest any) error {
 	rv := reflect.ValueOf(dest).Elem()
 	t := rv.Type()
+	if t.Kind() != reflect.Struct {
+		return fmt.Errorf("it must be a struct type, but the type is %T", dest)
+	}
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		if !f.IsExported() {
