@@ -2,9 +2,12 @@ package retry
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/ml444/gkit/middleware"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Options configures retry behavior for client calls.
@@ -23,7 +26,7 @@ func Client(opt Options, next middleware.ServiceHandler) middleware.ServiceHandl
 		opt.Backoff = 100 * time.Millisecond
 	}
 	if opt.RetryIf == nil {
-		opt.RetryIf = func(err error) bool { return err != nil }
+		opt.RetryIf = DefaultRetryable // 只重试安全错误
 	}
 	return func(ctx context.Context, req interface{}) (interface{}, error) {
 		var lastErr error
@@ -46,4 +49,19 @@ func Middleware(opt Options) middleware.Middleware {
 	return func(next middleware.ServiceHandler) middleware.ServiceHandler {
 		return Client(opt, next)
 	}
+}
+
+// DefaultRetryable 仅对瞬时/网络错误返回 true
+func DefaultRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	switch status.Code(err) {
+	case codes.Unavailable, codes.DeadlineExceeded, codes.ResourceExhausted:
+		return true
+	}
+	return false
 }
