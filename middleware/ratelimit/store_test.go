@@ -7,7 +7,7 @@ import (
 )
 
 func TestMemoryStore_Allow(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewMemoryStore(5 * time.Second)
 	ctx := context.Background()
 	key := "test"
 	period := 100 * time.Millisecond

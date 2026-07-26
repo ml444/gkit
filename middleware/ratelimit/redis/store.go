@@ -45,19 +45,28 @@ func NewStore(client *goredis.Client, cfg Config) *Store {
 	return &Store{client: client, cfg: cfg}
 }
 
+var allowScript = goredis.NewScript(`
+local c = redis.call("INCR", KEYS[1])
+if c == 1 then
+  redis.call("PEXPIRE", KEYS[1], ARGV[1])
+end
+return c
+`)
+
 // Allow increments the counter for key and returns whether the limit is exceeded.
 // Prefer keys from ratelimit.RateLimitKey(service, path, period).
 func (s *Store) Allow(ctx context.Context, key string, period time.Duration, limit uint64) (bool, error) {
 	if period <= 0 || limit == 0 {
 		return true, nil
 	}
-	pipe := s.client.TxPipeline()
-	incr := pipe.Incr(ctx, key)
-	pipe.Expire(ctx, key, period)
-	if _, err := pipe.Exec(ctx); err != nil {
-		return false, err
-	}
-	count, err := incr.Result()
+	// pipe := s.client.TxPipeline()
+	// incr := pipe.Incr(ctx, key)
+	// pipe.Expire(ctx, key, period)
+	// if _, err := pipe.Exec(ctx); err != nil {
+	// 	return false, err
+	// }
+	// count, err := incr.Result()
+	count, err := allowScript.Run(ctx, s.client, []string{key}, period.Milliseconds()).Int64()
 	if err != nil {
 		return false, err
 	}

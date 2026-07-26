@@ -13,20 +13,23 @@ type Store interface {
 
 // MemoryStore is an in-process fixed-window limiter store.
 type MemoryStore struct {
-	mu    sync.Mutex
+	mu      sync.Mutex
 	windows map[string]*memWindow
+	stopCh  chan struct{} // 用于优雅关闭清理协程
 }
 
 type memWindow struct {
-	period    int64
-	limit     uint64
-	start     int64
-	count     uint64
+	period int64
+	limit  uint64
+	start  int64
+	count  uint64
 }
 
 // NewMemoryStore creates an in-memory rate limit store.
-func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{windows: make(map[string]*memWindow)}
+func NewMemoryStore(cleanupInterval time.Duration) *MemoryStore {
+	s := &MemoryStore{windows: make(map[string]*memWindow)}
+	go s.cleanup(cleanupInterval)
+	return s
 }
 
 func (s *MemoryStore) Allow(_ context.Context, key string, period time.Duration, limit uint64) (bool, error) {
@@ -50,4 +53,32 @@ func (s *MemoryStore) Allow(_ context.Context, key string, period time.Duration,
 	}
 	w.count++
 	return w.count <= limit, nil
+}
+
+// cleanup 定期清理过期的限流记录
+func (s *MemoryStore) cleanup(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			now := time.Now().UnixMilli()
+			s.mu.Lock()
+			for k, w := range s.windows {
+				// 如果当前时间已经超过了该窗口的起始时间 + 周期，说明该窗口已经过期
+				if now-w.start >= w.period {
+					delete(s.windows, k)
+				}
+			}
+			s.mu.Unlock()
+		case <-s.stopCh:
+			return
+		}
+	}
+}
+
+// Close 关闭 Store 时停止清理协程
+func (s *MemoryStore) Close() {
+	close(s.stopCh)
 }

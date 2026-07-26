@@ -7,6 +7,7 @@ the full-method value of the API.
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"sort"
 	"sync"
@@ -228,7 +229,7 @@ func FrequencyLimitWithOptions(rls []*LimitCfg, opts ...Option) middleware.Middl
 				if o.FailOpen {
 					return handler(ctx, req)
 				}
-				return nil, ErrLimitExceed
+				return nil, fmt.Errorf("%w: transport context is missing", ErrLimitExceed)
 			}
 			if !lSet.WalkAllow(tr.Path()) {
 				return nil, ErrLimitExceed
@@ -242,7 +243,7 @@ func FrequencyLimitWithOptions(rls []*LimitCfg, opts ...Option) middleware.Middl
 func FrequencyLimitWithStore(store Store, rls []*LimitCfg, opts ...Option) middleware.Middleware {
 	o := applyOptions(opts)
 	if store == nil {
-		store = NewMemoryStore()
+		panic("store instance must be configured")
 	}
 	o.Store = store
 	return func(handler middleware.ServiceHandler) middleware.ServiceHandler {
