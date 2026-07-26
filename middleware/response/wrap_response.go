@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/ml444/gkit/errorx"
 	"github.com/ml444/gkit/middleware"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -17,8 +18,12 @@ func WrapResponse() middleware.Middleware {
 		return func(ctx context.Context, req any) (rsp any, err error) {
 			rsp, err = handler(ctx, req)
 			if err == nil {
+				msg, ok := rsp.(proto.Message)
+				if !ok {
+					return nil, errorx.InternalServer("response: reply value is not proto.Message")
+				}
 				var value anypb.Any
-				err = anypb.MarshalFrom(&value, rsp.(proto.Message), proto.MarshalOptions{})
+				err = anypb.MarshalFrom(&value, msg, proto.MarshalOptions{})
 				if err != nil {
 					return nil, err
 				}
