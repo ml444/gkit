@@ -2,7 +2,6 @@ package recovery
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"runtime"
 
@@ -20,10 +19,9 @@ type (
 
 func defaultRecoveryHandler() middleware.LurkerFunc {
 	return func(ctx context.Context, p interface{}) error {
-		req := ctx.Value(RequestKey{})
 		r := ctx.Value(RecoverKey{})
-		log.Errorf("%v: %+v\n%s\n", r, req, p)
-		return errorx.InternalServer(fmt.Sprintf("%v", r))
+		log.Errorf("%v: %+v\n%s\n", r, ctx.Value(RequestKey{}), p)
+		return errorx.InternalServer("internal server error")
 	}
 }
 
