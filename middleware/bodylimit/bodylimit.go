@@ -2,6 +2,7 @@ package bodylimit
 
 import (
 	"context"
+	"net/http"
 	"reflect"
 
 	"github.com/ml444/gkit/errorx"
@@ -9,6 +10,15 @@ import (
 )
 
 var ErrBodyTooLarge = errorx.CreateError(413, 41301, "BODYLIMIT: request body too large")
+
+func HTTPMiddleware(maxBytes int64) middleware.HttpMiddleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+			next.ServeHTTP(w, r)
+		})
+	}
+}
 
 // Server rejects requests whose serialized size exceeds maxBytes (approximate).
 func Server(maxBytes int64) middleware.Middleware {
