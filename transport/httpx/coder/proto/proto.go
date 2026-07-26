@@ -4,6 +4,7 @@ package proto
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 
 	"google.golang.org/protobuf/proto"
@@ -20,7 +21,10 @@ func GetCoder() Coder {
 type Coder struct{}
 
 func (Coder) Marshal(v interface{}) ([]byte, error) {
-	return proto.Marshal(v.(proto.Message))
+	if vv, ok := v.(proto.Message); ok {
+		return proto.Marshal(vv)
+	}
+	return nil, fmt.Errorf("not proto message: %T", v)
 }
 
 func (Coder) Unmarshal(data []byte, v interface{}) error {

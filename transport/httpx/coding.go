@@ -17,6 +17,8 @@ import (
 	"github.com/ml444/gkit/transport/httpx/coder/form"
 )
 
+const maxRespBytes = 10 << 20 // 10MB，可配置
+
 // RequestDecoder is decode request func.
 type RequestDecoder func(*http.Request, interface{}) error
 
@@ -43,12 +45,12 @@ type IRouterCoder interface {
 }
 
 type routerCoder struct {
-	bindVars RequestDecoder
+	bindVars  RequestDecoder
 	bindQuery RequestDecoder
-	bindForm RequestDecoder
-	bindBody RequestDecoder
-	respEnc  ResponseEncoder
-	errEnc   ErrorEncoder
+	bindForm  RequestDecoder
+	bindBody  RequestDecoder
+	respEnc   ResponseEncoder
+	errEnc    ErrorEncoder
 }
 
 func newRouterCoder() *routerCoder {
@@ -178,9 +180,12 @@ func DefaultResponseDecoder(_ context.Context, rsp *http.Response, v interface{}
 	if rsp.StatusCode < 400 && v == nil {
 		return nil
 	}
-	data, err := io.ReadAll(rsp.Body)
+	data, err := io.ReadAll(io.LimitReader(rsp.Body, maxRespBytes+1))
 	if err != nil {
 		return err
+	}
+	if int64(len(data)) > maxRespBytes {
+		return errorx.CreateError(502, 50201, "response body too large")
 	}
 	if rsp.StatusCode >= 400 {
 		e := new(errorx.Error)

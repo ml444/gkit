@@ -1,5 +1,7 @@
 package stream
 
+import "fmt"
+
 const Name = "octet-stream"
 
 func GetCoder() Coder {
@@ -9,7 +11,10 @@ func GetCoder() Coder {
 type Coder struct{}
 
 func (Coder) Marshal(v interface{}) ([]byte, error) {
-	return v.([]byte), nil
+	if vv, ok := v.([]byte); ok {
+		return vv, nil
+	}
+	return nil, fmt.Errorf("not stream type: %T", v)
 }
 
 func (Coder) Unmarshal(data []byte, v interface{}) error {
