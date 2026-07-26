@@ -2,6 +2,7 @@ package csrf
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"net/http"
 	"strings"
@@ -34,7 +35,7 @@ type Options struct {
 func DefaultOptions() Options {
 	return Options{
 		SkipSafe:   true,
-		SkipBearer: true,
+		SkipBearer: false,
 	}
 }
 
@@ -68,7 +69,7 @@ func HTTPMiddleware(opt Options) middleware.HttpMiddleware {
 				http.Error(w, ErrCSRF.Error(), http.StatusForbidden)
 				return
 			}
-			if r.Header.Get(opt.HeaderName) != cookie.Value {
+			if subtle.ConstantTimeCompare([]byte(r.Header.Get(opt.HeaderName)), []byte(cookie.Value)) != 1 {
 				http.Error(w, ErrCSRF.Error(), http.StatusForbidden)
 				return
 			}
