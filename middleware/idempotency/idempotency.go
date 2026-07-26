@@ -17,6 +17,7 @@ const headerKey = "Idempotency-Key"
 // Store records idempotency keys.
 type Store interface {
 	Reserve(ctx context.Context, key string, ttl time.Duration) (bool, error)
+	Release(ctx context.Context, key string) error // 新增
 }
 
 // MemoryStore is an in-process idempotency store.
@@ -43,6 +44,13 @@ func (s *MemoryStore) Reserve(_ context.Context, key string, ttl time.Duration) 
 	}
 	s.keys[key] = now.Add(ttl)
 	return true, nil
+}
+
+func (s *MemoryStore) Release(ctx context.Context, key string) error {
+	s.mu.Lock()
+	delete(s.keys, key)
+	s.mu.Unlock()
+	return nil
 }
 
 // HTTPMiddleware rejects duplicate Idempotency-Key within TTL.
@@ -98,7 +106,12 @@ func Server(store Store, ttl time.Duration, keyFromContext func(context.Context)
 			if !ok {
 				return nil, ErrDuplicate
 			}
-			return next(ctx, req)
+			rsp, err := next(ctx, req)
+			if err != nil {
+				_ = store.Release(ctx, key) // 失败释放，允许重试
+				return nil, err
+			}
+			return rsp, nil
 		}
 	}
 }
