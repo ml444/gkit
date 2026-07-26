@@ -29,6 +29,17 @@ func Default() middleware.HttpMiddleware {
 
 // New returns CORS middleware with the given options.
 func New(opt Options) middleware.HttpMiddleware {
+	var wildcard bool
+	for _, allowOrigin := range opt.AllowOrigins {
+		if strings.Contains(allowOrigin, "*") {
+			wildcard = true
+		}
+	}
+	if wildcard && opt.AllowCredentials {
+		// The `cors:AllowCredentials` property cannot be used with the wildcard "*".
+		// Browsers will refuse, and it is insecure.
+		panic("cors: AllowCredentials cannot be enabled simultaneously with the wildcard '*'.")
+	}
 	methods := opt.AllowMethods
 	if methods == "" {
 		methods = "GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS"
@@ -40,12 +51,12 @@ func New(opt Options) middleware.HttpMiddleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
-			allowOrigin := pickOrigin(origin, opt.AllowOrigins)
+			allowOrigin, explicit := pickOrigin(origin, opt.AllowOrigins)
 			if allowOrigin != "" {
 				w.Header().Set("Access-Control-Allow-Origin", allowOrigin)
 				w.Header().Add("Vary", "Origin")
 			}
-			if opt.AllowCredentials && allowOrigin != "*" {
+			if opt.AllowCredentials && explicit {
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
 			}
 			if methods != "" {
@@ -69,20 +80,14 @@ func New(opt Options) middleware.HttpMiddleware {
 	}
 }
 
-func pickOrigin(requestOrigin string, allowed []string) string {
-	if len(allowed) == 0 {
-		return ""
-	}
+func pickOrigin(requestOrigin string, allowed []string) (string, bool) {
 	for _, o := range allowed {
 		if o == "*" {
-			if requestOrigin != "" {
-				return requestOrigin
-			}
-			return "*"
+			return "*", false
 		}
 		if strings.EqualFold(o, requestOrigin) {
-			return requestOrigin
+			return requestOrigin, true	// precise hit
 		}
 	}
-	return ""
+	return "", false
 }
