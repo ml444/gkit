@@ -33,6 +33,7 @@ type TokenValidator interface {
 
 // Options configures auth middleware.
 type Options struct {
+	disabled       bool
 	APIKeyHeader   string
 	SkipPaths      map[string]bool
 	TokenValidator TokenValidator
@@ -60,6 +61,12 @@ func WithValidator(v TokenValidator) Option {
 	return func(o *Options) { o.TokenValidator = v }
 }
 
+func WithDisable() Option {
+	return func(o *Options) {
+		o.disabled =true
+	}
+}
+
 func applyOpts(opts []Option) Options {
 	o := Options{APIKeyHeader: "X-API-Key"}
 	for _, fn := range opts {
@@ -71,6 +78,9 @@ func applyOpts(opts []Option) Options {
 // Server returns service middleware enforcing authentication.
 func Server(opts ...Option) middleware.Middleware {
 	o := applyOpts(opts)
+	if o.TokenValidator == nil && !o.disabled {
+		panic("auth: TokenValidator is not configured; please use WithDisabled() to disable it.")
+	}
 	return func(next middleware.ServiceHandler) middleware.ServiceHandler {
 		return func(ctx context.Context, req interface{}) (interface{}, error) {
 			if o.TokenValidator == nil {
@@ -120,7 +130,7 @@ func HTTPMiddleware(opts ...Option) middleware.HttpMiddleware {
 }
 
 func extractToken(r *http.Request, apiKeyHeader string) string {
-	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
+	if h := r.Header.Get("Authorization"); strings.EqualFold(h, "Bearer ") {
 		return strings.TrimPrefix(h, "Bearer ")
 	}
 	if apiKeyHeader != "" {
