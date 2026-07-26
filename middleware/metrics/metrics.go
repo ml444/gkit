@@ -9,6 +9,7 @@ import (
 	"github.com/ml444/gkit/middleware"
 	"github.com/ml444/gkit/pkg/header"
 	"github.com/ml444/gkit/transport"
+	"github.com/ml444/gkit/transport/httpx"
 )
 
 // Recorder records request metrics.
@@ -20,7 +21,7 @@ type Recorder interface {
 
 type nopRecorder struct{}
 
-func (nopRecorder) IncRequests(string, string, int)              {}
+func (nopRecorder) IncRequests(string, string, int)               {}
 func (nopRecorder) ObserveDuration(string, string, time.Duration) {}
 func (nopRecorder) ObserveDurationWithTrace(string, string, time.Duration, header.TraceInfo) {
 }
@@ -41,8 +42,12 @@ func HTTPMiddleware() middleware.HttpMiddleware {
 			start := time.Now()
 			sw := &statusCapture{ResponseWriter: w}
 			next.ServeHTTP(sw, r)
-			defaultRecorder.IncRequests(r.Method, r.URL.Path, sw.status)
-			defaultRecorder.ObserveDurationWithTrace(r.Method, r.URL.Path, time.Since(start), header.TraceInfoFromRequest(r))
+			path := r.URL.Path
+			if tmpl := httpx.RoutePattern(r); tmpl != "" { // 形如 /user/{id}
+				path = tmpl
+			}
+			defaultRecorder.IncRequests(r.Method, path, sw.status)
+			defaultRecorder.ObserveDurationWithTrace(r.Method, path, time.Since(start), header.TraceInfoFromRequest(r))
 		})
 	}
 }
