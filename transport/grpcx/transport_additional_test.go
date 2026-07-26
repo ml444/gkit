@@ -7,6 +7,7 @@ import (
 
 	"github.com/ml444/gkit/discovery"
 	"github.com/ml444/gkit/transport"
+	"github.com/ml444/gkit/transport/grpcx/resolver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/peer"
 )
@@ -84,20 +85,21 @@ func TestClientCloseAndPeerInstance(t *testing.T) {
 	if err := c.Close(); err != nil {
 		t.Fatalf("close nil: %v", err)
 	}
-	reg := discovery.NewDefaultRegistry()
-	dc := discovery.NewDiscoveryClient(reg)
 	inst := &discovery.ServiceInstance{ID: "i1", Name: "svc", Address: "127.0.0.1", Port: 8080}
-	if err := reg.Register(context.Background(), inst); err != nil {
-		t.Fatal(err)
+	// 将实例手动注入到 resolver 维护的 atomic 缓存中 (模拟 update 后的状态)
+	mockCache := map[string]discovery.ServiceInstancer{
+		"127.0.0.1:8080": inst,
 	}
+	resolver.SetInstanceCacheForTest(mockCache)
+
 	ctx := peer.NewContext(context.Background(), &peer.Peer{Addr: fakeAddr("127.0.0.1:8080")})
-	if got := instanceFromPeer(ctx, dc, "svc"); got == nil || got.GetID() != "i1" {
+	if got, _ := instanceFromPeer(ctx); got == nil || got.GetID() != "i1" {
 		t.Fatalf("instance = %#v", got)
 	}
-	if got := instanceFromPeer(context.Background(), dc, "svc"); got != nil {
+	if got, _ := instanceFromPeer(context.Background()); got != nil {
 		t.Fatalf("empty peer = %#v", got)
 	}
-	if got := instanceFromPeer(peer.NewContext(context.Background(), &peer.Peer{Addr: fakeAddr("bad")}), dc, "svc"); got != nil {
+	if got, _ := instanceFromPeer(peer.NewContext(context.Background(), &peer.Peer{Addr: fakeAddr("bad")})); got != nil {
 		t.Fatalf("bad peer = %#v", got)
 	}
 }

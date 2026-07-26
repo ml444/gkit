@@ -156,10 +156,12 @@ func (s *Server) Stop(ctx context.Context) error {
 	}()
 	select {
 	case <-done:
+		s.listener.Close()
 		log.Info("[gRPC] server stopping")
 		return nil
 	case <-ctx.Done():
 		s.iServer.Stop()
+		s.listener.Close()
 		log.Info("[gRPC] server stopping (forced)")
 		return ctx.Err()
 	}

@@ -3,8 +3,8 @@ package grpcx
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
-	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -18,6 +18,7 @@ import (
 
 	"github.com/ml444/gkit/discovery"
 	"github.com/ml444/gkit/middleware/response"
+	"github.com/ml444/gkit/transport/grpcx/resolver"
 	discoveryresolver "github.com/ml444/gkit/transport/grpcx/resolver"
 	"github.com/ml444/gkit/transport/grpcx/xds"
 )
@@ -128,7 +129,10 @@ func (c *Client) discoveryFeedbackInterceptor() grpc.UnaryClientInterceptor {
 		if c.discovery == nil || c.service == "" {
 			return err
 		}
-		inst := instanceFromPeer(ctx, c.discovery, c.service)
+		inst, ierr := instanceFromPeer(ctx)
+		if ierr != nil {
+			return ierr
+		}
 		if inst != nil {
 			success := err == nil || (status.Code(err) != codes.Unavailable && status.Code(err) != codes.DeadlineExceeded)
 			c.discovery.UpdateLoadBalancerStatus(ctx, inst, success)
@@ -137,25 +141,30 @@ func (c *Client) discoveryFeedbackInterceptor() grpc.UnaryClientInterceptor {
 	}
 }
 
-func instanceFromPeer(ctx context.Context, dc *discovery.DiscoveryClient, service string) discovery.ServiceInstancer {
+func instanceFromPeer(ctx context.Context) (discovery.ServiceInstancer, error) {
 	p, ok := peer.FromContext(ctx)
 	if !ok || p.Addr == nil {
-		return nil
+		return nil, errors.New("grpc peer is nil")
 	}
-	peerHost, peerPort, err := net.SplitHostPort(p.Addr.String())
-	if err != nil {
-		return nil
+	// peerHost, peerPort, err := net.SplitHostPort(p.Addr.String())
+	// if err != nil {
+	// 	return nil
+	// }
+	// instances, err := dc.GetAllInstances(ctx, service)
+	// if err != nil {
+	// 	return nil
+	// }
+	// for _, inst := range instances {
+	// 	if inst.GetAddress() == peerHost && fmt.Sprintf("%d", inst.GetPort()) == peerPort {
+	// 		return inst
+	// 	}
+	// }
+	// 🌟 O(1) 直接从 resolver 维护的无锁缓存中提取，避开网络请求、锁和 O(n) 遍历
+	inst, ok := resolver.GetInstanceByAddr(p.Addr.String())
+	if !ok {
+		return nil, fmt.Errorf("instance not found for peer addr: %s", p.Addr.String())
 	}
-	instances, err := dc.GetAllInstances(ctx, service)
-	if err != nil {
-		return nil
-	}
-	for _, inst := range instances {
-		if inst.GetAddress() == peerHost && fmt.Sprintf("%d", inst.GetPort()) == peerPort {
-			return inst
-		}
-	}
-	return nil
+	return inst, nil
 }
 
 // NewXDSConn dials an xDS target. Deprecated: use xds.NewClient directly.

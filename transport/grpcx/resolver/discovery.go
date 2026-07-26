@@ -2,10 +2,12 @@ package resolver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc/attributes"
@@ -22,25 +24,7 @@ const instanceAttrKey = "gkit.discovery.instance"
 
 var (
 	registerOnce sync.Once
-	currentDC    atomicDiscoveryClient
 )
-
-type atomicDiscoveryClient struct {
-	mu sync.RWMutex
-	dc *discovery.DiscoveryClient
-}
-
-func (a *atomicDiscoveryClient) get() *discovery.DiscoveryClient {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.dc
-}
-
-func (a *atomicDiscoveryClient) set(dc *discovery.DiscoveryClient) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.dc = dc
-}
 
 // Register sets the DiscoveryClient used by the discovery resolver scheme.
 // Safe to call before each grpcx.NewClient with discovery enabled.
@@ -48,9 +32,9 @@ func Register(dc *discovery.DiscoveryClient) {
 	if dc == nil {
 		return
 	}
-	currentDC.set(dc)
+	// currentDC.set(dc)
 	registerOnce.Do(func() {
-		resolver.Register(&discoveryBuilder{})
+		resolver.Register(&discoveryBuilder{dc: dc})
 	})
 }
 
@@ -67,23 +51,24 @@ func InstanceFromAttributes(attrs *attributes.Attributes) discovery.ServiceInsta
 	return inst
 }
 
-type discoveryBuilder struct{}
+type discoveryBuilder struct {
+	dc *discovery.DiscoveryClient
+}
 
-func (discoveryBuilder) Scheme() string {
+func (b discoveryBuilder) Scheme() string {
 	return scheme
 }
 
-func (discoveryBuilder) Build(target resolver.Target, cc resolver.ClientConn, _ resolver.BuildOptions) (resolver.Resolver, error) {
-	dc := currentDC.get()
-	if dc == nil {
-		return nil, fmt.Errorf("discovery resolver: DiscoveryClient not registered, call resolver.Register")
+func (b discoveryBuilder) Build(target resolver.Target, cc resolver.ClientConn, _ resolver.BuildOptions) (resolver.Resolver, error) {
+	if b.dc == nil {
+		return nil, errors.New("discovery resolver: DiscoveryClient not registered, call resolver.Register")
 	}
 	service := parseServiceName(target)
 	if service == "" {
 		return nil, fmt.Errorf("discovery resolver: empty service name in target %q", target.URL.String())
 	}
 	r := &discoveryResolver{
-		dc:      dc,
+		dc:      b.dc,
 		service: service,
 		cc:      cc,
 		refresh: 30 * time.Second,
@@ -126,12 +111,30 @@ func (r *discoveryResolver) start() {
 	}()
 }
 
+// 🌟 1. 定义包级缓存（原子替换，无锁且无内存泄露风险）
+var addrInstanceCache atomic.Value // 存储类型为 map[string]discovery.ServiceInstancer
+
+// 🌟 2. 提供 O(1) 查询方法供 client.go 的拦截器调用
+func GetInstanceByAddr(addr string) (discovery.ServiceInstancer, bool) {
+	m, _ := addrInstanceCache.Load().(map[string]discovery.ServiceInstancer)
+	if m == nil {
+		return nil, false
+	}
+	inst, ok := m[addr]
+	return inst, ok
+}
+
+// SetInstanceCacheForTest 仅用于单元测试，手动注入实例缓存
+func SetInstanceCacheForTest(m map[string]discovery.ServiceInstancer) {
+	addrInstanceCache.Store(m)
+}
+
 func (r *discoveryResolver) update() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	instances, err := r.dc.GetAllInstances(ctx, r.service)
 	if err != nil {
-		if err == discovery.ErrNotFound {
+		if errors.Is(err, discovery.ErrNotFound) {
 			// Service genuinely has no instances; reflect the empty state.
 			_ = r.cc.UpdateState(resolver.State{Addresses: []resolver.Address{}})
 			return
@@ -143,6 +146,8 @@ func (r *discoveryResolver) update() {
 		return
 	}
 	addrs := make([]resolver.Address, 0, len(instances))
+	// 🌟 3. 构建一个新的 map，用于原子替换
+	newCache := make(map[string]discovery.ServiceInstancer, len(instances))
 	for _, inst := range instances {
 		addr := net.JoinHostPort(inst.GetAddress(), fmt.Sprintf("%d", inst.GetPort()))
 		attrs := attributes.New(instanceAttrKey, inst)
@@ -150,7 +155,11 @@ func (r *discoveryResolver) update() {
 			Addr:       addr,
 			Attributes: attrs,
 		})
+		// 🌟 4. 将实例写入新的 map 中
+		newCache[addr] = inst
 	}
+	// 🌟 5. 原子替换缓存，热路径读端（client.go）完全无锁
+	addrInstanceCache.Store(newCache)
 	_ = r.cc.UpdateState(resolver.State{Addresses: addrs})
 }
 

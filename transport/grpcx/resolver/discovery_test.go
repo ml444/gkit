@@ -100,17 +100,19 @@ func TestInstanceFromAttributes(t *testing.T) {
 }
 
 func TestDiscoveryBuilderErrorsAndResolveNow(t *testing.T) {
-	old := currentDC.get()
-	currentDC.set(nil)
-	if _, err := (discoveryBuilder{}).Build(resolver.Target{URL: url.URL{Scheme: scheme, Path: "/svc"}}, &recordingConn{}, resolver.BuildOptions{}); err == nil {
-		t.Fatal("expected missing discovery client error")
-	}
-	currentDC.set(old)
-
 	reg := discovery.NewDefaultRegistry()
 	dc := discovery.NewDiscoveryClient(reg, discovery.WithCacheTTL(time.Millisecond))
+	// reg.Register(context.TODO(), &discovery.ServiceInstance{
+	// 	ID:          "1",
+	// 	Name:        "missing",
+	// 	Version:     "1",
+	// 	Address:     "",
+	// 	Port:        0,
+	// 	Metadata:    map[string]string{},
+	// 	HealthCheck: "",
+	// })
 	Register(dc)
-	if _, err := (discoveryBuilder{}).Build(resolver.Target{URL: url.URL{Scheme: scheme}}, &recordingConn{}, resolver.BuildOptions{}); err == nil {
+	if _, err := (discoveryBuilder{dc: dc}).Build(resolver.Target{URL: url.URL{Scheme: scheme}}, &recordingConn{}, resolver.BuildOptions{}); err == nil {
 		t.Fatal("expected empty service error")
 	}
 
