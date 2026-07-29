@@ -89,7 +89,11 @@ func InitConfig(v interface{}, opts ...OptionFunc) error {
 	}
 
 	// Get all fields in the structure (including nested fields) to build a map
-	err = cfg.buildMap("", reflect.ValueOf(v))
+	val := reflect.ValueOf(v)
+	if val.Kind() != reflect.Ptr {
+		return  fmt.Errorf("required type is pointer, but %T", v)
+	}
+	err = cfg.buildMap("", val)
 	if err != nil && !cfg.ignoreErr {
 		return fmt.Errorf("build map error: %v", err)
 	}

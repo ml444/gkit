@@ -74,7 +74,7 @@ func str2Any(strValue string, t reflect.Type) (v interface{}, err error) {
 		}
 		return uintptr(vUint64), nil
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		vInt64, err := strconv.ParseInt(strValue, 10, 64)
+		vInt64, err := strconv.ParseInt(strValue, 10, t.Bits())
 		if err != nil {
 			return nil, err
 		}
@@ -110,7 +110,7 @@ func str2Any(strValue string, t reflect.Type) (v interface{}, err error) {
 			return vInt64, nil
 		}
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		vUint64, err := strconv.ParseUint(strValue, 10, 64)
+		vUint64, err := strconv.ParseUint(strValue, 10, t.Bits())
 		if err != nil {
 			log.Error("loadEnv err: ", err)
 			return nil, err
@@ -215,12 +215,25 @@ func str2Any(strValue string, t reflect.Type) (v interface{}, err error) {
 		}
 		return vMap.Interface(), nil
 	case reflect.Interface:
-		return strValue, nil
+		return inferScalar(strValue), nil
 	default:
 		return nil, fmt.Errorf("not support type of %s", t.Kind().String())
 	}
 
 	return reflect.Zero(t).Interface(), nil
+}
+
+func inferScalar(s string) any {
+	if b, err := strconv.ParseBool(s); err == nil && (s == "true" || s == "false") {
+		return b
+	}
+	if i, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return i
+	}
+	if f, err := strconv.ParseFloat(s, 64); err == nil {
+		return f
+	}
+	return s
 }
 
 // ReplaceEnvVariables Find an environment variable in a string and replace it with its value

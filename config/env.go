@@ -16,7 +16,7 @@ func loadEnv(m map[string]*Value, ignoreErr bool, prefix string) error {
 		if v.nameInEnv != "" {
 			envKey = v.nameInEnv
 		}
-		if strValue := os.Getenv(envKey); strValue != "" {
+		if strValue, ok := os.LookupEnv(envKey); ok {
 			vT := reflect.TypeOf(v.value)
 			if vT.Kind() == reflect.Ptr {
 				vT = vT.Elem()
@@ -57,7 +57,7 @@ func parseFieldTagWithEnv(field reflect.StructField, v reflect.Value, mValue *Va
 	}
 	var val interface{}
 	var err error
-	if strValue := os.Getenv(name); strValue != "" {
+	if strValue, ok := os.LookupEnv(name); ok {
 		val, err = str2Any(strValue, field.Type)
 		if err != nil {
 			return err
