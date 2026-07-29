@@ -47,7 +47,6 @@ func NewGormLogger(cfg gormlogger.Config) gormlogger.Interface {
 	}
 
 	return &dbLogger{
-		Writer:       GetLogger(),
 		Config:       cfg,
 		infoStr:      infoStr,
 		warnStr:      warnStr,
@@ -60,7 +59,6 @@ func NewGormLogger(cfg gormlogger.Config) gormlogger.Interface {
 
 type dbLogger struct {
 	// gormlogger.Writer
-	Writer Logger
 	gormlogger.Config
 	infoStr, warnStr, errStr            string
 	traceStr, traceErrStr, traceWarnStr string
@@ -76,21 +74,21 @@ func (l *dbLogger) LogMode(level gormlogger.LogLevel) gormlogger.Interface {
 // Info print info
 func (l *dbLogger) Info(ctx context.Context, msg string, data ...interface{}) {
 	if l.LogLevel >= gormlogger.Info {
-		l.Writer.Infof(l.infoStr, msg, fmt.Sprint(data...))
+		currentLogger().Infof(l.infoStr, msg, fmt.Sprint(data...))
 	}
 }
 
 // Warn print warn messages
 func (l *dbLogger) Warn(ctx context.Context, msg string, data ...interface{}) {
 	if l.LogLevel >= gormlogger.Warn {
-		l.Writer.Warnf(l.warnStr, msg, fmt.Sprintln(data...))
+		currentLogger().Warnf(l.warnStr, msg, fmt.Sprintln(data...))
 	}
 }
 
 // Error print error messages
 func (l *dbLogger) Error(ctx context.Context, msg string, data ...interface{}) {
 	if l.LogLevel >= gormlogger.Error {
-		l.Writer.Errorf(l.errStr, msg, fmt.Sprintln(data...))
+		currentLogger().Errorf(l.errStr, msg, fmt.Sprintln(data...))
 	}
 }
 
@@ -105,24 +103,24 @@ func (l *dbLogger) Trace(ctx context.Context, begin time.Time, fc func() (string
 	case err != nil && l.LogLevel >= gormlogger.Error && (!errors.Is(err, gorm.ErrRecordNotFound) || !l.IgnoreRecordNotFoundError):
 		sql, rows := fc()
 		if rows == -1 {
-			l.Writer.Errorf(l.traceErrStr, err, float64(elapsed.Nanoseconds())/1e6, "-", sql)
+			currentLogger().Errorf(l.traceErrStr, err, float64(elapsed.Nanoseconds())/1e6, "-", sql)
 		} else {
-			l.Writer.Errorf(l.traceErrStr, err, float64(elapsed.Nanoseconds())/1e6, rows, sql)
+			currentLogger().Errorf(l.traceErrStr, err, float64(elapsed.Nanoseconds())/1e6, rows, sql)
 		}
 	case elapsed > l.SlowThreshold && l.SlowThreshold != 0 && l.LogLevel >= gormlogger.Warn:
 		sql, rows := fc()
 		slowLog := fmt.Sprintf("SLOW SQL >= %v", l.SlowThreshold)
 		if rows == -1 {
-			l.Writer.Warnf(l.traceWarnStr, slowLog, float64(elapsed.Nanoseconds())/1e6, "-", sql)
+			currentLogger().Warnf(l.traceWarnStr, slowLog, float64(elapsed.Nanoseconds())/1e6, "-", sql)
 		} else {
-			l.Writer.Warnf(l.traceWarnStr, slowLog, float64(elapsed.Nanoseconds())/1e6, rows, sql)
+			currentLogger().Warnf(l.traceWarnStr, slowLog, float64(elapsed.Nanoseconds())/1e6, rows, sql)
 		}
 	case l.LogLevel == gormlogger.Info:
 		sql, rows := fc()
 		if rows == -1 {
-			l.Writer.Infof(l.traceStr, float64(elapsed.Nanoseconds())/1e6, "-", sql)
+			currentLogger().Infof(l.traceStr, float64(elapsed.Nanoseconds())/1e6, "-", sql)
 		} else {
-			l.Writer.Infof(l.traceStr, float64(elapsed.Nanoseconds())/1e6, rows, sql)
+			currentLogger().Infof(l.traceStr, float64(elapsed.Nanoseconds())/1e6, rows, sql)
 		}
 	}
 }

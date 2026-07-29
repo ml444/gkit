@@ -2,6 +2,18 @@ package log
 
 import "sync/atomic"
 
+type LogLevel int
+
+const (
+	DebugLevel LogLevel = iota + 1
+	PrintLevel
+	InfoLevel
+	WarnLevel
+	ErrorLevel
+	FatalLevel
+	PanicLevel
+)
+
 var levelVal atomic.Int32
 
 func SetLogLevel(lvl LogLevel) {

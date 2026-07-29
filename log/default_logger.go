@@ -21,25 +21,26 @@ type loggerHolder struct {
 //   - loggerVal holds the active Logger (read-mostly, swapped via SetLogger).
 //   - levelVal holds the current LogLevel as an int32.
 var (
-	loggerVal atomic.Value // stores loggerHolder
+	loggerVal  atomic.Value // stores loggerHolder
+	enterBytes = []byte("\n")
 )
 
 type Logger interface {
 	GetLoggerName() string
 	SetLoggerName(string)
 
-	Debug(...interface{})
-	Info(...interface{})
-	Warn(...interface{})
-	Error(...interface{})
-	Fatal(...interface{})
+	Debug(...any)
+	Info(...any)
+	Warn(...any)
+	Error(...any)
+	Fatal(...any)
 
-	Printf(template string, args ...interface{})
-	Debugf(template string, args ...interface{})
-	Infof(template string, args ...interface{})
-	Warnf(template string, args ...interface{})
-	Errorf(template string, args ...interface{})
-	Fatalf(template string, args ...interface{})
+	Printf(format string, args ...any)
+	Debugf(format string, args ...any)
+	Infof(format string, args ...any)
+	Warnf(format string, args ...any)
+	Errorf(format string, args ...any)
+	Fatalf(format string, args ...any)
 }
 
 type Writer interface {
@@ -74,63 +75,73 @@ func currentLogger() Logger {
 }
 
 func NewDefaultLogger(output Writer) *DefaultLogger {
-	return &DefaultLogger{writer: output}
+	return &DefaultLogger{writer: output, AutoEnter: true}
 }
 
 type DefaultLogger struct {
-	name   string
-	writer Writer
+	name      string
+	writer    Writer
+	AutoEnter bool
 }
 
-func (l *DefaultLogger) Log(lvl LogLevel, value string) {
+func (l *DefaultLogger) Log(lvl LogLevel, values ...any) {
 	if lvl < CurrentLevel() {
 		return
 	}
 	_, _ = l.writer.WriteString(ColorLevel(lvl))
-	_, _ = l.writer.WriteString(value + "\n")
+	_, _ = fmt.Fprintln(l.writer, values...)
 }
+
+func (l *DefaultLogger) Logf(lvl LogLevel, format string, values ...any) {
+	if lvl < CurrentLevel() {
+		return
+	}
+	_, _ = l.writer.WriteString(ColorLevel(lvl))
+	_, _ = fmt.Fprintf(l.writer, format, values...)
+	if l.AutoEnter {
+		_, _ = l.writer.Write(enterBytes)
+	}
+}
+
 func (l *DefaultLogger) GetLoggerName() string {
 	return l.name
 }
 func (l *DefaultLogger) SetLoggerName(name string) {
 	l.name = name
 }
-func (l *DefaultLogger) Debug(values ...interface{}) {
-	l.Log(DebugLevel, fmt.Sprintln(values...))
+func (l *DefaultLogger) Debug(values ...any) {
+	l.Log(DebugLevel, values...)
 }
-func (l *DefaultLogger) Info(values ...interface{}) {
-	l.Log(InfoLevel, fmt.Sprintln(values...))
+func (l *DefaultLogger) Info(values ...any) {
+	l.Log(InfoLevel, values...)
 }
-func (l *DefaultLogger) Warn(values ...interface{}) {
-	l.Log(WarnLevel, fmt.Sprintln(values...))
+func (l *DefaultLogger) Warn(values ...any) {
+	l.Log(WarnLevel, values...)
 }
-func (l *DefaultLogger) Error(values ...interface{}) {
-	l.Log(ErrorLevel, fmt.Sprintln(values...))
+func (l *DefaultLogger) Error(values ...any) {
+	l.Log(ErrorLevel, values...)
 }
-func (l *DefaultLogger) Fatal(values ...interface{}) {
-	l.Log(FatalLevel, fmt.Sprintln(values...))
+func (l *DefaultLogger) Fatal(values ...any) {
+	l.Log(FatalLevel, values...)
 }
 
-func (l *DefaultLogger) Printf(template string, values ...interface{}) {
-	_, err := l.writer.WriteString(fmt.Sprintf(template, values...))
-	if err != nil {
-		println(err.Error())
-	}
+func (l *DefaultLogger) Debugf(format string, values ...any) {
+	l.Logf(DebugLevel, format, values...)
 }
-func (l *DefaultLogger) Debugf(template string, values ...interface{}) {
-	l.Log(DebugLevel, fmt.Sprintf(template, values...))
+func (l *DefaultLogger) Printf(format string, values ...any) {
+	l.Logf(PrintLevel, format, values...)
 }
-func (l *DefaultLogger) Infof(template string, values ...interface{}) {
-	l.Log(InfoLevel, fmt.Sprintf(template, values...))
+func (l *DefaultLogger) Infof(format string, values ...any) {
+	l.Logf(InfoLevel, format, values...)
 }
-func (l *DefaultLogger) Warnf(template string, values ...interface{}) {
-	l.Log(WarnLevel, fmt.Sprintf(template, values...))
+func (l *DefaultLogger) Warnf(format string, values ...any) {
+	l.Logf(WarnLevel, format, values...)
 }
-func (l *DefaultLogger) Errorf(template string, values ...interface{}) {
-	l.Log(ErrorLevel, fmt.Sprintf(template, values...))
+func (l *DefaultLogger) Errorf(format string, values ...any) {
+	l.Logf(ErrorLevel, format, values...)
 }
-func (l *DefaultLogger) Fatalf(template string, values ...interface{}) {
-	l.Log(FatalLevel, fmt.Sprintf(template, values...))
+func (l *DefaultLogger) Fatalf(format string, values ...any) {
+	l.Logf(FatalLevel, format, values...)
 }
 
 var nopLoggerInstance Logger = (*nopLogger)(nil)
@@ -138,19 +149,19 @@ var nopLoggerInstance Logger = (*nopLogger)(nil)
 // nopLogger discards all log output.
 type nopLogger struct{ name string }
 
-func (l *nopLogger) GetLoggerName() string         { return "" }
-func (l *nopLogger) SetLoggerName(string)          {}
-func (l *nopLogger) Debug(...interface{})          {}
-func (l *nopLogger) Info(...interface{})           {}
-func (l *nopLogger) Warn(...interface{})           {}
-func (l *nopLogger) Error(...interface{})          {}
-func (l *nopLogger) Fatal(...interface{})          {}
-func (l *nopLogger) Printf(string, ...interface{}) {}
-func (l *nopLogger) Debugf(string, ...interface{}) {}
-func (l *nopLogger) Infof(string, ...interface{})  {}
-func (l *nopLogger) Warnf(string, ...interface{})  {}
-func (l *nopLogger) Errorf(string, ...interface{}) {}
-func (l *nopLogger) Fatalf(string, ...interface{}) {}
+func (l *nopLogger) GetLoggerName() string { return "" }
+func (l *nopLogger) SetLoggerName(string)  {}
+func (l *nopLogger) Debug(...any)          {}
+func (l *nopLogger) Info(...any)           {}
+func (l *nopLogger) Warn(...any)           {}
+func (l *nopLogger) Error(...any)          {}
+func (l *nopLogger) Fatal(...any)          {}
+func (l *nopLogger) Printf(string, ...any) {}
+func (l *nopLogger) Debugf(string, ...any) {}
+func (l *nopLogger) Infof(string, ...any)  {}
+func (l *nopLogger) Warnf(string, ...any)  {}
+func (l *nopLogger) Errorf(string, ...any) {}
+func (l *nopLogger) Fatalf(string, ...any) {}
 
 func GetLoggerName() string {
 	return currentLogger().GetLoggerName()
@@ -158,14 +169,14 @@ func GetLoggerName() string {
 func SetLoggerName(name string) {
 	currentLogger().SetLoggerName(name)
 }
-func Debug(values ...interface{}) { currentLogger().Debug(values...) }
-func Info(values ...interface{})  { currentLogger().Info(values...) }
-func Warn(values ...interface{})  { currentLogger().Warn(values...) }
-func Error(values ...interface{}) { currentLogger().Error(values...) }
-func Fatal(values ...interface{}) { currentLogger().Fatal(values...) } // In order to print the stack log
+func Debug(values ...any) { currentLogger().Debug(values...) }
+func Info(values ...any)  { currentLogger().Info(values...) }
+func Warn(values ...any)  { currentLogger().Warn(values...) }
+func Error(values ...any) { currentLogger().Error(values...) }
+func Fatal(values ...any) { currentLogger().Fatal(values...) } // In order to print the stack log
 
-func Debugf(template string, values ...interface{}) { currentLogger().Debugf(template, values...) }
-func Infof(template string, values ...interface{})  { currentLogger().Infof(template, values...) }
-func Warnf(template string, values ...interface{})  { currentLogger().Warnf(template, values...) }
-func Errorf(template string, values ...interface{}) { currentLogger().Errorf(template, values...) }
-func Fatalf(template string, values ...interface{}) { currentLogger().Fatalf(template, values...) } // In order to print the stack log
+func Debugf(format string, values ...any) { currentLogger().Debugf(format, values...) }
+func Infof(format string, values ...any)  { currentLogger().Infof(format, values...) }
+func Warnf(format string, values ...any)  { currentLogger().Warnf(format, values...) }
+func Errorf(format string, values ...any) { currentLogger().Errorf(format, values...) }
+func Fatalf(format string, values ...any) { currentLogger().Fatalf(format, values...) } // In order to print the stack log

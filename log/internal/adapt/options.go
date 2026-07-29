@@ -20,7 +20,7 @@ func WithLoggerName(name string) Option {
 }
 
 func Apply(opts ...Option) Options {
-	var o Options
+	o := Options{SyncGkitLevel: true}
 	for _, opt := range opts {
 		opt(&o)
 	}
