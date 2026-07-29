@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"maps"
 	"sync"
 	"sync/atomic"
 
@@ -75,10 +77,7 @@ func RegisterError(codeMap map[int32]*ErrCodeDetail) {
 	defer registerMu.Unlock()
 
 	old := loadErrCodeMap()
-	newMap := make(map[int32]*ErrCodeDetail, len(old)+len(codeMap))
-	for k, v := range old {
-		newMap[k] = v
-	}
+	newMap := maps.Clone(old)
 	for k, detail := range codeMap {
 		cp := cloneErrCodeDetail(detail)
 		if cp.Status == 0 {
@@ -89,28 +88,72 @@ func RegisterError(codeMap map[int32]*ErrCodeDetail) {
 	errCodeMapVal.Store(errCodeMapHolder{m: newMap})
 }
 
+// Field 结构化日志属性
+type Field struct {
+	Key   string
+	Value any
+}
+
 // Error is a status error.
 type Error struct {
 	ErrorInfo
 	cause error
+
+	Fields []Field `json:"fields,omitempty"`
+	// 缓存格式化后的字符串，避免热路径重复调用 fmt.Sprintf
+	cachedMsg atomic.Pointer[string]
 }
 
+// WithField 动态追加结构化上下文字段
+func (e *Error) WithField(key string, val any) *Error {
+	e.Fields = append(e.Fields, Field{Key: key, Value: val})
+	return e
+}
+
+// Error 实现 standard error 接口 (懒构建 + 并发安全)
 func (e *Error) Error() string {
-	if e.cause != nil && len(e.Metadata) != 0 {
-		return fmt.Sprintf("error: [%d:%d] '%s' metadata=%v cause=%s", e.Status, e.Code, e.Message, e.Metadata, e.cause)
-	} else if e.cause != nil {
-		return fmt.Sprintf("error: [%d:%d] '%s' cause=%s", e.Status, e.Code, e.Message, e.cause)
-	} else if len(e.Metadata) != 0 {
-		return fmt.Sprintf("error: [%d:%d] '%s' metadata=%v", e.Status, e.Code, e.Message, e.Metadata)
-	} else {
-		return fmt.Sprintf("error: [%d:%d] '%s'", e.Status, e.Code, e.Message)
+	// 1. 命中缓存，直接返回
+	if ptr := e.cachedMsg.Load(); ptr != nil {
+		return *ptr
 	}
+
+	// 2. 未命中时执行懒构建
+	var msg string
+	if e.cause != nil && len(e.Metadata) != 0 {
+		msg = fmt.Sprintf("error: [%d:%d] '%s' metadata=%v cause=%s", e.Status, e.Code, e.Message, e.Metadata, e.cause)
+	} else if e.cause != nil {
+		msg = fmt.Sprintf("error: [%d:%d] '%s' cause=%s", e.Status, e.Code, e.Message, e.cause)
+	} else if len(e.Metadata) != 0 {
+		msg = fmt.Sprintf("error: [%d:%d] '%s' metadata=%v", e.Status, e.Code, e.Message, e.Metadata)
+	} else {
+		msg = fmt.Sprintf("error: [%d:%d] '%s'", e.Status, e.Code, e.Message)
+	}
+
+	// 3. 原子存入缓存并返回
+	e.cachedMsg.Store(&msg)
+	return msg
+}
+
+// LogValue 实现 slog.LogValuer 接口，支持原生结构化日志记录
+func (e *Error) LogValue() slog.Value {
+	attrs := make([]slog.Attr, 0, len(e.Fields)+3)
+	attrs = append(attrs,
+		slog.Int64("code", int64(e.Code)),
+		slog.Int64("status", int64(e.Status)),
+		slog.String("msg", e.Message),
+	)
+	if e.cause != nil {
+		attrs = append(attrs, slog.String("cause", e.cause.Error()))
+	}
+	for _, f := range e.Fields {
+		attrs = append(attrs, slog.Any(f.Key, f.Value))
+	}
+	return slog.GroupValue(attrs...)
 }
 
 // JSONBytes returns the JSON representation of the error.
-func (e *Error) JSONBytes() []byte {
-	buf, _ := json.Marshal(e)
-	return buf
+func (e *Error) JSONBytes() ([]byte, error) {
+	return json.Marshal(e)
 }
 
 func (e *Error) Unwrap() error { return e.cause }
@@ -280,10 +323,7 @@ func Clone(err *Error) *Error {
 	if err == nil {
 		return nil
 	}
-	metadata := make(map[string]string, len(err.Metadata))
-	for k, v := range err.Metadata {
-		metadata[k] = v
-	}
+	metadata := maps.Clone(err.Metadata)
 	return &Error{
 		cause: err.cause,
 		ErrorInfo: ErrorInfo{
