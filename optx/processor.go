@@ -199,7 +199,7 @@ func (p *Processor) AddInt64Range(key interface{}, cb func(begin, end int64) err
 }
 
 func (p *Processor) AddInt64RangeIgnoreZero(key interface{}, cb func(begin, end int64) error) *Processor {
-	p.SetHandler(key, NewInt64Range(cb, false))
+	p.SetHandler(key, NewInt64Range(cb, true))
 	return p
 }
 

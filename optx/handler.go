@@ -3,6 +3,7 @@ package optx
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -15,7 +16,7 @@ var (
 		err := errorx.CreateErrorf(
 			errorx.DefaultStatusCode,
 			errorx.ErrCodeInvalidParamSys,
-			fmt.Sprintf("ths %s type handler, invalid value: %v", typ, value),
+			fmt.Sprintf("ths %s type handler, unexpected type: %T value: %v", typ, value, value),
 		)
 		if len(es) == 1 {
 			return err.WithCause(es[0])
@@ -61,10 +62,8 @@ type boolHandler struct {
 }
 
 func inSliceStr(s string, list []string) bool {
-	for _, v := range list {
-		if s == v {
-			return true
-		}
+	if slices.Contains(list, s) {
+		return true
 	}
 	return false
 }
@@ -196,6 +195,8 @@ func (h *int32Handler) exactValue(v interface{}) (int32, error) {
 			return 0, createErrorFunc("int32", v)
 		}
 		value = int32(x)
+	default:
+		return 0, createErrorFunc("int32", v)
 	}
 	return value, nil
 }
@@ -239,6 +240,8 @@ func (h *int32ListHandler) exactValue(v interface{}) ([]int32, error) {
 			}
 			value = append(value, int32(x))
 		}
+	default:
+		return value, createErrorFunc("[]int32", v)
 	}
 	return value, nil
 }
@@ -283,6 +286,9 @@ func (h *int32RangeHandler) exactValue(v interface{}) (begin, end int32, err err
 	case string:
 		t1, t2, err := split2Int64(vv, "[2]int32", 32)
 		return int32(t1), int32(t2), err
+
+	default:
+		return begin, end, createErrorFunc("[2]int32", v)
 	}
 
 	return
@@ -332,8 +338,10 @@ func (h *int64Handler) exactValue(v interface{}) (value int64, err error) {
 		}
 		value, err = strconv.ParseInt(vv, 10, 64)
 		if err != nil {
-			return 0, createErrorFunc("int64", v)
+			return 0, createErrorFunc("int64", v, err)
 		}
+	default:
+		return 0, createErrorFunc("int64", v)
 	}
 	return value, nil
 }
@@ -362,7 +370,7 @@ func (h *int64ListHandler) exactValue(v interface{}) ([]int64, error) {
 		for _, item := range list {
 			x, err := strconv.ParseInt(strings.TrimSpace(item), 10, 64)
 			if err != nil {
-				return nil, err
+				return nil, createErrorFunc("[]int64", v, err)
 			}
 			value = append(value, x)
 		}
@@ -411,6 +419,9 @@ func (h *int64RangeHandler) exactValue(v interface{}) (begin, end int64, err err
 		}
 	case string:
 		return split2Int64(vv, "[2]int64", 64)
+
+	default:
+		return begin, end, createErrorFunc("[2]int64", v)
 	}
 
 	return
@@ -450,9 +461,11 @@ func (h *uint32Handler) exactValue(v interface{}) (uint32, error) {
 		}
 		x, err := strconv.ParseUint(vv, 10, 32)
 		if err != nil {
-			return 0, createErrorFunc("uint32", v)
+			return 0, createErrorFunc("uint32", v, err)
 		}
 		value = uint32(x)
+	default:
+		return value, createErrorFunc("uint32", v)
 	}
 	return value, nil
 }
@@ -497,6 +510,8 @@ func (h *uint32ListHandler) exactValue(v interface{}) ([]uint32, error) {
 			}
 			value = append(value, uint32(x))
 		}
+	default:
+		return value, createErrorFunc("[]uint32", v)
 	}
 	return value, nil
 }
@@ -541,6 +556,8 @@ func (h *uint32RangeHandler) exactValue(v interface{}) (begin, end uint32, err e
 	case string:
 		t1, t2, err := split2Uint64(vv, "[2]uint32", 32)
 		return uint32(t1), uint32(t2), err
+	default:
+		return begin, end, createErrorFunc("[2]uint32", v)
 	}
 
 	return
@@ -579,8 +596,10 @@ func (h *uint64Handler) exactValue(v interface{}) (value uint64, err error) {
 		}
 		value, err = strconv.ParseUint(vv, 10, 64)
 		if err != nil {
-			return 0, createErrorFunc("uint64", v)
+			return 0, createErrorFunc("uint64", v, err)
 		}
+	default:
+		return value, createErrorFunc("uint64", v)
 	}
 	return value, nil
 }
@@ -621,10 +640,12 @@ func (h *uint64ListHandler) exactValue(v interface{}) ([]uint64, error) {
 			item = strings.TrimSpace(item)
 			x, err := strconv.ParseUint(item, 10, 64)
 			if err != nil {
-				return nil, createErrorFunc("[]uint64", v)
+				return nil, createErrorFunc("[]uint64", v, err)
 			}
 			value = append(value, x)
 		}
+	default:
+		return value, createErrorFunc("[]uint64", v)
 	}
 	return value, nil
 }
@@ -688,20 +709,8 @@ func (h *uint64RangeHandler) Apply(v interface{}) error {
 // and end values of the range.(like: between <begin> and <end>)
 func split2Int64(vv string, typStr string, bitSize int) (begin, end int64, err error) {
 	sList := strings.Split(vv, ",")
-	if sLen := len(sList); sLen == 0 {
+	if sLen := len(sList); sLen <= 1 {
 		return 0, 0, createErrorFunc(typStr, vv)
-	} else if sLen == 1 {
-		item := strings.TrimSpace(sList[0])
-		if item == "" {
-			return 0, 0, nil
-		}
-		begin, err = strconv.ParseInt(item, 10, bitSize)
-		if err != nil {
-			return 0, 0, createErrorFunc(typStr, vv, err)
-		}
-		if begin > 0 {
-			return 0, 0, createErrorFunc(typStr, vv, errGreaterThan)
-		}
 	} else {
 		item1 := strings.TrimSpace(sList[0])
 		if item1 != "" {
