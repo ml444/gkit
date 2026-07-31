@@ -7,9 +7,8 @@ import (
 	"sync"
 	"time"
 
-
-	"github.com/redis/go-redis/v9"
 	"github.com/ml444/gkit/discovery"
+	"github.com/redis/go-redis/v9"
 )
 
 var _ discovery.ServiceRegistry = (*RedisRegistry)(nil)
@@ -23,6 +22,7 @@ type RedisRegistry struct {
 	closeCh    chan struct{}
 	closeOnce  sync.Once
 	wg         sync.WaitGroup
+	renewals   sync.Map
 }
 
 type RedisRegistryOption func(*RedisRegistry)
@@ -143,17 +143,41 @@ func (r *RedisRegistry) Register(ctx context.Context, instance discovery.Service
 	}
 
 	// Update service map
-	services, _ := r.serviceMap.LoadOrStore(instance.GetName(), make([]discovery.ServiceInstancer, 0))
-
-	// Create a copy of the slice to avoid race conditions
-	instances := services.([]discovery.ServiceInstancer)
-	newInstances := make([]discovery.ServiceInstancer, len(instances)+1)
-	copy(newInstances, instances)
-	newInstances[len(instances)] = instance
-
-	r.serviceMap.Store(instance.GetName(), newInstances)
-
+	// services, _ := r.serviceMap.LoadOrStore(instance.GetName(), make([]discovery.ServiceInstancer, 0))
+	// // Create a copy of the slice to avoid race conditions TODO: 非原子，并发丢实例
+	// instances := services.([]discovery.ServiceInstancer)
+	// newInstances := make([]discovery.ServiceInstancer, len(instances)+1)
+	// copy(newInstances, instances)
+	// newInstances[len(instances)] = instance
+	// r.serviceMap.Store(instance.GetName(), newInstances)
+	r.startRenew(instanceKey, instanceData)
 	return nil
+}
+
+func (r *RedisRegistry) startRenew(instanceKey string, data []byte) {
+	if old, ok := r.renewals.Load(instanceKey); ok { // 幂等：重复注册先停旧续期
+		old.(context.CancelFunc)()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	r.renewals.Store(instanceKey, cancel)
+	ttl := time.Duration(r.serviceTTL) * time.Second
+	r.wg.Add(1)
+	go func() {
+		defer r.wg.Done()
+		t := time.NewTicker(ttl / 2)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-r.closeCh:
+				return
+			case <-t.C:
+				// 续期：重写 key 刷新 TTL（保持数据最新）
+				_ = r.client.Set(context.Background(), instanceKey, data, ttl).Err()
+			}
+		}
+	}()
 }
 
 // Deregister deregisters a service instance
@@ -209,7 +233,9 @@ func (r *RedisRegistry) Deregister(ctx context.Context, instance discovery.Servi
 	} else {
 		r.serviceMap.Store(instance.GetName(), newInstances)
 	}
-
+	if c, ok := r.renewals.LoadAndDelete(instanceKey); ok {
+		c.(context.CancelFunc)()
+	}
 	return nil
 }
 

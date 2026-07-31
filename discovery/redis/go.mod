@@ -1,8 +1,6 @@
 module github.com/ml444/gkit/discovery/redis
 
-go 1.23.0
-
-toolchain go1.23.4
+go 1.23.4
 
 replace github.com/ml444/gkit => ./../..
 
