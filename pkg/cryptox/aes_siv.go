@@ -7,11 +7,30 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
+	"sync"
 
 	"github.com/ml444/gkit/log"
 )
 
 const aesSIVTagSize = aes.BlockSize
+
+var blockPool = sync.Pool{
+	New: func() any {
+		return new([aesSIVTagSize]byte)
+	},
+}
+
+func getBlock() *[aesSIVTagSize]byte {
+	return blockPool.Get().(*[aesSIVTagSize]byte)
+}
+
+func putBlock(b *[aesSIVTagSize]byte) {
+	// Go 1.21+ 可以直接使用 clear(b[:])
+	for i := range b {
+		b[i] = 0
+	}
+	blockPool.Put(b)
+}
 
 // AESSIV implements AES-SIV as a deterministic AEAD.
 //
@@ -33,6 +52,10 @@ type AESSIV struct {
 	cmacBlock      cipher.Block
 	ctrBlock       cipher.Block
 	encoder        encoder
+
+	// 预计算的 CMAC 子密钥
+	k1 [aesSIVTagSize]byte
+	k2 [aesSIVTagSize]byte
 }
 
 func NewAESSIV(key []byte, opts ...SIVOptFunc) (*AESSIV, error) {
@@ -63,6 +86,15 @@ func NewAESSIV(key []byte, opts ...SIVOptFunc) (*AESSIV, error) {
 		log.Errorf("NewCipher ctr err: %v\n", err)
 		return nil, err
 	}
+	// 预计算 k1 和 k2 缓存起来
+	var zero [aesSIVTagSize]byte
+	lPtr := getBlock()
+	defer putBlock(lPtr)
+	l := lPtr[:]
+	
+	x.cmacBlock.Encrypt(l, zero[:])
+	aesSIVDbl(x.k1[:], l)
+	aesSIVDbl(x.k2[:], x.k1[:])
 	return x, nil
 }
 
@@ -174,86 +206,144 @@ func (x *AESSIV) DecryptWithBytes(cipherBuf []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
+
+
+
 func (x *AESSIV) s2v(plaintext []byte) []byte {
-	var zero [aes.BlockSize]byte
-	d := aesCMAC(x.cmacBlock, zero[:])
+	var zero [aesSIVTagSize]byte
+
+	dPtr := getBlock()
+	defer putBlock(dPtr)
+	d := dPtr[:]
+
+	aesCMAC(d, x.cmacBlock, zero[:], x.k1[:], x.k2[:], nil)
 
 	if len(x.AdditionalData) > 0 {
-		d = aesSIVDbl(d)
-		adMac := aesCMAC(x.cmacBlock, x.AdditionalData)
+		aesSIVDbl(d, d) // 原位安全
+
+		adMacPtr := getBlock()
+		defer putBlock(adMacPtr)
+		adMac := adMacPtr[:]
+
+		aesCMAC(adMac, x.cmacBlock, x.AdditionalData, x.k1[:], x.k2[:], nil)
 		aesSIVXOR(d, adMac)
 	}
 
-	var t []byte
-	if len(plaintext) >= aes.BlockSize {
-		t = append([]byte(nil), plaintext...)
-		aesSIVXOREnd(t, d)
-	} else {
-		t = aesSIVDbl(d)
-		padded := aesSIVPad(plaintext)
-		aesSIVXOR(t, padded)
-	}
-	return aesCMAC(x.cmacBlock, t)
-}
+	// out 是本次 s2v 唯一的堆分配，作为 tag 返回外部
+	out := make([]byte, aesSIVTagSize) 
 
-func aesCMAC(block cipher.Block, message []byte) []byte {
-	k1, k2 := aesCMACSubkeys(block)
-	n := (len(message) + aes.BlockSize - 1) / aes.BlockSize
+	if len(plaintext) >= aesSIVTagSize {
+		// 终极性能：直接将 plaintext 丢进去，靠底层流式处理 d，消灭大对象拷贝
+		aesCMAC(out, x.cmacBlock, plaintext, x.k1[:], x.k2[:], d)
+	} else {
+		tPtr := getBlock()
+		defer putBlock(tPtr)
+		t := tPtr[:]
+		aesSIVDbl(t, d)
+
+		paddedPtr := getBlock()
+		defer putBlock(paddedPtr)
+		padded := paddedPtr[:]
+		aesSIVPad(padded, plaintext)
+
+		aesSIVXOR(t, padded)
+		aesCMAC(out, x.cmacBlock, t, x.k1[:], x.k2[:], nil)
+	}
+
+	return out
+}
+func aesCMAC(dst []byte, block cipher.Block, msg []byte, k1, k2 []byte, xorEnd []byte) {
+	n := (len(msg) + aesSIVTagSize - 1) / aesSIVTagSize
 	if n == 0 {
 		n = 1
 	}
 
-	last := make([]byte, aes.BlockSize)
-	complete := len(message) > 0 && len(message)%aes.BlockSize == 0
+	for i := range dst {
+		dst[i] = 0 // 初始化结果缓冲 x
+	}
+
+	yPtr := getBlock()
+	defer putBlock(yPtr)
+	y := yPtr[:]
+
+	offsetInMsg := len(msg) - len(xorEnd)
+
+	// 1. 处理前 n-1 块
+	for i := 0; i < n-1; i++ {
+		start := i * aesSIVTagSize
+		end := start + aesSIVTagSize
+		copy(y, msg[start:end])
+
+		// 流式应用 xorEnd (无分配处理跨 Block 边界)
+		if len(xorEnd) > 0 && end > offsetInMsg {
+			overlapStart := start
+			if offsetInMsg > overlapStart {
+				overlapStart = offsetInMsg
+			}
+			for j := overlapStart; j < end; j++ {
+				y[j-start] ^= xorEnd[j-offsetInMsg]
+			}
+		}
+
+		aesSIVXOR(dst, y) // dst 当作原代码里的 x
+		block.Encrypt(dst, dst)
+	}
+
+	// 2. 处理最后一块
+	lastPtr := getBlock()
+	defer putBlock(lastPtr)
+	last := lastPtr[:]
+
+	complete := len(msg) > 0 && len(msg)%aesSIVTagSize == 0
+	start := (n - 1) * aesSIVTagSize
 	if complete {
-		copy(last, message[(n-1)*aes.BlockSize:n*aes.BlockSize])
+		copy(last, msg[start:])
+	} else {
+		aesSIVPad(last, msg[start:])
+	}
+
+	// 对最后一块应用 xorEnd
+	if len(xorEnd) > 0 {
+		overlapStart := start
+		if offsetInMsg > overlapStart {
+			overlapStart = offsetInMsg
+		}
+		for j := overlapStart; j < len(msg); j++ {
+			last[j-start] ^= xorEnd[j-offsetInMsg]
+		}
+	}
+
+	// 组合 k1 或 k2
+	if complete {
 		aesSIVXOR(last, k1)
 	} else {
-		start := (n - 1) * aes.BlockSize
-		copy(last, aesSIVPad(message[start:]))
 		aesSIVXOR(last, k2)
 	}
 
-	x := make([]byte, aes.BlockSize)
-	y := make([]byte, aes.BlockSize)
-	for i := 0; i < n-1; i++ {
-		copy(y, message[i*aes.BlockSize:(i+1)*aes.BlockSize])
-		aesSIVXOR(y, x)
-		block.Encrypt(x, y)
-	}
-	aesSIVXOR(last, x)
-	block.Encrypt(x, last)
-	return x
+	aesSIVXOR(dst, last)
+	block.Encrypt(dst, dst)
 }
 
-func aesCMACSubkeys(block cipher.Block) ([]byte, []byte) {
-	var zero [aes.BlockSize]byte
-	l := make([]byte, aes.BlockSize)
-	block.Encrypt(l, zero[:])
-	k1 := aesSIVDbl(l)
-	k2 := aesSIVDbl(k1)
-	return k1, k2
-}
-
-func aesSIVDbl(in []byte) []byte {
-	out := make([]byte, aes.BlockSize)
+func aesSIVDbl(out, in []byte) {
+	// out := make([]byte, aesSIVTagSize)
 	var carry byte
-	for i := aes.BlockSize - 1; i >= 0; i-- {
+	for i := aesSIVTagSize - 1; i >= 0; i-- {
 		nextCarry := in[i] >> 7
 		out[i] = (in[i] << 1) | carry
 		carry = nextCarry
 	}
 	if carry != 0 {
-		out[aes.BlockSize-1] ^= 0x87
+		out[aesSIVTagSize-1] ^= 0x87
 	}
-	return out
 }
 
-func aesSIVPad(in []byte) []byte {
-	out := make([]byte, aes.BlockSize)
+func aesSIVPad(out, in []byte) {
+	// out := make([]byte, aesSIVTagSize)
 	copy(out, in)
 	out[len(in)] = 0x80
-	return out
+	for i := len(in) + 1; i < aesSIVTagSize; i++ {
+		out[i] = 0 // 确保尾部补零
+	}
 }
 
 func aesSIVXOR(dst, src []byte) {

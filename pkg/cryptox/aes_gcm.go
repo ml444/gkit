@@ -142,18 +142,6 @@ func (x *AES) DecryptWithBytes(cipherBuf []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-func (x *AES) NewNonce() []byte {
-	nonce, err := genNonce(x.nonceSize)
-	if err != nil {
-		log.Errorf("generate nonce err: %v", err)
-		return nil
-	}
-	return nonce
-}
-
-func (x *AES) NewNonceStr() string {
-	return x.encoder.EncodeToString(x.NewNonce())
-}
 
 // genNonce returns a cryptographically secure random nonce.
 // It returns an error if the system CSPRNG fails, so callers never

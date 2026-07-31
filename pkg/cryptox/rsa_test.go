@@ -117,7 +117,7 @@ func TestRSA(t *testing.T) {
 		return
 	}
 	// x.SetEncoder(&HexEncoder{})
-	x.SetHash(sha1.New())
+	x.SetHash(sha1.New)
 	// test string
 	s, err := x.Encrypt(testString)
 	if err != nil {

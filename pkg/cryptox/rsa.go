@@ -17,13 +17,13 @@ type RSA struct {
 	publicKey  *rsa.PublicKey
 	privateKey *rsa.PrivateKey
 	encoder    encoder
-	ihash      hash.Hash
+	newhash    func() hash.Hash
 }
 
 func NewRSA(private []byte) (*RSA, error) {
 	r := &RSA{
 		encoder: base64.StdEncoding,
-		ihash:   sha256.New(),
+		newhash: sha256.New,
 	}
 	err := r.SetPrivateKey(private)
 	if err != nil {
@@ -58,7 +58,7 @@ func (r *RSA) Decrypt(ciphertext any) (any, error) {
 // EncryptWithBytes encrypts AdditionalData with public key
 func (r *RSA) EncryptWithBytes(msg []byte) ([]byte, error) {
 	// hash := sha512.New()
-	return rsa.EncryptOAEP(r.ihash, rand.Reader, r.publicKey, msg, nil)
+	return rsa.EncryptOAEP(r.newhash(), rand.Reader, r.publicKey, msg, nil)
 }
 
 func (r *RSA) EncryptWithString(plaintext string) (string, error) {
@@ -72,7 +72,7 @@ func (r *RSA) EncryptWithString(plaintext string) (string, error) {
 // DecryptWithBytes decrypts AdditionalData with private key
 func (r *RSA) DecryptWithBytes(ciphertext []byte) ([]byte, error) {
 	// hash := sha512.New()
-	return rsa.DecryptOAEP(r.ihash, rand.Reader, r.privateKey, ciphertext, nil)
+	return rsa.DecryptOAEP(r.newhash(), rand.Reader, r.privateKey, ciphertext, nil)
 }
 
 func (r *RSA) DecryptWithString(ciphertext string) (string, error) {
@@ -157,8 +157,8 @@ func (r *RSA) SetEncoder(encoder encoder) {
 }
 
 // SetHash sets the hash function for signing and verifying
-func (r *RSA) SetHash(h hash.Hash) {
-	r.ihash = h
+func (r *RSA) SetHash(h func() hash.Hash) {
+	r.newhash = h
 }
 
 func GenerateRSAKey(bits int) (privateBytes, publicBytes []byte, err error) {
