@@ -29,6 +29,7 @@ type K8sRegistry struct {
 	mu              sync.RWMutex
 	services        map[string][]discovery.ServiceInstancer
 	stopCh          chan struct{}
+	
 }
 
 // K8sRegistryOption is option for K8sRegistry

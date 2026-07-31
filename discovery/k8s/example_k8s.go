@@ -51,11 +51,6 @@ func ExampleDiscoveryClientWithK8sRegistry() {
 		registry,
 		discovery.WithLoadBalancer(discovery.NewRandomLoadBalancer()),
 	)
-	if err != nil {
-		fmt.Printf("Failed to create DiscoveryClient: %v\n", err)
-		return
-	}
-
 	// 使用DiscoveryClient获取服务实例
 	instance, err := client.GetServiceInstance(context.Background(), "example-service")
 	if err != nil {
