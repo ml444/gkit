@@ -258,7 +258,7 @@ func (r *ZookeeperRegistry) startWatching() {
 			case <-r.closeCh:
 				return
 			case <-ticker.C:
-				go r.refreshAllServices()
+				r.refreshAllServices()
 			}
 		}
 	}()
