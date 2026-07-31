@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	clientv3 "go.etcd.io/etcd/client/v3"
 	discovery "github.com/ml444/gkit/discovery"
+	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 var _ discovery.ServiceRegistry = (*EtcdRegistry)(nil)
@@ -33,6 +33,7 @@ type EtcdRegistry struct {
 	leases     sync.Map
 	closeCh    chan struct{}
 	closeOnce  sync.Once
+	keepAlives sync.Map // key -> context.CancelFunc
 }
 
 type EtcdRegistryOption func(*EtcdRegistry)
@@ -101,18 +102,20 @@ func copyInstances(instances []discovery.ServiceInstancer) []discovery.ServiceIn
 	return result
 }
 
-func (r *EtcdRegistry) grantAndKeepAlive(ctx context.Context) (clientv3.LeaseID, error) {
-	resp, err := r.client.Grant(ctx, r.serviceTTL)
+func (r *EtcdRegistry) grantAndKeepAlive(ctx context.Context, key string) (clientv3.LeaseID, error) {
+	resp, err := r.client.Grant(ctx, r.serviceTTL) // Grant 用调用方 ctx 控制超时 OK
 	if err != nil {
 		return 0, fmt.Errorf("failed to create lease: %w", err)
 	}
 
-	ch, err := r.client.KeepAlive(ctx, resp.ID)
+	kaCtx, cancel := context.WithCancel(context.Background()) // ← 独立生命周期
+	ch, err := r.client.KeepAlive(kaCtx, resp.ID)
 	if err != nil {
+		cancel()
 		_, _ = r.client.Revoke(ctx, resp.ID)
 		return 0, fmt.Errorf("failed to keepalive: %w", err)
 	}
-
+	r.keepAlives.Store(key, cancel)
 	go func(leaseID clientv3.LeaseID) {
 		for {
 			select {
@@ -120,6 +123,8 @@ func (r *EtcdRegistry) grantAndKeepAlive(ctx context.Context) (clientv3.LeaseID,
 				if !ok {
 					return
 				}
+			case <-kaCtx.Done():
+				return 
 			case <-r.closeCh:
 				return
 			}
@@ -135,12 +140,22 @@ func (r *EtcdRegistry) Register(ctx context.Context, instance discovery.ServiceI
 	}
 
 	key := instanceKey(r.basePath, instance)
+	// 幂等：先清理旧 lease + 旧 keepalive goroutine
+	if old, ok := r.leases.LoadAndDelete(key); ok {
+		if id, ok := old.(clientv3.LeaseID); ok {
+			_, _ = r.client.Revoke(ctx, id)
+		}
+	}
+	if c, ok := r.keepAlives.LoadAndDelete(key); ok {
+		c.(context.CancelFunc)()
+	}
+	
 	value, err := marshalInstance(instance)
 	if err != nil {
 		return fmt.Errorf("failed to marshal instance: %w", err)
 	}
 
-	leaseID, err := r.grantAndKeepAlive(ctx)
+	leaseID, err := r.grantAndKeepAlive(ctx, key)
 	if err != nil {
 		return err
 	}
@@ -238,6 +253,11 @@ func (r *EtcdRegistry) startWatching() {
 				return
 			case resp, ok := <-watchChan:
 				if !ok {
+					select {
+					case <- time.After(100*time.Millisecond): // TODO: 指数退避 + jitter。
+					case <- r.closeCh:
+						return
+					}
 					watchChan = r.client.Watch(context.Background(), r.basePath, clientv3.WithPrefix())
 					continue
 				}

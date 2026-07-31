@@ -1,8 +1,7 @@
 module github.com/ml444/gkit/discovery/etcd
 
-go 1.23.0
+go 1.23.4
 
-toolchain go1.23.4
 
 replace github.com/ml444/gkit => ./../..
 
