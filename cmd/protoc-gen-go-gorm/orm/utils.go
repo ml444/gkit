@@ -2,6 +2,7 @@ package orm
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 )
 
@@ -26,7 +27,7 @@ func (x *IndexClause) ToString() string {
 			buf.WriteByte(',')
 		}
 		buf.WriteByte('"')
-		buf.WriteString(key)
+		buf.WriteString(strconv.Quote(key))
 		buf.WriteByte('"')
 	}
 	buf.WriteByte(')')

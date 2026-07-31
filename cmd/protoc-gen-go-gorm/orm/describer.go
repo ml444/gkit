@@ -2,9 +2,21 @@ package orm
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
+
+// 预编译正则，检查是否包含破坏 GORM Tag 的非法字符
+var invalidTagChars = regexp.MustCompile(`[";\n]`)
+
+func validateOrmOption(fieldName string, optValue string) error {
+	if invalidTagChars.MatchString(optValue) {
+		// 使用 protogen.Plugin 的 Error 方法报告错误并中断编译
+		return fmt.Errorf("protoc-gen-go-gorm: field %q contains invalid characters (';', '\"', or newline) in gorm option: %s", fieldName, optValue)
+	}
+	return nil
+}
 
 type FileDesc struct {
 	PackageName string
@@ -55,7 +67,7 @@ func JoinTags(jsonName string, args ...string) string {
 	return strings.Join(args, " ")
 }
 
-func JoinORMTags(tags *ORMTags) (bool, string) {
+func JoinORMTags(tags *ORMTags) (bool, string, error) {
 	var result []string
 	var forceORM bool
 	if tags.IgnoreRw != nil && *tags.IgnoreRw {
@@ -91,9 +103,15 @@ func JoinORMTags(tags *ORMTags) (bool, string) {
 		result = append(result, "not null")
 	}
 	if tags.Column != nil {
+		if err := validateOrmOption("column", *tags.Column); err != nil {
+			return false, "", err
+		}
 		result = append(result, "column:"+*tags.Column)
 	}
 	if tags.Type != nil {
+		if err := validateOrmOption("type", *tags.Type); err != nil {
+			return false, "", err
+		}
 		result = append(result, "type:"+*tags.Type)
 	}
 	if tags.Default != nil {
@@ -101,11 +119,17 @@ func JoinORMTags(tags *ORMTags) (bool, string) {
 		if v == "" {
 			result = append(result, "default:''")
 		} else {
+			if err := validateOrmOption("default", v); err != nil {
+				return false, "", err
+			}
 			result = append(result, "default:"+v)
 		}
 	}
 
 	if tags.Comment != nil {
+		if err := validateOrmOption("comment", *tags.Comment); err != nil {
+			return false, "", err
+		}
 		result = append(result, "comment:"+*tags.Comment)
 	}
 	if tags.PrimaryKey != nil && *tags.PrimaryKey {
@@ -113,11 +137,17 @@ func JoinORMTags(tags *ORMTags) (bool, string) {
 	}
 	if len(tags.Index) > 0 {
 		for _, index := range tags.Index {
+			if err := validateOrmOption("index", index); err != nil {
+				return false, "", err
+			}
 			result = append(result, "index:"+index)
 		}
 	}
 	if len(tags.UniqueIndex) > 0 {
 		for _, index := range tags.UniqueIndex {
+			if err := validateOrmOption("uniqueIndex", index); err != nil {
+				return false, "", err
+			}
 			result = append(result, "uniqueIndex:"+index)
 		}
 	}
@@ -135,6 +165,9 @@ func JoinORMTags(tags *ORMTags) (bool, string) {
 		result = append(result, "embedded")
 	}
 	if tags.EmbeddedPrefix != nil {
+		if err := validateOrmOption("embeddedPrefix", *tags.EmbeddedPrefix); err != nil {
+			return false, "", err
+		}
 		forceORM = true
 		result = append(result, "embeddedPrefix:"+*tags.EmbeddedPrefix)
 	}
@@ -163,6 +196,9 @@ func JoinORMTags(tags *ORMTags) (bool, string) {
 		}
 	}
 	if tags.Check != nil {
+		if err := validateOrmOption("check", *tags.Check); err != nil {
+			return false, "", err
+		}
 		forceORM = true
 		result = append(result, "check:"+*tags.Check)
 	}
@@ -171,55 +207,88 @@ func JoinORMTags(tags *ORMTags) (bool, string) {
 	}
 
 	if tags.Serializer != nil {
+		if err := validateOrmOption("serializer", *tags.Serializer); err != nil {
+			return false, "", err
+		}
 		forceORM = true
 		result = append(result, "serializer:"+*tags.Serializer)
 	}
 
 	if tags.ForeignKey != nil {
+		if err := validateOrmOption("foreignKey", *tags.ForeignKey); err != nil {
+			return false, "", err
+		}
 		forceORM = true
 		result = append(result, "foreignKey:"+*tags.ForeignKey)
 	}
 	if tags.References != nil {
+		if err := validateOrmOption("references", *tags.References); err != nil {
+			return false, "", err
+		}
 		forceORM = true
 		result = append(result, "references:"+*tags.References)
 	}
 
 	// polymorphic
 	if tags.Polymorphic != nil {
+		if err := validateOrmOption("polymorphic", *tags.Polymorphic); err != nil {
+			return false, "", err
+		}
 		forceORM = true
 		result = append(result, "polymorphic:"+*tags.Polymorphic)
 	}
 	if tags.PolymorphicType != nil {
+		if err := validateOrmOption("polymorphicType", *tags.PolymorphicType); err != nil {
+			return false, "", err
+		}
 		forceORM = true
 		result = append(result, "polymorphicType:"+*tags.PolymorphicType)
 	}
 	if tags.PolymorphicValue != nil {
+		if err := validateOrmOption("polymorphicValue", *tags.PolymorphicValue); err != nil {
+			return false, "", err
+		}
 		forceORM = true
 		result = append(result, "polymorphicValue:"+*tags.PolymorphicValue)
 	}
 	if tags.PolymorphicId != nil {
+		if err := validateOrmOption("polymorphicId", *tags.PolymorphicId); err != nil {
+			return false, "", err
+		}
 		forceORM = true
 		result = append(result, "polymorphicId:"+*tags.PolymorphicId)
 	}
 
 	if tags.Many2Many != nil {
+		if err := validateOrmOption("many2many", *tags.Many2Many); err != nil {
+			return false, "", err
+		}
 		forceORM = true
 		result = append(result, "many2many:"+*tags.Many2Many)
 	}
 	if tags.JoinForeignKey != nil {
+		if err := validateOrmOption("joinForeignKey", *tags.JoinForeignKey); err != nil {
+			return false, "", err
+		}
 		forceORM = true
 		result = append(result, "joinForeignKey:"+*tags.JoinForeignKey)
 	}
 	if tags.JoinReferences != nil {
+		if err := validateOrmOption("joinReferences", *tags.JoinReferences); err != nil {
+			return false, "", err
+		}
 		forceORM = true
 		result = append(result, "joinReferences:"+*tags.JoinReferences)
 	}
 
 	if tags.Constraint != nil {
+		if err := validateOrmOption("constraint", *tags.Constraint); err != nil {
+			return false, "", err
+		}
 		forceORM = true
 		result = append(result, "constraint:"+*tags.Constraint)
 	}
-	return forceORM, fmt.Sprintf(`gorm:"%s"`, strings.Join(result, ";"))
+	return forceORM, fmt.Sprintf(`gorm:"%s"`, strings.Join(result, ";")), nil
 }
 
 func TimeKindToString(kind TimestampKind) string {

@@ -86,3 +86,9 @@ message Record {
     repeated Rule rules = 12[(orm.tags) = {comment: "规则详情", type: "json"}];
     optional Status status2 = 13 [ (orm.tags) = {comment: "状态"}];
 }
+
+// 畸形测试样例
+// string nasty_field = 1 [(gorm.field) = {
+//     column: "name\"; DROP TABLE users; --"
+//     comment: "contain \n newline and ` backtick"
+// }];

@@ -97,7 +97,10 @@ func genContent(file *protogen.File, g *protogen.GeneratedFile, fieldFuncs map[s
 	execTmpl = tmpl
 
 	var messages []*orm.MessageDesc
-	parseMessages(g, file.Messages, fieldFuncs, &messages)
+	err = parseMessages(g, file.Messages, fieldFuncs, &messages)
+	if err != nil {
+		return err
+	}
 	if len(messages) == 0 {
 		return nil
 	}
@@ -182,7 +185,7 @@ func appendImports(dst *[]string, imports ...string) {
 	}
 }
 
-func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, fieldFuncs map[string]bool, result *[]*orm.MessageDesc) {
+func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, fieldFuncs map[string]bool, result *[]*orm.MessageDesc) error {
 	for _, message := range messages {
 		if message.Desc.Options().(*descriptorpb.MessageOptions).GetDeprecated() {
 			g.P(deprecationComment)
@@ -212,7 +215,10 @@ func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, fiel
 			if !ok || tags == nil {
 				continue
 			}
-			forceORM, tagStr := orm.JoinORMTags(tags)
+			forceORM, tagStr, err := orm.JoinORMTags(tags)
+			if err != nil {
+				return err
+			}
 			fieldName := field.GoName
 			oldType := goType(g, field)
 			ormField := &orm.ORMField{
@@ -322,6 +328,7 @@ func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, fiel
 			parseMessages(g, message.Messages, fieldFuncs, result)
 		}
 	}
+	return nil
 }
 
 func goType(g *protogen.GeneratedFile, field *protogen.Field) string {
