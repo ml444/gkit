@@ -31,7 +31,7 @@ func ParseTraceparent(s string) (TraceInfo, bool) {
 	if !isHex(traceID) || !isHex(spanID) || !isHex(flags) {
 		return TraceInfo{}, false
 	}
-	if isAllZero(traceID) {
+	if isAllZero(traceID) || isAllZero(spanID){
 		return TraceInfo{}, false
 	}
 	return TraceInfo{

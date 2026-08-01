@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"runtime/debug"
-	"strings"
 
 	"github.com/ml444/gkit/log"
 )
@@ -15,10 +14,7 @@ func CatchPanic(cb func(err interface{})) {
 		st := debug.Stack()
 		if len(st) > 0 {
 			log.Errorf("dump stack (%s):", err)
-			lines := strings.Split(string(st), "\n")
-			for _, line := range lines {
-				log.Error("  ", line)
-			}
+			log.Error(string(st))
 		} else {
 			log.Errorf("stack is empty (%s)", err)
 		}
