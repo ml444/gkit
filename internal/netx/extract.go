@@ -79,5 +79,5 @@ func ExtractEndpoint(hostPort string, lis net.Listener) (string, error) {
 	if len(ips) != 0 {
 		return net.JoinHostPort(ips[len(ips)-1].String(), port), nil
 	}
-	return "", nil
+	return "", fmt.Errorf("netx: no usable global-unicast IP found for endpoint")
 }
