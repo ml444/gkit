@@ -14,11 +14,11 @@ import (
 {{ range .Messages }}
 	{{ if .Opts.TableName }}
 func (x {{ .Name }}) TableName() string {
-	return "{{ printf "%q" .Opts.TableName }}"
+	return {{ printf "%q" .Opts.TableName }}
 }
 
 func (x T{{ .Name }}) TableName() string {
-	return "{{ printf "%q" .Opts.TableName }}"
+	return {{ printf "%q" .Opts.TableName }}
 }
 	{{ end }}
 

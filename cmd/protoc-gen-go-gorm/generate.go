@@ -76,9 +76,9 @@ func getBaseTemplate() (*template.Template, error) {
 				err := execTmpl.ExecuteTemplate(&b, tmplName, data)
 				return b.String(), err
 			},
-			"SnakeToCamel":           orm.SnakeToCamel,
-			"JoinStringsByCamel":     orm.JoinStringsByCamel,
-			"IgnoreEmptyCondition":   orm.IgnoreEmptyCondition,
+			"SnakeToCamel":         orm.SnakeToCamel,
+			"JoinStringsByCamel":   orm.JoinStringsByCamel,
+			"IgnoreEmptyCondition": orm.IgnoreEmptyCondition,
 		})
 		baseTmpl, baseTmplErr = baseTmpl.Parse(strings.TrimSpace(serializerTemplate))
 	})
@@ -104,6 +104,7 @@ func genContent(file *protogen.File, g *protogen.GeneratedFile, fieldFuncs map[s
 	if len(messages) == 0 {
 		return nil
 	}
+	dedupeSerializeFields(messages)
 
 	importMap := map[string]bool{}
 	tmplMap := map[string]string{}
@@ -135,6 +136,38 @@ func genContent(file *protogen.File, g *protogen.GeneratedFile, fieldFuncs map[s
 		template.Must(tmpl.New(name).Parse(tmplMap[name]))
 	}
 	return tmpl.Execute(g, fd)
+}
+
+type serializerIdentity struct {
+	name      string
+	typeName  string
+	fieldType string
+	tmpl      string
+	isIgnore  bool
+}
+
+// dedupeSerializeFields prevents fields in different messages that share the
+// same serialized Go type from emitting identical Scan and Value methods.
+func dedupeSerializeFields(messages []*orm.MessageDesc) {
+	seen := make(map[serializerIdentity]struct{})
+	for _, message := range messages {
+		fields := message.SerializeFields[:0]
+		for _, field := range message.SerializeFields {
+			identity := serializerIdentity{
+				name:      field.SerializerName,
+				typeName:  field.SerializerTypeName,
+				fieldType: field.FieldType,
+				tmpl:      field.Tmpl,
+				isIgnore:  field.IsIgnore,
+			}
+			if _, ok := seen[identity]; ok {
+				continue
+			}
+			seen[identity] = struct{}{}
+			fields = append(fields, field)
+		}
+		message.SerializeFields = fields
+	}
 }
 
 func sortedKeys(m map[string]bool) []string {
@@ -445,6 +478,9 @@ func specialType(g *protogen.GeneratedFile, field *protogen.Field) string {
 		return typ
 	case protoreflect.EnumKind:
 		typ := g.QualifiedGoIdent(field.Enum.GoIdent)
+		if field.Desc.Cardinality() == protoreflect.Repeated {
+			return "[]" + typ
+		}
 		if field.Desc.HasPresence() {
 			return "*" + typ
 		}
