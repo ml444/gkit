@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"path"
 	"strings"
 
 	"google.golang.org/protobuf/compiler/protogen"
@@ -28,13 +29,37 @@ func parseFieldFuncFlag() map[string]bool {
 	return out
 }
 
+func protogenOptions(sourceRelative *bool) protogen.Options {
+	return protogen.Options{
+		ParamFunc: func(name, value string) error {
+			if name == "source_relative" {
+				*sourceRelative = true
+				return nil
+			}
+			return flag.CommandLine.Set(name, value)
+		},
+	}
+}
+
+func applySourceRelativePaths(gen *protogen.Plugin) {
+	for _, file := range gen.Files {
+		prefix := file.Proto.GetName()
+		if ext := path.Ext(prefix); ext == ".proto" || ext == ".protodevel" {
+			prefix = strings.TrimSuffix(prefix, ext)
+		}
+		file.GeneratedFilenamePrefix = prefix
+	}
+}
+
 func main() {
 	flag.Parse()
 	fieldFuncs := parseFieldFuncFlag()
+	var sourceRelative bool
 
-	protogen.Options{
-		ParamFunc: flag.CommandLine.Set,
-	}.Run(func(gen *protogen.Plugin) error {
+	protogenOptions(&sourceRelative).Run(func(gen *protogen.Plugin) error {
+		if sourceRelative {
+			applySourceRelativePaths(gen)
+		}
 		gen.SupportedFeatures = uint64(pluginpb.CodeGeneratorResponse_FEATURE_PROTO3_OPTIONAL)
 		for _, f := range gen.Files {
 			if !f.Generate {
