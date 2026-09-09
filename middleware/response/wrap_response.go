@@ -9,6 +9,8 @@ import (
 
 	"github.com/ml444/gkit/errorx"
 	"github.com/ml444/gkit/middleware"
+	"github.com/ml444/gkit/middleware/requestid"
+	"github.com/ml444/gkit/pkg/header"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 )
@@ -27,10 +29,13 @@ func WrapResponse() middleware.Middleware {
 				if err != nil {
 					return nil, err
 				}
+				requestID := requestIDFromContext(ctx)
+				header.SetOutgoing(ctx, header.RequestIDKey, requestID)
 				rsp = &ApiCommonResponse{
-					Code:    0,
-					Message: "success",
-					Data:    &value,
+					Code:      0,
+					Message:   "success",
+					Data:      &value,
+					RequestId: requestID,
 				}
 			}
 			return rsp, err
@@ -74,7 +79,7 @@ func acceptsJSON(h http.Header) bool {
 	return strings.Contains(accept, "application/json")
 }
 
-// WrapHttpResponse wraps successful JSON responses into {code,message,data}.
+// WrapHttpResponse wraps successful JSON responses into {code,message,data,requestId}.
 func WrapHttpResponse() middleware.HttpMiddleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -119,14 +124,34 @@ func WrapHttpResponse() middleware.HttpMiddleware {
 				data = string(original)
 			}
 
+			requestID := requestIDFromHTTPRequest(req)
+			header.SetRequestID(w.Header(), requestID)
 			wrapped := map[string]any{
-				"code":    0,
-				"message": "success",
-				"data":    data,
+				"code":      0,
+				"message":   "success",
+				"data":      data,
+				"requestId": requestID,
 			}
 
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			_ = json.NewEncoder(w).Encode(wrapped)
 		})
 	}
+}
+
+func requestIDFromContext(ctx context.Context) string {
+	if id := header.RequestIDFromContext(ctx); id != "" {
+		return id
+	}
+	return requestid.NewID()
+}
+
+func requestIDFromHTTPRequest(req *http.Request) string {
+	if id := header.RequestIDFromContext(req.Context()); id != "" {
+		return id
+	}
+	if id := header.RequestIDFromRequest(req); id != "" {
+		return id
+	}
+	return requestid.NewID()
 }

@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/ml444/gkit/middleware"
 	"github.com/ml444/gkit/pkg/header"
@@ -21,7 +23,7 @@ func HTTPMiddleware() middleware.HttpMiddleware {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			id := header.RequestIDFromRequest(r)
 			if id == "" {
-				id = newID()
+				id = NewID()
 			}
 			header.SetRequestID(w.Header(), id)
 			ctx := header.WithRequestID(r.Context(), id)
@@ -38,7 +40,7 @@ func Server() middleware.Middleware {
 	return func(next middleware.ServiceHandler) middleware.ServiceHandler {
 		return func(ctx context.Context, req interface{}) (interface{}, error) {
 			if header.GetRequestID(ctx) == "" {
-				id := newID()
+				id := NewID()
 				ctx = header.WithRequestID(ctx, id)
 				if header.GetTraceID(ctx) == "" {
 					ctx = header.WithTraceID(ctx, id)
@@ -49,8 +51,12 @@ func Server() middleware.Middleware {
 	}
 }
 
-func newID() string {
+// NewID returns a new random request ID.
+func NewID() string {
 	var b [16]byte
-	_, _ = rand.Read(b[:])
+	if _, err := rand.Read(b[:]); err != nil {
+		// 安全随机失败时退回纳秒时间戳。
+		return strconv.FormatInt(time.Now().UnixNano(), 10)
+	}
 	return hex.EncodeToString(b[:])
 }
