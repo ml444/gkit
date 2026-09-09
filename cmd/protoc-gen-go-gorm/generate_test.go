@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"google.golang.org/protobuf/compiler/protogen"
@@ -116,5 +117,125 @@ func TestDedupeSerializeFieldsAcrossMessages(t *testing.T) {
 	}
 	if got := len(messages[1].SerializeFields); got != 0 {
 		t.Fatalf("second message serializer count = %d, want 0", got)
+	}
+}
+
+func TestGenerateExternalJSONMessageUsesLocalWrapper(t *testing.T) {
+	externalFile := &descriptorpb.FileDescriptorProto{
+		Name:    proto.String("pool/pool.proto"),
+		Package: proto.String("pool"),
+		Syntax:  proto.String("proto3"),
+		Options: &descriptorpb.FileOptions{GoPackage: proto.String("example.com/project/pool;pool")},
+		MessageType: []*descriptorpb.DescriptorProto{{
+			Name: proto.String("PoolTerms"),
+			Field: []*descriptorpb.FieldDescriptorProto{{
+				Name:   proto.String("title"),
+				Number: proto.Int32(1),
+				Label:  descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+				Type:   descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
+			}},
+		}},
+	}
+	newMessageOptions := func() *descriptorpb.MessageOptions {
+		options := &descriptorpb.MessageOptions{}
+		proto.SetExtension(options, orm.E_Enable, true)
+		return options
+	}
+	newFieldOptions := func() *descriptorpb.FieldOptions {
+		options := &descriptorpb.FieldOptions{}
+		proto.SetExtension(options, orm.E_Tags, &orm.ORMTags{Type: proto.String("json")})
+		return options
+	}
+	modelsFile := &descriptorpb.FileDescriptorProto{
+		Name:       proto.String("models/pool.proto"),
+		Package:    proto.String("models"),
+		Syntax:     proto.String("proto3"),
+		Dependency: []string{externalFile.GetName()},
+		Options:    &descriptorpb.FileOptions{GoPackage: proto.String("example.com/project/models;models")},
+		MessageType: []*descriptorpb.DescriptorProto{
+			{
+				Name: proto.String("PoolMetadata"),
+				Field: []*descriptorpb.FieldDescriptorProto{{
+					Name:   proto.String("description"),
+					Number: proto.Int32(1),
+					Label:  descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+					Type:   descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
+				}},
+			},
+			{
+				Name:    proto.String("ModelPoolDraft"),
+				Options: newMessageOptions(),
+				Field: []*descriptorpb.FieldDescriptorProto{{
+					Name:     proto.String("terms"),
+					Number:   proto.Int32(5),
+					Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+					Type:     descriptorpb.FieldDescriptorProto_TYPE_MESSAGE.Enum(),
+					TypeName: proto.String(".pool.PoolTerms"),
+					Options:  newFieldOptions(),
+				}},
+			},
+			{
+				Name:    proto.String("ModelPool"),
+				Options: newMessageOptions(),
+				Field: []*descriptorpb.FieldDescriptorProto{
+					{
+						Name:     proto.String("terms"),
+						Number:   proto.Int32(6),
+						Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+						Type:     descriptorpb.FieldDescriptorProto_TYPE_MESSAGE.Enum(),
+						TypeName: proto.String(".pool.PoolTerms"),
+						Options:  newFieldOptions(),
+					},
+					{
+						Name:     proto.String("metadata"),
+						Number:   proto.Int32(7),
+						Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+						Type:     descriptorpb.FieldDescriptorProto_TYPE_MESSAGE.Enum(),
+						TypeName: proto.String(".models.PoolMetadata"),
+						Options:  newFieldOptions(),
+					},
+				},
+			},
+		},
+	}
+	gen, err := (protogen.Options{}).New(&pluginpb.CodeGeneratorRequest{
+		ProtoFile:      []*descriptorpb.FileDescriptorProto{externalFile, modelsFile},
+		FileToGenerate: []string{modelsFile.GetName()},
+	})
+	if err != nil {
+		t.Fatalf("create protogen plugin: %v", err)
+	}
+	generated := generateFile(gen, gen.FilesByPath[modelsFile.GetName()], nil)
+	content, err := generated.Content()
+	if err != nil {
+		t.Fatalf("format generated content: %v", err)
+	}
+	got := string(content)
+
+	for _, want := range []string{
+		"Terms *TModelPoolDraft_Terms",
+		"Terms: (*TModelPoolDraft_Terms)(x.Terms)",
+		"type TModelPoolDraft_Terms pool.PoolTerms",
+		"*TModelPool_Terms `gorm:",
+		"(*TModelPool_Terms)(x.Terms)",
+		"type TModelPool_Terms pool.PoolTerms",
+		"func (x *PoolMetadata) Scan(src interface{}) error",
+		"if message, ok := interface{}(x).(proto.Message); ok",
+		"return protojson.Unmarshal(data, (*pool.PoolTerms)(x))",
+		"b, err := protojson.Marshal((*pool.PoolTerms)(&x))",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("generated content does not contain %q\n%s", want, got)
+		}
+	}
+	for _, unwanted := range []string{
+		"func (x *pool.PoolTerms) Scan",
+		"func (x pool.PoolTerms) Value",
+		"func jsonMarshal",
+		"func jsonUnmarshal",
+	} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("generated content unexpectedly contains %q\n%s", unwanted, got)
+		}
 	}
 }

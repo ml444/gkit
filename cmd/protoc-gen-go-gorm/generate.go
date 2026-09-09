@@ -79,6 +79,7 @@ func getBaseTemplate() (*template.Template, error) {
 			"SnakeToCamel":         orm.SnakeToCamel,
 			"JoinStringsByCamel":   orm.JoinStringsByCamel,
 			"IgnoreEmptyCondition": orm.IgnoreEmptyCondition,
+			"ConversionType":       conversionType,
 		})
 		baseTmpl, baseTmplErr = baseTmpl.Parse(strings.TrimSpace(serializerTemplate))
 	})
@@ -136,6 +137,13 @@ func genContent(file *protogen.File, g *protogen.GeneratedFile, fieldFuncs map[s
 		template.Must(tmpl.New(name).Parse(tmplMap[name]))
 	}
 	return tmpl.Execute(g, fd)
+}
+
+func conversionType(typ string) string {
+	if strings.HasPrefix(typ, "*") {
+		return "(" + typ + ")"
+	}
+	return typ
 }
 
 type serializerIdentity struct {
@@ -303,9 +311,13 @@ func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, fiel
 					sd.Tmpl = templates.SpecialJsonTmpl
 					break
 				}
-				msgDesc.UtilMap["jsonMarshal"] = templates.JsonUtils
-				imports = templates.JsonImports
-				sd.Tmpl = templates.JsonTmpl
+				if wrapperType, ok := configureExternalJSONSerializer(g, field, &sd); ok {
+					sType = wrapperType
+					imports = templates.ExternalJsonImports
+				} else {
+					imports = templates.JsonImports
+					sd.Tmpl = templates.JsonTmpl
+				}
 			case "bytes", "blob", "mediumblob", "longblob":
 				msgDesc.UtilMap["bytesMarshal"] = templates.BytesUtils
 				if field.Desc.Kind() == protoreflect.BytesKind ||
@@ -333,10 +345,14 @@ func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, fiel
 					imports = templates.SpecialBytesImports
 					sd.Tmpl = templates.SpecialBytesTmpl
 				} else if field.Desc.Kind() == protoreflect.MessageKind || field.Desc.Kind() == protoreflect.GroupKind {
-					msgDesc.UtilMap["jsonMarshal"] = templates.JsonUtils
-					imports = templates.JsonImports
-					sd.Tmpl = templates.JsonTmpl
-					sd.SerializerName = "json"
+					if wrapperType, ok := configureExternalJSONSerializer(g, field, &sd); ok {
+						sType = wrapperType
+						imports = templates.ExternalJsonImports
+					} else {
+						imports = templates.JsonImports
+						sd.Tmpl = templates.JsonTmpl
+						sd.SerializerName = "json"
+					}
 				} else {
 					needGenSerializer = false
 				}
@@ -362,6 +378,21 @@ func parseMessages(g *protogen.GeneratedFile, messages []*protogen.Message, fiel
 		}
 	}
 	return nil
+}
+
+func configureExternalJSONSerializer(g *protogen.GeneratedFile, field *protogen.Field, serializer *orm.SerializeDesc) (string, bool) {
+	if field.Message == nil || field.Parent == nil || field.Desc.Cardinality() == protoreflect.Repeated || field.Desc.IsMap() {
+		return "", false
+	}
+	if field.Message.GoIdent.GoImportPath == field.Parent.GoIdent.GoImportPath {
+		return "", false
+	}
+	wrapperType := "T" + field.GoIdent.GoName
+	serializer.SerializerName = "external_json"
+	serializer.SerializerTypeName = wrapperType
+	serializer.FieldType = g.QualifiedGoIdent(field.Message.GoIdent)
+	serializer.Tmpl = templates.ExternalJsonTmpl
+	return wrapperType, true
 }
 
 func goType(g *protogen.GeneratedFile, field *protogen.Field) string {

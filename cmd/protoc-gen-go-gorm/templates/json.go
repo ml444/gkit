@@ -9,37 +9,61 @@ var JsonImports = []string{
 	"google.golang.org/protobuf/encoding/protojson",
 }
 
-const JsonUtils = `
-func jsonMarshal(x interface{}) ([]byte, error) {
-	if m, ok := x.(proto.Message); ok {
-		return protojson.Marshal(m)
-	} 
-	return json.Marshal(x)
-}
-
-func jsonUnmarshal(buf []byte, x interface{}) error {
-	if m, ok := x.(proto.Message); ok {
-		return protojson.Unmarshal(buf, m)
-	} 
-	return json.Unmarshal(buf, x)
-}
-`
-
 const JsonTmpl = `
 {{ if not .IsIgnore }}
 func (x *{{ .SerializerTypeName }}) Scan(src interface{}) error {
+	var data []byte
 	switch buf := src.(type) {
 	case []byte:
-		return jsonUnmarshal(buf, x)
+		data = buf
 	case string:
-		return jsonUnmarshal([]byte(buf), x)
+		data = []byte(buf)
 	default:
 		return fmt.Errorf("{{ .SerializerTypeName }} unsupported type [%s] to scan", buf)
 	}
+	if message, ok := interface{}(x).(proto.Message); ok {
+		return protojson.Unmarshal(data, message)
+	}
+	return json.Unmarshal(data, x)
 }
 
 func (x {{ .SerializerTypeName }}) Value() (driver.Value, error) {
-	b, err := jsonMarshal(&x)
+	if message, ok := interface{}(&x).(proto.Message); ok {
+		b, err := protojson.Marshal(message)
+		return string(b), err
+	}
+	b, err := json.Marshal(&x)
+	return string(b), err
+}
+{{ end }}
+`
+
+var ExternalJsonImports = []string{
+	"fmt",
+	"database/sql/driver",
+
+	"google.golang.org/protobuf/encoding/protojson",
+}
+
+const ExternalJsonTmpl = `
+type {{ .SerializerTypeName }} {{ .FieldType }}
+
+{{ if not .IsIgnore -}}
+func (x *{{ .SerializerTypeName }}) Scan(src interface{}) error {
+	var data []byte
+	switch buf := src.(type) {
+	case []byte:
+		data = buf
+	case string:
+		data = []byte(buf)
+	default:
+		return fmt.Errorf("{{ .SerializerTypeName }} unsupported type [%s] to scan", buf)
+	}
+	return protojson.Unmarshal(data, (*{{ .FieldType }})(x))
+}
+
+func (x {{ .SerializerTypeName }}) Value() (driver.Value, error) {
+	b, err := protojson.Marshal((*{{ .FieldType }})(&x))
 	return string(b), err
 }
 {{ end }}

@@ -28,7 +28,7 @@ func (x *{{ .Name }}) ToORM() dbx.ITModel {
     {{ if eq .NewType .OldType -}}
         {{ .FieldName }}: x.{{ .FieldName -}},
     {{ else -}}
-        {{ .FieldName }}: {{ .NewType }}(x.{{ .FieldName -}}),
+        {{ .FieldName }}: {{ ConversionType .NewType }}(x.{{ .FieldName -}}),
     {{ end -}}
 {{ end }}
 	}
@@ -53,7 +53,7 @@ func (x *T{{ .Name }}) ToSource() dbx.IModel {
 	    {{ if eq .NewType .OldType -}}
         {{ .FieldName }}: x.{{ .FieldName -}},
         {{ else -}}
-        {{ .FieldName }}: {{ .OldType }}(x.{{ .FieldName -}}),
+        {{ .FieldName }}: {{ ConversionType .OldType }}(x.{{ .FieldName -}}),
         {{ end -}}
         {{ end }}
 	}
@@ -68,7 +68,7 @@ func (x *T{{ .Name }}) CopyToSource(dst dbx.IModel) error {
 	{{ if eq .NewType .OldType -}}
 	d.{{ .FieldName }} = x.{{ .FieldName }}
 	{{ else -}}
-	d.{{ .FieldName }} = {{ .OldType }}(x.{{ .FieldName }})
+	d.{{ .FieldName }} = {{ ConversionType .OldType }}(x.{{ .FieldName }})
 	{{ end -}}
 {{ end }}
 	return nil
@@ -84,7 +84,7 @@ func (x *T{{ .Name }}) CopyToSourceIgnoreEmpty(dst dbx.IModel) error {
 	{{ if eq .NewType .OldType -}}
 		d.{{ .FieldName }} = x.{{ .FieldName }}
 	{{ else -}}
-		d.{{ .FieldName }} = {{ .OldType }}(x.{{ .FieldName }})
+		d.{{ .FieldName }} = {{ ConversionType .OldType }}(x.{{ .FieldName }})
 	{{ end -}}
 	}
 {{ end }}
