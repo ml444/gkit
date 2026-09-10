@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"github.com/ml444/gkit/log"
 	"github.com/ml444/gkit/transport"
 )
 
@@ -48,6 +50,7 @@ type wrappedCtx struct {
 }
 
 type routerCoderKey struct{}
+type encodedPathKey struct{}
 
 func NewCtx(rsp http.ResponseWriter, req *http.Request) Context {
 	var rc IRouterCoder
@@ -73,10 +76,18 @@ func (c *wrappedCtx) Header() http.Header {
 	return c.req.Header
 }
 
-func (c *wrappedCtx) Vars() url.Values {
-	raws := mux.Vars(c.req)
+func (c *wrappedCtx) Vars() url.Values { return requestVars(c.req) }
+
+func requestVars(req *http.Request) url.Values {
+	raws := mux.Vars(req)
+	encoded, _ := req.Context().Value(encodedPathKey{}).(bool)
 	vars := make(url.Values, len(raws))
 	for k, v := range raws {
+		if encoded {
+			if decoded, err := url.PathUnescape(v); err == nil {
+				v = decoded
+			}
+		}
 		vars[k] = []string{v}
 	}
 	return vars
@@ -111,6 +122,11 @@ func (c *wrappedCtx) Result(status int, v any) {
 	c.setResponseHeaders()
 	err := c.coder.ResponseEncoder()(status, c.rsp, c.req, v)
 	if err != nil {
+		var writeErr *responseWriteError
+		if errors.As(err, &writeErr) {
+			log.Errorf("[HTTP] %v", err)
+			return
+		}
 		c.ReturnError(err)
 		return
 	}
@@ -207,12 +223,9 @@ func (c *wrappedCtx) setResponseHeaders() {
 	if !ok {
 		return
 	}
-	if outHeaders := tr.Out(); len(outHeaders) > 0 {
-		for k, v := range outHeaders {
-			if len(v) == 0 {
-				continue
-			}
-			c.rsp.Header().Set(k, v[0])
-		}
+	if tw, ok := c.rsp.(*transportResponseWriter); ok {
+		tw.flushTransportHeaders()
+		return
 	}
+	copyResponseHeaders(c.rsp.Header(), tr.Out())
 }

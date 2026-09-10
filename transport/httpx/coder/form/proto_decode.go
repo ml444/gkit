@@ -12,7 +12,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
-	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -62,6 +61,10 @@ func populateFieldValues(v protoreflect.Message, fieldPath []string, values []st
 		}
 
 		v = v.Mutable(fd).Message()
+	}
+	if !fd.IsList() && !fd.IsMap() && len(values) == 1 && values[0] == nullStr && fd.Message() != nil && (fd.Message().FullName() == timestampMessageFullname || fd.Message().FullName() == durationMessageFullname) {
+		v.Clear(fd)
+		return nil
 	}
 	if of := fd.ContainingOneof(); of != nil {
 		if f := v.WhichOneof(of); f != nil {
@@ -114,6 +117,10 @@ func getDescriptorByFieldAndName(fields protoreflect.FieldDescriptors, fieldName
 }
 
 func populateField(fd protoreflect.FieldDescriptor, v protoreflect.Message, value string) error {
+	if value == nullStr && fd.Message() != nil && (fd.Message().FullName() == timestampMessageFullname || fd.Message().FullName() == durationMessageFullname) {
+		v.Clear(fd)
+		return nil
+	}
 	if value == "" {
 		return nil
 	}
@@ -167,25 +174,19 @@ func parseField(fd protoreflect.FieldDescriptor, value string) (protoreflect.Val
 		}
 		return protoreflect.ValueOfBool(v), nil
 	case protoreflect.EnumKind:
-		enum, err := protoregistry.GlobalTypes.FindEnumByName(fd.Enum().FullName())
-		switch {
-		case errors.Is(err, protoregistry.NotFound):
-			return protoreflect.Value{}, fmt.Errorf("enum %q is not registered", fd.Enum().FullName())
-		case err != nil:
-			return protoreflect.Value{}, fmt.Errorf("failed to look up enum: %w", err)
+		ed := fd.Enum()
+		if v := ed.Values().ByName(protoreflect.Name(value)); v != nil {
+			return protoreflect.ValueOfEnum(v.Number()), nil
 		}
-		v := enum.Descriptor().Values().ByName(protoreflect.Name(value))
-		if v == nil {
-			i, err := strconv.ParseInt(value, 10, 32) //nolint:gomnd
-			if err != nil {
-				return protoreflect.Value{}, fmt.Errorf("%q is not a valid value", value)
-			}
-			v = enum.Descriptor().Values().ByNumber(protoreflect.EnumNumber(i))
-			if v == nil {
-				return protoreflect.Value{}, fmt.Errorf("%q is not a valid value", value)
-			}
+		i, err := strconv.ParseInt(value, 10, 32)
+		if err != nil {
+			return protoreflect.Value{}, fmt.Errorf("%q is not a valid enum value", value)
 		}
-		return protoreflect.ValueOfEnum(v.Number()), nil
+		n := protoreflect.EnumNumber(i)
+		if ed.IsClosed() && ed.Values().ByNumber(n) == nil {
+			return protoreflect.Value{}, fmt.Errorf("unknown value %q for enum %s", value, ed.FullName())
+		}
+		return protoreflect.ValueOfEnum(n), nil
 	case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind:
 		v, err := strconv.ParseInt(value, 10, 32) //nolint:gomnd
 		if err != nil {
@@ -227,7 +228,10 @@ func parseField(fd protoreflect.FieldDescriptor, value string) (protoreflect.Val
 	case protoreflect.BytesKind:
 		v, err := base64.StdEncoding.DecodeString(value)
 		if err != nil {
-			return protoreflect.Value{}, err
+			v, err = base64.URLEncoding.DecodeString(value)
+			if err != nil {
+				return protoreflect.Value{}, err
+			}
 		}
 		return protoreflect.ValueOfBytes(v), nil
 	case protoreflect.MessageKind, protoreflect.GroupKind:
@@ -242,7 +246,7 @@ func parseMessage(md protoreflect.MessageDescriptor, value string) (protoreflect
 	switch md.FullName() {
 	case "google.protobuf.Timestamp":
 		if value == nullStr {
-			break
+			return protoreflect.Value{}, fmt.Errorf("null %s is only valid for a singular field", md.FullName())
 		}
 		t, err := time.Parse(time.RFC3339Nano, value)
 		if err != nil {
@@ -251,7 +255,7 @@ func parseMessage(md protoreflect.MessageDescriptor, value string) (protoreflect
 		msg = timestamppb.New(t)
 	case "google.protobuf.Duration":
 		if value == nullStr {
-			break
+			return protoreflect.Value{}, fmt.Errorf("null %s is only valid for a singular field", md.FullName())
 		}
 		d, err := time.ParseDuration(value)
 		if err != nil {

@@ -261,7 +261,10 @@ func SetRequestContentType(contentType string) CallOption {
 
 func RequestHeader(header http.Header) CallOption {
 	return func(ci *callInfo) {
-		ci.reqHeader = header
+		ci.reqHeader = header.Clone()
+		if ci.reqHeader == nil {
+			ci.reqHeader = make(http.Header)
+		}
 	}
 }
 

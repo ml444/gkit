@@ -325,7 +325,7 @@ func TestEncodeValuesAndFieldMask(t *testing.T) {
 	}
 
 	msg := newDynamicFieldMaskMessage(t)
-	if query := EncodeFieldMask(msg); query != "mask=displayName,age" {
+	if query := EncodeFieldMask(msg); query != "mask=displayName%2Cage" {
 		t.Fatalf("field mask query = %q", query)
 	}
 	maskFD := msg.Descriptor().Fields().ByName("mask")

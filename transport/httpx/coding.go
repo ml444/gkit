@@ -7,15 +7,19 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
-
-	"github.com/gorilla/mux"
 
 	"github.com/ml444/gkit/errorx"
 	"github.com/ml444/gkit/transport/httpx/coder"
 	"github.com/ml444/gkit/transport/httpx/coder/form"
 )
+
+// responseWriteError marks a failure after the response status was committed.
+// Callers must not try to encode a second HTTP response.
+type responseWriteError struct{ err error }
+
+func (e *responseWriteError) Error() string { return "httpx: response write: " + e.err.Error() }
+func (e *responseWriteError) Unwrap() error { return e.err }
 
 const maxRespBytes = 10 << 20 // 10MB，可配置
 
@@ -56,11 +60,7 @@ type routerCoder struct {
 func newRouterCoder() *routerCoder {
 	c := &routerCoder{}
 	c.bindVars = func(r *http.Request, target interface{}) error {
-		raws := mux.Vars(r)
-		vars := make(url.Values, len(raws))
-		for k, v := range raws {
-			vars[k] = []string{v}
-		}
+		vars := requestVars(r)
 		if err := coder.GetCoder(form.Name).Unmarshal([]byte(vars.Encode()), target); err != nil {
 			return defaultError(err)
 		}
@@ -120,9 +120,12 @@ func newRouterCoder() *routerCoder {
 		}
 		w.Header().Set("Content-Type", joinContentType(codec.Name()))
 		w.WriteHeader(status)
-		_, err = w.Write(data)
+		n, err := w.Write(data)
+		if err == nil && n != len(data) {
+			err = io.ErrShortWrite
+		}
 		if err != nil {
-			return err
+			return &responseWriteError{err: err}
 		}
 		return nil
 	}
@@ -177,7 +180,7 @@ func DefaultRequestEncoder(_ context.Context, contentType string, in interface{}
 
 // DefaultResponseDecoder is an HTTP response decoder.
 func DefaultResponseDecoder(_ context.Context, rsp *http.Response, v interface{}) error {
-	if rsp.StatusCode < 400 && v == nil {
+	if rsp.StatusCode < 400 && (v == nil || rsp.StatusCode == http.StatusNoContent || rsp.StatusCode == http.StatusResetContent || (rsp.Request != nil && rsp.Request.Method == http.MethodHead)) {
 		return nil
 	}
 	data, err := io.ReadAll(io.LimitReader(rsp.Body, maxRespBytes+1))

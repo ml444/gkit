@@ -920,6 +920,8 @@ Prometheus：`-tags prometheus` 编译。OTel：`middleware/tracing/otel`。CSRF
 
 ### transport
 
+详见 [transport 使用与迁移说明](transport/README_CN.md)，包含地址、分组、中间件、超时与服务发现的行为约定。
+
 传输模块，主要包含以下几个功能：
 
 - 把http请求核心逻辑转化为grpc的Service方法。

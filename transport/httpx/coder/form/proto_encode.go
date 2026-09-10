@@ -109,21 +109,24 @@ func encodeRepeatedField(fieldDescriptor protoreflect.FieldDescriptor, list prot
 }
 
 func encodeMapField(fieldDescriptor protoreflect.FieldDescriptor, mp protoreflect.Map) (map[string]string, error) {
+	var encodeErr error
 	m := make(map[string]string)
 	mp.Range(func(k protoreflect.MapKey, v protoreflect.Value) bool {
-		key, err := EncodeField(fieldDescriptor.MapValue(), k.Value())
+		key, err := EncodeField(fieldDescriptor.MapKey(), k.Value())
 		if err != nil {
+			encodeErr = err
 			return false
 		}
 		value, err := EncodeField(fieldDescriptor.MapValue(), v)
 		if err != nil {
+			encodeErr = err
 			return false
 		}
 		m[key] = value
 		return true
 	})
 
-	return m, nil
+	return m, encodeErr
 }
 
 // EncodeField encode proto message filed
@@ -136,11 +139,17 @@ func EncodeField(fieldDescriptor protoreflect.FieldDescriptor, value protoreflec
 			return nullStr, nil
 		}
 		desc := fieldDescriptor.Enum().Values().ByNumber(value.Enum())
+		if desc == nil {
+			if fieldDescriptor.Enum().IsClosed() {
+				return "", fmt.Errorf("unknown value %d for enum %s", value.Enum(), fieldDescriptor.Enum().FullName())
+			}
+			return strconv.FormatInt(int64(value.Enum()), 10), nil
+		}
 		return string(desc.Name()), nil
 	case protoreflect.StringKind:
 		return value.String(), nil
 	case protoreflect.BytesKind:
-		return base64.URLEncoding.EncodeToString(value.Bytes()), nil
+		return base64.StdEncoding.EncodeToString(value.Bytes()), nil
 	case protoreflect.MessageKind, protoreflect.GroupKind:
 		return encodeMessage(fieldDescriptor.Message(), value)
 	default:
@@ -169,10 +178,11 @@ func encodeMessage(msgDescriptor protoreflect.MessageDescriptor, value protorefl
 		if !ok || m == nil {
 			return "", nil
 		}
+		paths := make([]string, len(m.Paths))
 		for i, v := range m.Paths {
-			m.Paths[i] = jsonCamelCase(v)
+			paths[i] = jsonCamelCase(v)
 		}
-		return strings.Join(m.Paths, ","), nil
+		return strings.Join(paths, ","), nil
 	default:
 		return "", fmt.Errorf("unsupported message type: %q", string(msgDescriptor.FullName()))
 	}
@@ -188,9 +198,9 @@ func EncodeFieldMask(m protoreflect.Message) (query string) {
 					return false
 				}
 				if fd.HasJSONName() {
-					query = fd.JSONName() + "=" + value
+					query = url.Values{fd.JSONName(): {value}}.Encode()
 				} else {
-					query = fd.TextName() + "=" + value
+					query = url.Values{fd.TextName(): {value}}.Encode()
 				}
 				return false
 			}

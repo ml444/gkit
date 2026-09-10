@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/url"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,9 +18,12 @@ import (
 
 type recordingConn struct {
 	states []resolver.State
+	mu     sync.Mutex
 }
 
 func (r *recordingConn) UpdateState(s resolver.State) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.states = append(r.states, s)
 	return nil
 }
@@ -59,13 +63,28 @@ func TestDiscoveryResolver_UpdateState(t *testing.T) {
 	target := resolver.Target{
 		URL: url.URL{Scheme: scheme, Path: "/svc"},
 	}
-	r, err := discoveryBuilder{}.Build(target, cc, resolver.BuildOptions{})
+	r, err := (&discoveryBuilder{dc: dc}).Build(target, cc, resolver.BuildOptions{})
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
 	defer r.Close()
 
-	time.Sleep(50 * time.Millisecond)
+	deadline := time.After(time.Second)
+	for {
+		cc.mu.Lock()
+		ready := len(cc.states) > 0
+		cc.mu.Unlock()
+		if ready {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("initial resolution timed out")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
 	if len(cc.states) == 0 {
 		t.Fatal("expected UpdateState to be called")
 	}
@@ -112,7 +131,7 @@ func TestDiscoveryBuilderErrorsAndResolveNow(t *testing.T) {
 	// 	HealthCheck: "",
 	// })
 	Register(dc)
-	if _, err := (discoveryBuilder{dc: dc}).Build(resolver.Target{URL: url.URL{Scheme: scheme}}, &recordingConn{}, resolver.BuildOptions{}); err == nil {
+	if _, err := (&discoveryBuilder{dc: dc}).Build(resolver.Target{URL: url.URL{Scheme: scheme}}, &recordingConn{}, resolver.BuildOptions{}); err == nil {
 		t.Fatal("expected empty service error")
 	}
 

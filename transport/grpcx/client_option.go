@@ -26,14 +26,16 @@ func WithDiscovery(dc *discovery.DiscoveryClient, serviceName string) ClientOpti
 	}
 }
 
-// WithTimeout sets the default call timeout (0 disables).
+// WithTimeout sets both dial and unary call timeouts (0 disables each).
+// Later WithDialTimeout or WithCallTimeout options override the respective value.
 func WithTimeout(d time.Duration) ClientOption {
 	return func(c *Client) {
 		c.timeout = d
+		c.dialTimeout = d
 	}
 }
 
-// WithTLSConfig sets TLS for non-discovery direct targets.
+// WithTLSConfig sets transport TLS for direct and discovery targets.
 func WithTLSConfig(cfg *tls.Config) ClientOption {
 	return func(c *Client) {
 		c.tlsConf = cfg
@@ -53,3 +55,11 @@ func WithDialOptions(opts ...grpc.DialOption) ClientOption {
 		c.dialOpts = append(c.dialOpts, opts...)
 	}
 }
+
+// WithDialTimeout limits blocking connection setup; 0 disables the limit.
+// Dialing remains non-blocking unless grpc.WithBlock is supplied.
+func WithDialTimeout(d time.Duration) ClientOption { return func(c *Client) { c.dialTimeout = d } }
+
+// WithCallTimeout sets the default unary RPC timeout; 0 disables it.
+// A shorter caller deadline wins. Streams use only their caller's context.
+func WithCallTimeout(d time.Duration) ClientOption { return func(c *Client) { c.timeout = d } }

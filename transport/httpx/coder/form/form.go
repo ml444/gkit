@@ -21,9 +21,12 @@ var (
 	decoder = form.NewDecoder()
 )
 
-func GetCoder() Coder {
+func init() {
 	decoder.SetTagName("json")
 	encoder.SetTagName("json")
+}
+
+func GetCoder() Coder {
 	return Coder{encoder: encoder, decoder: decoder}
 }
 

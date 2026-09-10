@@ -103,6 +103,9 @@ func (s *Server) globalMiddleware() middleware.HttpMiddleware {
 			}
 			defer cancel()
 			ctx = context.WithValue(ctx, routerCoderKey{}, s.routerCfg.Coder)
+			if s.routerCfg.UseEncodedPath {
+				ctx = context.WithValue(ctx, encodedPathKey{}, true)
+			}
 			if s.maxRequestBodyBytes > 0 && req.Body != nil {
 				req.Body = http.MaxBytesReader(w, req.Body, s.maxRequestBodyBytes)
 			}

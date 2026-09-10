@@ -279,7 +279,10 @@ func (c *StorageHTTPClientImpl) UploadV0(ctx context.Context, in *UploadReq, opt
 	var err error
 	var out UploadRsp
 	pattern := "/storage/upload/v0"
-	path := httpx.EncodeURL(pattern, in, false)
+	path, err := httpx.EncodeURLWithError(pattern, in, false)
+	if err != nil {
+		return nil, err
+	}
 	opts = append(opts, httpx.Operation(OperationStorageUploadV0))
 	opts = append(opts, httpx.PathTemplate(pattern))
 	err = c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
@@ -293,7 +296,10 @@ func (c *StorageHTTPClientImpl) UploadV1(ctx context.Context, in *UploadReq, opt
 	var err error
 	var out UploadRsp
 	pattern := "/storage/upload/v1"
-	path := httpx.EncodeURL(pattern, in, false)
+	path, err := httpx.EncodeURLWithError(pattern, in, false)
+	if err != nil {
+		return nil, err
+	}
 	opts = append(opts, httpx.Operation(OperationStorageUploadV1))
 	opts = append(opts, httpx.PathTemplate(pattern))
 	headers, err := pluck.ConvertAnyToHeader(in.FileInfo, true)
@@ -313,7 +319,10 @@ func (c *StorageHTTPClientImpl) UploadV2(ctx context.Context, in *UploadReq, opt
 	var err error
 	var out UploadRsp
 	pattern := "/storage/upload/v2"
-	path := httpx.EncodeURL(pattern, in, false)
+	path, err := httpx.EncodeURLWithError(pattern, in, false)
+	if err != nil {
+		return nil, err
+	}
 	opts = append(opts, httpx.Operation(OperationStorageUploadV2))
 	opts = append(opts, httpx.PathTemplate(pattern))
 	headers, err := pluck.ConvertAnyToHeader(in.FileInfo, true)
@@ -332,7 +341,10 @@ func (c *StorageHTTPClientImpl) DownloadV0(ctx context.Context, in *DownloadReq,
 	var err error
 	var out DownloadRsp
 	pattern := "/storage/download/v0"
-	path := httpx.EncodeURL(pattern, in, false)
+	path, err := httpx.EncodeURLWithError(pattern, in, false)
+	if err != nil {
+		return nil, err
+	}
 	opts = append(opts, httpx.Operation(OperationStorageDownloadV0))
 	opts = append(opts, httpx.PathTemplate(pattern))
 	err = c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
@@ -346,7 +358,10 @@ func (c *StorageHTTPClientImpl) DownloadV1(ctx context.Context, in *DownloadReq,
 	var err error
 	var out DownloadRsp
 	pattern := "/storage/download/v1"
-	path := httpx.EncodeURL(pattern, in, false)
+	path, err := httpx.EncodeURLWithError(pattern, in, false)
+	if err != nil {
+		return nil, err
+	}
 	opts = append(opts, httpx.Operation(OperationStorageDownloadV1))
 	opts = append(opts, httpx.PathTemplate(pattern))
 	opts = append(opts, httpx.OnResponse(func(rsp *http.Response) error {
@@ -363,7 +378,10 @@ func (c *StorageHTTPClientImpl) DownloadV2(ctx context.Context, in *DownloadReq,
 	var err error
 	var out DownloadRsp
 	pattern := "/storage/download/v2"
-	path := httpx.EncodeURL(pattern, in, false)
+	path, err := httpx.EncodeURLWithError(pattern, in, false)
+	if err != nil {
+		return nil, err
+	}
 	opts = append(opts, httpx.Operation(OperationStorageDownloadV2))
 	opts = append(opts, httpx.PathTemplate(pattern))
 	opts = append(opts, httpx.OnResponse(func(rsp *http.Response) error {

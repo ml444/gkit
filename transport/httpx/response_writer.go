@@ -36,13 +36,20 @@ func (w *transportResponseWriter) flushTransportHeaders() {
 		return
 	}
 	w.flushed = true
-	for k, v := range w.tr.Out() {
-		if len(v) == 0 {
+	copyResponseHeaders(w.Header(), w.tr.Out())
+}
+
+func copyResponseHeaders(dst http.Header, src transport.MD) {
+	for key, values := range src {
+		if len(values) == 0 {
 			continue
 		}
-		w.Header().Set(k, v[0])
+		dst[http.CanonicalHeaderKey(key)] = append([]string(nil), values...)
 	}
 }
+
+// Unwrap permits http.ResponseController to reach the underlying writer.
+func (w *transportResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func (w *transportResponseWriter) Flush() {
 	w.flushTransportHeaders()

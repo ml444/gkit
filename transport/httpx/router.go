@@ -2,7 +2,8 @@ package httpx
 
 import (
 	"net/http"
-	"path"
+	"strings"
+	"sync"
 
 	"github.com/gorilla/mux"
 
@@ -61,17 +62,17 @@ var _ = IRouter(&Router{})
 
 func NewRouterCfg() *RouterCfg {
 	return &RouterCfg{
-		UseEncodedPath:          false,
-		StrictSlash:             true,
-		SkipClean:               false,
-		RootPrefix:              "",
+		UseEncodedPath: false,
+		StrictSlash:    true,
+		SkipClean:      false,
+		RootPrefix:     "",
 		NotFoundHandler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		}),
 		MethodNotAllowedHandler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}),
-		Coder:                   newRouterCoder(),
+		Coder: newRouterCoder(),
 	}
 }
 
@@ -81,6 +82,7 @@ type Router struct {
 	prefix      string
 	router      *mux.Router
 	middlewares []middleware.HttpMiddleware
+	parent      *Router
 }
 
 type RouterCfg struct {
@@ -142,7 +144,12 @@ func newRouter(prefix string, cfg *RouterCfg, middlewares ...middleware.HttpMidd
 	return r
 }
 
+// Use applies middleware to this group and its descendants. Configure before serving.
 func (r *Router) Use(mws ...middleware.HttpMiddleware) {
+	if r.parent != nil {
+		r.middlewares = append(r.middlewares, mws...)
+		return
+	}
 	var mwList []mux.MiddlewareFunc
 	for _, mw := range mws {
 		mwList = append(mwList, mux.MiddlewareFunc(mw))
@@ -151,19 +158,33 @@ func (r *Router) Use(mws ...middleware.HttpMiddleware) {
 }
 
 func (r *Router) Handle(path string, h http.Handler) {
-	r.router.Handle(path, h)
+	r.router.Handle(r.routePath(path), r.wrap(h))
 }
 
 func (r *Router) HandlePrefix(prefix string, h http.Handler) {
-	r.router.PathPrefix(prefix).Handler(h)
+	if r.parent != nil && prefix == "" {
+		base := strings.TrimSuffix(r.prefix, "/")
+		next := r.wrap(h)
+		r.router.Path(base).Handler(next)
+		r.router.PathPrefix(base + "/").Handler(next)
+		return
+	}
+	r.router.PathPrefix(r.routePath(prefix)).Handler(r.wrap(h))
 }
 
 func (r *Router) HandleFunc(path string, h http.HandlerFunc) {
-	r.router.HandleFunc(path, h)
+	r.Handle(path, h)
 }
 
 func (r *Router) HandleHeader(h http.HandlerFunc, headerPairs ...string) {
-	r.router.Headers(headerPairs...).Handler(h)
+	next := r.wrap(h)
+	if r.parent == nil {
+		r.router.Headers(headerPairs...).Handler(next)
+		return
+	}
+	prefix := strings.TrimSuffix(r.prefix, "/")
+	r.router.Path(prefix).Headers(headerPairs...).Handler(next)
+	r.router.PathPrefix(prefix + "/").Headers(headerPairs...).Handler(next)
 }
 func (r *Router) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	r.router.ServeHTTP(res, req)
@@ -187,24 +208,42 @@ func (r *Router) WalkRoute(fn WalkRouteFunc) error {
 		return nil
 	})
 }
-func (r *Router) Group(prefix string, middlewares ...middleware.HttpMiddleware) *Router {
-	var newMWs []middleware.HttpMiddleware
-	newMWs = append(newMWs, r.middlewares...)
-	newMWs = append(newMWs, middlewares...)
-	newR := &Router{
-		prefix:      path.Join(r.prefix, prefix),
-		router:      r.router,
-		middlewares: newMWs,
-		RouterCfg:   r.RouterCfg,
+func (r *Router) routePath(relativePath string) string {
+	joined := JoinPath(r.prefix, relativePath)
+	if !strings.HasPrefix(joined, "/") {
+		joined = "/" + joined
 	}
-	return newR
+	return joined
+}
+
+func (r *Router) Group(prefix string, middlewares ...middleware.HttpMiddleware) *Router {
+	return &Router{
+		prefix: r.routePath(prefix), router: r.router,
+		middlewares: append([]middleware.HttpMiddleware(nil), middlewares...),
+		RouterCfg:   r.RouterCfg, parent: r,
+	}
+}
+
+// wrap builds the group chain once on first use so middleware retains its state.
+// Use also applies to routes registered earlier, before serving starts.
+// Like mux.Router, route configuration must be complete before serving requests.
+func (r *Router) wrap(h http.Handler) http.Handler {
+	var once sync.Once
+	var next http.Handler
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		once.Do(func() {
+			next = h
+			for group := r; group != nil; group = group.parent {
+				next = middleware.HTTPChain(group.middlewares...)(next)
+			}
+		})
+		next.ServeHTTP(w, req)
+	})
 }
 
 func (r *Router) handle(method, relativePath string, h http.HandlerFunc, middlewares ...middleware.HttpMiddleware) {
-	next := http.Handler(h)
-	next = middleware.HTTPChain(middlewares...)(next)
-	next = middleware.HTTPChain(r.middlewares...)(next)
-	r.router.Handle(path.Join(r.prefix, relativePath), next).Methods(method)
+	next := middleware.HTTPChain(middlewares...)(h)
+	r.router.Handle(r.routePath(relativePath), r.wrap(next)).Methods(method)
 }
 
 func (r *Router) GET(path string, h http.HandlerFunc, m ...middleware.HttpMiddleware) {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,69 +19,116 @@ import (
 )
 
 const scheme = "discovery"
-
-// instanceAttrKey is stored in resolver.Address.Attributes for load-balancer feedback.
 const instanceAttrKey = "gkit.discovery.instance"
 
-var (
-	registerOnce sync.Once
-)
+var registerOnce sync.Once
+var legacyBuilder atomic.Pointer[Builder]
+var addrInstanceCache atomic.Value // compatibility-only test cache
 
-// Register sets the DiscoveryClient used by the discovery resolver scheme.
-// Safe to call before each grpcx.NewClient with discovery enabled.
+// Register registers the first client process-wide. Configure it before dialing.
+// Deprecated: use NewBuilder with grpc.WithResolvers to isolate connections.
 func Register(dc *discovery.DiscoveryClient) {
 	if dc == nil {
 		return
 	}
-	// currentDC.set(dc)
 	registerOnce.Do(func() {
-		resolver.Register(&discoveryBuilder{dc: dc})
+		b := NewBuilder(dc)
+		legacyBuilder.Store(b)
+		resolver.Register(b)
 	})
 }
 
-// InstanceFromAttributes returns the ServiceInstancer attached to an address.
-func InstanceFromAttributes(attrs *attributes.Attributes) discovery.ServiceInstancer {
-	if attrs == nil {
-		return nil
-	}
-	v := attrs.Value(instanceAttrKey)
-	if v == nil {
-		return nil
-	}
-	inst, _ := v.(discovery.ServiceInstancer)
-	return inst
+// Builder binds discovery and feedback state to one client's resolver scope.
+// Construct a separate Builder for each client, even when service names match.
+type Builder struct {
+	dc        *discovery.DiscoveryClient
+	mu        sync.RWMutex
+	instances map[*discoveryResolver]map[string]discovery.ServiceInstancer
 }
 
-type discoveryBuilder struct {
-	dc *discovery.DiscoveryClient
+type discoveryBuilder = Builder
+
+// NewBuilder creates a connection-scoped resolver builder for grpc.WithResolvers.
+func NewBuilder(dc *discovery.DiscoveryClient) *Builder {
+	return &Builder{dc: dc, instances: make(map[*discoveryResolver]map[string]discovery.ServiceInstancer)}
 }
 
-func (b discoveryBuilder) Scheme() string {
-	return scheme
-}
+func (*Builder) Scheme() string { return scheme }
 
-func (b discoveryBuilder) Build(target resolver.Target, cc resolver.ClientConn, _ resolver.BuildOptions) (resolver.Resolver, error) {
+func (b *Builder) Build(target resolver.Target, cc resolver.ClientConn, _ resolver.BuildOptions) (resolver.Resolver, error) {
 	if b.dc == nil {
-		return nil, errors.New("discovery resolver: DiscoveryClient not registered, call resolver.Register")
+		return nil, errors.New("discovery resolver: DiscoveryClient is required")
 	}
 	service := parseServiceName(target)
 	if service == "" {
 		return nil, fmt.Errorf("discovery resolver: empty service name in target %q", target.URL.String())
 	}
-	r := &discoveryResolver{
-		dc:      b.dc,
-		service: service,
-		cc:      cc,
-		refresh: 30 * time.Second,
-		stop:    make(chan struct{}),
-	}
+	r := &discoveryResolver{dc: b.dc, service: service, cc: cc, builder: b, refresh: 30 * time.Second}
 	r.start()
 	return r, nil
 }
 
+// GetInstance returns only an instance belonging to this builder and service.
+func (b *Builder) GetInstance(service, addr string) (discovery.ServiceInstancer, bool) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for r, instances := range b.instances {
+		if service != "" && r.service != service {
+			continue
+		}
+		if inst, ok := instances[addr]; ok {
+			return inst, true
+		}
+	}
+	return nil, false
+}
+
+func (b *Builder) setInstances(r *discoveryResolver, instances map[string]discovery.ServiceInstancer) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if instances == nil {
+		delete(b.instances, r)
+		return
+	}
+	if b.instances == nil {
+		b.instances = make(map[*discoveryResolver]map[string]discovery.ServiceInstancer)
+	}
+	b.instances[r] = instances
+}
+
+func InstanceFromAttributes(attrs *attributes.Attributes) discovery.ServiceInstancer {
+	if attrs == nil {
+		return nil
+	}
+	inst, _ := attrs.Value(instanceAttrKey).(discovery.ServiceInstancer)
+	return inst
+}
+
+// GetInstanceByAddr searches only the legacy global registration and test cache.
+// Deprecated: use Builder.GetInstance; addresses alone do not identify a service.
+func GetInstanceByAddr(addr string) (discovery.ServiceInstancer, bool) {
+	if m, ok := addrInstanceCache.Load().(map[string]discovery.ServiceInstancer); ok {
+		if inst, ok := m[addr]; ok {
+			return inst, true
+		}
+	}
+	if b := legacyBuilder.Load(); b != nil {
+		return b.GetInstance("", addr)
+	}
+	return nil, false
+}
+
+// SetInstanceCacheForTest sets a copy of the legacy test cache. It does not affect grpcx clients.
+func SetInstanceCacheForTest(m map[string]discovery.ServiceInstancer) {
+	cp := make(map[string]discovery.ServiceInstancer, len(m))
+	for k, v := range m {
+		cp[k] = v
+	}
+	addrInstanceCache.Store(cp)
+}
+
 func parseServiceName(target resolver.Target) string {
-	path := strings.TrimPrefix(target.URL.Path, "/")
-	if path != "" {
+	if path := strings.TrimPrefix(target.URL.Path, "/"); path != "" {
 		return path
 	}
 	return strings.TrimPrefix(target.Endpoint(), "/")
@@ -90,14 +138,30 @@ type discoveryResolver struct {
 	dc       *discovery.DiscoveryClient
 	service  string
 	cc       resolver.ClientConn
+	builder  *Builder
 	refresh  time.Duration
 	stop     chan struct{}
 	stopOnce sync.Once
+	initOnce sync.Once
+	updateMu sync.Mutex
+	ctx      context.Context
+	cancel   context.CancelFunc
+	closed   atomic.Bool
+}
+
+func (r *discoveryResolver) init() {
+	r.initOnce.Do(func() {
+		r.ctx, r.cancel = context.WithCancel(context.Background())
+		if r.stop == nil {
+			r.stop = make(chan struct{})
+		}
+	})
 }
 
 func (r *discoveryResolver) start() {
-	r.update()
+	r.init()
 	go func() {
+		r.update()
 		ticker := time.NewTicker(r.refresh)
 		defer ticker.Stop()
 		for {
@@ -111,64 +175,49 @@ func (r *discoveryResolver) start() {
 	}()
 }
 
-// 🌟 1. 定义包级缓存（原子替换，无锁且无内存泄露风险）
-var addrInstanceCache atomic.Value // 存储类型为 map[string]discovery.ServiceInstancer
-
-// 🌟 2. 提供 O(1) 查询方法供 client.go 的拦截器调用
-func GetInstanceByAddr(addr string) (discovery.ServiceInstancer, bool) {
-	m, _ := addrInstanceCache.Load().(map[string]discovery.ServiceInstancer)
-	if m == nil {
-		return nil, false
-	}
-	inst, ok := m[addr]
-	return inst, ok
-}
-
-// SetInstanceCacheForTest 仅用于单元测试，手动注入实例缓存
-func SetInstanceCacheForTest(m map[string]discovery.ServiceInstancer) {
-	addrInstanceCache.Store(m)
-}
-
 func (r *discoveryResolver) update() {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	r.init()
+	r.updateMu.Lock()
+	defer r.updateMu.Unlock()
+	if r.closed.Load() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.ctx, 10*time.Second)
 	defer cancel()
 	instances, err := r.dc.GetAllInstances(ctx, r.service)
-	if err != nil {
-		if errors.Is(err, discovery.ErrNotFound) {
-			// Service genuinely has no instances; reflect the empty state.
-			_ = r.cc.UpdateState(resolver.State{Addresses: []resolver.Address{}})
-			return
-		}
-		// Transient error (registry blip): keep the last-good address set and
-		// only report the error instead of dropping all backends.
+	if r.closed.Load() {
+		return
+	}
+	if err != nil && !errors.Is(err, discovery.ErrNotFound) {
 		log.Errorf("discovery resolver: get instances for %q: %v", r.service, err)
 		r.cc.ReportError(err)
 		return
 	}
 	addrs := make([]resolver.Address, 0, len(instances))
-	// 🌟 3. 构建一个新的 map，用于原子替换
-	newCache := make(map[string]discovery.ServiceInstancer, len(instances))
+	cache := make(map[string]discovery.ServiceInstancer, len(instances))
 	for _, inst := range instances {
-		addr := net.JoinHostPort(inst.GetAddress(), fmt.Sprintf("%d", inst.GetPort()))
-		attrs := attributes.New(instanceAttrKey, inst)
-		addrs = append(addrs, resolver.Address{
-			Addr:       addr,
-			Attributes: attrs,
-		})
-		// 🌟 4. 将实例写入新的 map 中
-		newCache[addr] = inst
+		addr := net.JoinHostPort(inst.GetAddress(), strconv.Itoa(inst.GetPort()))
+		addrs = append(addrs, resolver.Address{Addr: addr, Attributes: attributes.New(instanceAttrKey, inst)})
+		cache[addr] = inst
 	}
-	// 🌟 5. 原子替换缓存，热路径读端（client.go）完全无锁
-	addrInstanceCache.Store(newCache)
-	_ = r.cc.UpdateState(resolver.State{Addresses: addrs})
+	if r.builder != nil {
+		r.builder.setInstances(r, cache)
+	}
+	if err := r.cc.UpdateState(resolver.State{Addresses: addrs}); err != nil {
+		log.Debugf("discovery resolver: update %q: %v", r.service, err)
+	}
 }
 
-func (r *discoveryResolver) ResolveNow(resolver.ResolveNowOptions) {
-	r.update()
-}
+func (r *discoveryResolver) ResolveNow(resolver.ResolveNowOptions) { r.update() }
 
 func (r *discoveryResolver) Close() {
-	r.stopOnce.Do(func() {
-		close(r.stop)
-	})
+	r.init()
+	r.stopOnce.Do(func() { r.closed.Store(true); r.cancel(); close(r.stop) })
+	// Wait for an in-flight update before removing its state. No UpdateState is
+	// possible after Close returns, and cancellation interrupts discovery I/O.
+	r.updateMu.Lock()
+	defer r.updateMu.Unlock()
+	if r.builder != nil {
+		r.builder.setInstances(r, nil)
+	}
 }

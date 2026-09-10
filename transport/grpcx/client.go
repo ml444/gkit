@@ -17,9 +17,9 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/ml444/gkit/discovery"
+	"github.com/ml444/gkit/log"
 	"github.com/ml444/gkit/middleware/response"
 	"github.com/ml444/gkit/transport/grpcx/resolver"
-	discoveryresolver "github.com/ml444/gkit/transport/grpcx/resolver"
 	"github.com/ml444/gkit/transport/grpcx/xds"
 )
 
@@ -29,7 +29,9 @@ type Client struct {
 	endpoint          string
 	service           string
 	discovery         *discovery.DiscoveryClient
-	timeout           time.Duration
+	timeout           time.Duration // unary call timeout
+	dialTimeout       time.Duration
+	resolver          *resolver.Builder
 	tlsConf           *tls.Config
 	unaryInterceptors []grpc.UnaryClientInterceptor
 	dialOpts          []grpc.DialOption
@@ -38,10 +40,14 @@ type Client struct {
 // NewClient creates a gRPC client connection.
 func NewClient(opts ...ClientOption) (*Client, error) {
 	c := &Client{
-		timeout: 10 * time.Second,
+		timeout:     10 * time.Second,
+		dialTimeout: 10 * time.Second,
 	}
 	for _, o := range opts {
 		o(c)
+	}
+	if c.timeout < 0 || c.dialTimeout < 0 {
+		return nil, fmt.Errorf("grpcx: timeouts must not be negative")
 	}
 	target, service, err := parseClientTarget(c.endpoint, c.service)
 	if err != nil {
@@ -53,6 +59,7 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 		grpc.WithChainUnaryInterceptor(append(
 			[]grpc.UnaryClientInterceptor{
 				response.ClientErrorInterceptor,
+				c.timeoutInterceptor(),
 				c.discoveryFeedbackInterceptor(),
 			},
 			c.unaryInterceptors...,
@@ -67,14 +74,19 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 		if c.discovery == nil {
 			return nil, fmt.Errorf("grpcx: discovery target requires WithDiscovery")
 		}
-		discoveryresolver.Register(c.discovery)
+		c.resolver = resolver.NewBuilder(c.discovery)
+		dialOpts = append(dialOpts, grpc.WithResolvers(c.resolver))
 		const serviceConfig = `{"loadBalancingConfig":[{"round_robin":{}}]}`
 		dialOpts = append(dialOpts, grpc.WithDefaultServiceConfig(serviceConfig))
 	}
 	dialOpts = append(dialOpts, c.dialOpts...)
 
-	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
-	defer cancel()
+	ctx := context.Background()
+	if c.dialTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.dialTimeout)
+		defer cancel()
+	}
 	conn, err := grpc.DialContext(ctx, target, dialOpts...)
 	if err != nil {
 		return nil, err
@@ -95,6 +107,9 @@ func parseClientTarget(endpoint, service string) (target, serviceName string, er
 		return "", "", err
 	}
 	if u.Scheme == "discovery" {
+		if u.Host != "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || strings.Contains(endpoint, "#") {
+			return "", "", fmt.Errorf("grpcx: expected discovery:///service without credentials, query or fragment")
+		}
 		svc := strings.TrimPrefix(u.Path, "/")
 		if service != "" {
 			svc = service
@@ -117,26 +132,42 @@ func (c *Client) Conn() *grpc.ClientConn {
 
 // Close closes the client connection.
 func (c *Client) Close() error {
-	if c.conn == nil {
+	if c == nil || c.conn == nil {
 		return nil
 	}
 	return c.conn.Close()
 }
 
+func (c *Client) timeoutInterceptor() grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		if c.timeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, c.timeout)
+			defer cancel()
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
+}
+
 func (c *Client) discoveryFeedbackInterceptor() grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		err := invoker(ctx, method, req, reply, cc, opts...)
 		if c.discovery == nil || c.service == "" {
+			return invoker(ctx, method, req, reply, cc, opts...)
+		}
+		var p peer.Peer
+		callOpts := append([]grpc.CallOption{grpc.Peer(&p)}, opts...)
+		err := invoker(ctx, method, req, reply, cc, callOpts...)
+		if p.Addr == nil || c.resolver == nil {
+			log.Debugf("grpcx: skipping instance feedback for %s: peer or resolver unavailable", method)
 			return err
 		}
-		inst, ierr := instanceFromPeer(ctx)
-		if ierr != nil {
-			return ierr
+		inst, ok := c.resolver.GetInstance(c.service, p.Addr.String())
+		if !ok {
+			log.Debugf("grpcx: skipping instance feedback for %s: unknown peer %s", method, p.Addr)
+			return err
 		}
-		if inst != nil {
-			success := err == nil || (status.Code(err) != codes.Unavailable && status.Code(err) != codes.DeadlineExceeded)
-			c.discovery.UpdateLoadBalancerStatus(ctx, inst, success)
-		}
+		success := err == nil || (status.Code(err) != codes.Unavailable && status.Code(err) != codes.DeadlineExceeded)
+		c.discovery.UpdateLoadBalancerStatus(ctx, inst, success)
 		return err
 	}
 }
@@ -146,20 +177,6 @@ func instanceFromPeer(ctx context.Context) (discovery.ServiceInstancer, error) {
 	if !ok || p.Addr == nil {
 		return nil, errors.New("grpc peer is nil")
 	}
-	// peerHost, peerPort, err := net.SplitHostPort(p.Addr.String())
-	// if err != nil {
-	// 	return nil
-	// }
-	// instances, err := dc.GetAllInstances(ctx, service)
-	// if err != nil {
-	// 	return nil
-	// }
-	// for _, inst := range instances {
-	// 	if inst.GetAddress() == peerHost && fmt.Sprintf("%d", inst.GetPort()) == peerPort {
-	// 		return inst
-	// 	}
-	// }
-	// 🌟 O(1) 直接从 resolver 维护的无锁缓存中提取，避开网络请求、锁和 O(n) 遍历
 	inst, ok := resolver.GetInstanceByAddr(p.Addr.String())
 	if !ok {
 		return nil, fmt.Errorf("instance not found for peer addr: %s", p.Addr.String())

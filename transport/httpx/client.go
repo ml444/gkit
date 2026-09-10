@@ -6,10 +6,12 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,12 +56,22 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 	for _, o := range opts {
 		o(&client)
 	}
+	if client.timeout < 0 {
+		return nil, fmt.Errorf("httpx: timeout must not be negative")
+	}
+	if client.encoder == nil || client.decoder == nil {
+		return nil, fmt.Errorf("httpx: encoder and decoder are required")
+	}
 	// Resolve the RoundTripper without mutating the process-wide
 	// http.DefaultTransport. When a TLS config is supplied we clone a transport
 	// so other clients sharing DefaultTransport are not affected.
 	if client.transport == nil {
 		if client.tlsConf != nil {
-			tr := http.DefaultTransport.(*http.Transport).Clone()
+			base, ok := http.DefaultTransport.(*http.Transport)
+			if !ok {
+				return nil, fmt.Errorf("httpx: TLS config requires an http.Transport; provide WithTransport")
+			}
+			tr := base.Clone()
 			tr.TLSClientConfig = client.tlsConf
 			client.transport = tr
 		} else {
@@ -85,11 +97,27 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 	if client.service == "" && client.target != nil && client.target.DiscoveryService != "" {
 		client.service = client.target.DiscoveryService
 	}
+	if client.discovery != nil {
+		if client.service == "" {
+			return nil, fmt.Errorf("httpx: discovery service name is required")
+		}
+		if client.target.Authority == "" {
+			client.target.Authority = "discovery"
+		}
+	} else if client.target.DiscoveryService != "" {
+		return nil, fmt.Errorf("httpx: discovery target requires WithDiscovery")
+	}
 	return &client, nil
 }
 
 // Invoke makes a rpc call procedure for remote service.
 func (client *Client) Invoke(ctx context.Context, method, path string, args interface{}, reply interface{}, opts ...CallOption) error {
+	if client.target == nil || client.target.Authority == "" {
+		return fmt.Errorf("httpx: Invoke requires an endpoint or discovery service")
+	}
+	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
+		return fmt.Errorf("httpx: invocation path must start with a single slash")
+	}
 	var (
 		contentType string
 		body        io.Reader
@@ -112,7 +140,7 @@ func (client *Client) Invoke(ctx context.Context, method, path string, args inte
 		return err
 	}
 	if c.reqHeader != nil {
-		req.Header = c.reqHeader
+		req.Header = c.reqHeader.Clone()
 	}
 	if client.userAgent != "" {
 		req.Header.Set("User-Agent", client.userAgent)
@@ -122,6 +150,7 @@ func (client *Client) Invoke(ctx context.Context, method, path string, args inte
 		path:         c.operation,
 		inMD:         transport.New(req.Header),
 		pathTemplate: c.pathTemplate,
+		req:          req,
 	})
 	return client.invoke(ctx, req, args, reply, c, opts...)
 }
@@ -132,7 +161,16 @@ func (client *Client) invoke(ctx context.Context, req *http.Request, args interf
 	holder := &instanceHolder{}
 	ctx = context.WithValue(ctx, instanceHolderKey{}, holder)
 	h := func(ctx context.Context, in interface{}) (interface{}, error) {
-		res,  err := client.Do(req.WithContext(ctx))
+		outReq := req.Clone(ctx)
+		if tr, ok := transport.FromContext(ctx); ok {
+			outReq.Header = make(http.Header)
+			for key, values := range tr.In() {
+				for _, value := range values {
+					outReq.Header.Add(key, value)
+				}
+			}
+		}
+		res, err := client.Do(outReq)
 		if err != nil {
 			client.updateDiscoveryStatus(ctx, holder, false)
 			return nil, err
@@ -158,37 +196,38 @@ func (client *Client) invoke(ctx context.Context, req *http.Request, args interf
 	return err
 }
 
+// Do sends a copy of req. A configured endpoint overrides its destination;
+// without an endpoint, the request's own URL (including HTTPS) is preserved.
 func (client *Client) Do(req *http.Request) (*http.Response, error) {
-	if client.insecure {
-		req.URL.Scheme = "http"
-	} else {
-		req.URL.Scheme = "https"
+	if req == nil || req.URL == nil {
+		return nil, fmt.Errorf("httpx: request and URL are required")
+	}
+	req = req.Clone(req.Context())
+	if target := client.target; target != nil && target.Authority != "" {
+		req.URL.Scheme = target.Scheme
+		req.URL.Host = target.Authority
+		req.Host = target.Authority
+		if target.Endpoint != "" {
+			escaped := JoinPath("/"+target.Endpoint, req.URL.EscapedPath())
+			decoded, err := url.PathUnescape(escaped)
+			if err != nil {
+				return nil, err
+			}
+			req.URL.Path, req.URL.RawPath = decoded, escaped
+		}
 	}
 	if client.discovery != nil {
-		svc := client.service
-		if svc == "" && client.target != nil {
-			svc = client.target.DiscoveryService
-		}
-		if svc == "" {
-			return nil, fmt.Errorf("httpx: discovery enabled but service name is empty")
-		}
-		inst, err := client.discovery.GetServiceInstance(req.Context(), svc)
+		inst, err := client.discovery.GetServiceInstance(req.Context(), client.service)
 		if err != nil {
 			return nil, err
 		}
-		if v := req.Context().Value(instanceHolderKey{}); v != nil {
-			if hd, ok := v.(*instanceHolder); ok {
-				hd.inst = inst
-			}
+		if hd, ok := req.Context().Value(instanceHolderKey{}).(*instanceHolder); ok {
+			hd.inst = inst
 		}
-		req.URL.Host = fmt.Sprintf("%s:%d", inst.GetAddress(), inst.GetPort())
+		req.URL.Host = net.JoinHostPort(inst.GetAddress(), strconv.Itoa(inst.GetPort()))
 		req.Host = req.URL.Host
-	} else if client.endpoint != "" {
-		req.URL.Host = client.endpoint
-		req.Host = client.endpoint
 	}
-	res, err := client.cc.Do(req)
-	return res, err
+	return client.cc.Do(req)
 }
 
 // Close tears down the Transport and all underlying connections.
@@ -227,72 +266,137 @@ type Target struct {
 }
 
 func parseTarget(endpoint string, insecure bool) (*Target, error) {
+	scheme := "http"
+	if !insecure {
+		scheme = "https"
+	}
+	if endpoint == "" {
+		return &Target{Scheme: scheme}, nil
+	}
 	if !strings.Contains(endpoint, "://") {
-		if insecure {
-			endpoint = "http://" + endpoint
-		} else {
-			endpoint = "https://" + endpoint
-		}
+		endpoint = scheme + "://" + endpoint
 	}
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return nil, err
 	}
+	if u.User != nil || u.RawQuery != "" || u.ForceQuery || strings.Contains(endpoint, "#") {
+		return nil, fmt.Errorf("httpx: endpoint must not contain credentials, query or fragment")
+	}
 	if u.Scheme == "discovery" {
-		scheme := "https"
-		if insecure {
-			scheme = "http"
+		service := strings.TrimPrefix(u.Path, "/")
+		if service == "" || u.Host != "" {
+			return nil, fmt.Errorf("httpx: expected discovery:///service")
 		}
-		service := ""
-		if len(u.Path) > 1 {
-			service = u.Path[1:]
+		return &Target{Scheme: scheme, Authority: "discovery", DiscoveryService: service}, nil
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, fmt.Errorf("httpx: unsupported endpoint scheme %q", u.Scheme)
+	}
+	if u.Hostname() == "" {
+		return nil, fmt.Errorf("httpx: endpoint host is required")
+	}
+	if port := u.Port(); port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return nil, fmt.Errorf("httpx: invalid endpoint port %q", port)
 		}
-		return &Target{
-			Scheme:           scheme,
-			Authority:        "discovery",
-			DiscoveryService: service,
-		}, nil
 	}
-	target := &Target{Scheme: u.Scheme, Authority: u.Host}
-	if len(u.Path) > 1 {
-		target.Endpoint = u.Path[1:]
-	}
-	return target, nil
+	return &Target{Scheme: u.Scheme, Authority: u.Host, Endpoint: strings.TrimPrefix(u.EscapedPath(), "/")}, nil
 }
 
-var reg = regexp.MustCompile(`{[\\.\w]+}`)
+var reg = regexp.MustCompile(`{[.\w]+}`)
 
-// EncodeURL encode proto message to url path.
+// EncodeURL encodes path parameters and query values.
+// Deprecated: use EncodeURLWithError to detect missing parameters and encoding errors.
 func EncodeURL(pathTemplate string, msg interface{}, needQuery bool) string {
-	if msg == nil || (reflect.ValueOf(msg).Kind() == reflect.Ptr && reflect.ValueOf(msg).IsNil()) {
-		return pathTemplate
+	path, _ := encodeURL(pathTemplate, msg, needQuery, false)
+	return path
+}
+
+// EncodeURLWithError escapes each ordinary placeholder as one path segment and
+// reports missing parameters or encoding errors. Complex path templates are not supported.
+func EncodeURLWithError(pathTemplate string, msg interface{}, needQuery bool) (string, error) {
+	return encodeURL(pathTemplate, msg, needQuery, true)
+}
+
+func encodeURL(pathTemplate string, msg interface{}, needQuery, strict bool) (string, error) {
+	isNil := msg == nil || (reflect.ValueOf(msg).Kind() == reflect.Ptr && reflect.ValueOf(msg).IsNil())
+	if isNil && !strict {
+		return pathTemplate, nil
 	}
-	queryParams, _ := form.EncodeValues(msg)
+	queryParams, err := form.EncodeValues(msg)
+	if err != nil && strict {
+		return "", err
+	}
 	pathParams := make(map[string]struct{})
+	var missing string
 	path := reg.ReplaceAllStringFunc(pathTemplate, func(in string) string {
-		// it's unreachable because the reg means that must have more than one char in {}
-		// if len(in) < 4 { //nolint:gomnd // **  explain the 4 number here :-) **
-		//	return in
-		// }
 		key := in[1 : len(in)-1]
+		// Protobuf templates can use proto field names as well as JSON names.
+		if m, ok := msg.(proto.Message); ok && !isNil {
+			md := m.ProtoReflect().Descriptor()
+			parts := strings.Split(key, ".")
+			for i, part := range parts {
+				fd := md.Fields().ByJSONName(part)
+				if fd == nil {
+					fd = md.Fields().ByTextName(part)
+				}
+				if fd == nil {
+					break
+				}
+				parts[i] = fd.JSONName()
+				if i < len(parts)-1 {
+					if fd.Message() == nil {
+						break
+					}
+					md = fd.Message()
+				}
+			}
+			key = strings.Join(parts, ".")
+		}
 		pathParams[key] = struct{}{}
-		return queryParams.Get(key)
+		values := queryParams[key]
+		if len(values) != 1 || values[0] == "" {
+			missing = key
+		}
+		return url.PathEscape(queryParams.Get(key))
 	})
-	if !needQuery {
-		if v, ok := msg.(proto.Message); ok {
-			if query := form.EncodeFieldMask(v.ProtoReflect()); query != "" {
-				return path + "?" + query
+	if strict && missing != "" {
+		return "", fmt.Errorf("httpx: missing or non-scalar path parameter %q", missing)
+	}
+	if strict && strings.ContainsAny(path, "{}") {
+		return "", fmt.Errorf("httpx: unsupported path template %q", pathTemplate)
+	}
+	u, err := url.Parse(path)
+	if err != nil {
+		if strict {
+			return "", err
+		}
+		return path, nil
+	}
+	query, queryErr := url.ParseQuery(u.RawQuery)
+	if queryErr != nil && strict {
+		return "", queryErr
+	}
+	if needQuery {
+		for key, values := range queryParams {
+			if _, used := pathParams[key]; used {
+				continue
+			}
+			for _, value := range values {
+				query.Add(key, value)
 			}
 		}
-		return path
-	}
-	if len(queryParams) > 0 {
-		for key := range pathParams {
-			delete(queryParams, key)
+	} else if m, ok := msg.(proto.Message); ok && !isNil {
+		mask, err := url.ParseQuery(form.EncodeFieldMask(m.ProtoReflect()))
+		if err != nil && strict {
+			return "", err
 		}
-		if query := queryParams.Encode(); query != "" {
-			path += "?" + query
+		for key, values := range mask {
+			query[key] = values
 		}
 	}
-	return path
+	u.RawQuery = query.Encode()
+	return u.String(), nil
 }

@@ -70,6 +70,10 @@ Import `pluck/pluck.proto` and add method options for header/body mapping:
 
 See [tests/storage/storage.proto](tests/storage/storage.proto) for working examples and [tests/run.go](tests/run.go) for an integration demo.
 
+## URL encoding compatibility
+
+Generated clients now call `httpx.EncodeURLWithError` and return path/query encoding errors before sending the request. Use a matching gkit version when regenerating clients. Existing generated code using `EncodeURL` remains source compatible. Ordinary path parameters are escaped as one segment; complex path-template syntax is unchanged.
+
 ## Generated handler naming
 
 When a method has `additional_bindings`, each binding gets a unique handler suffix (`UploadV00`, `UploadV01`, …). The HTTP client generates one method per binding; duplicate RPC names use suffixes (`UploadV0_1`) when multiple bindings exist.

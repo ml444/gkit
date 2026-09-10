@@ -976,6 +976,8 @@ CSRF: defaults to skipping Bearer APIs (`SkipBearer: true`).
 
 ### transport
 
+See the [transport usage and migration guide (Chinese)](transport/README_CN.md) for endpoint, routing, middleware, timeout, and discovery behavior.
+
 - Convert the core logic of the http request into the service method of grpc.
 - It encapsulates the middleware of http and grpc and unifies the middleware interface.
 

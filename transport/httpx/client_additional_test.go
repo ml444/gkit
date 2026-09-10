@@ -67,14 +67,8 @@ func TestClientInvokeEncoderAndDoErrors(t *testing.T) {
 		t.Fatal("expected encoder error")
 	}
 
-	c, err = NewClient(WithEndpoint("discovery:///"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	c.discovery = discovery.NewDiscoveryClient(discovery.NewDefaultRegistry())
-	req := httptest.NewRequest(http.MethodGet, "http://discovery/x", nil)
-	if _, err := c.Do(req); err == nil {
-		t.Fatal("expected empty discovery service error")
+	if _, err = NewClient(WithEndpoint("discovery:///")); err == nil {
+		t.Fatal("expected empty discovery service error at construction")
 	}
 
 	if _, err := NewClient(WithEndpoint("http://[::1")); err == nil {
