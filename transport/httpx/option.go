@@ -158,7 +158,8 @@ func RouterMethodNotAllowedHandler(handler http.Handler) ServerOption {
 	}
 }
 
-// RouterCoder Customize request parameter and body decoders as well as normal response and error response encoders
+// RouterCoder customizes request decoders and response encoders. Use
+// NewRouterCoder to override individual callbacks or configure instance codecs.
 func RouterCoder(coder IRouterCoder) ServerOption {
 	return func(s *Server) {
 		s.routerCfg.Coder = coder

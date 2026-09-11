@@ -1,6 +1,64 @@
 # transport 使用与迁移说明
 
-`httpx` 和 `grpcx` 提供 HTTP/gRPC 服务端、客户端、请求上下文、中间件及服务发现。HTTP 还提供 JSON、XML、Protobuf、表单和二进制编解码。以下说明对应本次 T01—T12 修复后的行为。
+`httpx` 和 `grpcx` 提供 HTTP/gRPC 服务端、客户端、请求上下文、中间件及服务发现。HTTP 还提供 JSON、XML、Protobuf、表单和二进制编解码。以下说明覆盖 T01—T12 修复，以及后续 U01 和 U05 配置基础增强。
+
+## 单项编解码与实例 JSON 配置
+
+通过 `NewRouterCoder` 只替换需要定制的部分，再用现有 `RouterCoder` 选项传给服务器：
+
+```go
+rc, err := httpx.NewRouterCoder(
+    httpx.WithBindBody(customBodyDecoder),
+    httpx.WithErrorEncoder(customErrorEncoder),
+)
+if err != nil { return err }
+srv := httpx.NewServer(httpx.RouterCoder(rc))
+```
+
+可单独设置 `WithBindVars`、`WithBindQuery`、`WithBindForm`、`WithBindBody`、`WithResponseEncoder`、`WithErrorEncoder`。不传的项保留默认实现；选项按从左到右执行，同一项后者覆盖前者。nil 选项、nil 函数及 typed nil 的基础实现或 JSON coder 都在 `NewRouterCoder` 返回错误。
+
+`WithBaseRouterCoder(base)` 一次替换六项回调，通常放在单项覆盖前；放在后面会覆盖之前设置的六项回调。基础实现必须提供完整的六项非 nil 函数。已有第三方 `IRouterCoder` 无需增加方法。
+
+每个服务器可以使用自己的 Protobuf JSON 配置：
+
+```go
+// import jsoncodec "github.com/ml444/gkit/transport/httpx/coder/json"
+opts := jsoncodec.DefaultOptions()
+opts.Marshal.UseProtoNames = true
+opts.Marshal.EmitUnpopulated = false
+opts.Unmarshal.DiscardUnknown = false
+
+rc, err := httpx.NewRouterCoder(
+    httpx.WithJSONCoder(jsoncodec.NewCoder(opts)),
+)
+if err != nil { return err }
+srv := httpx.NewServer(httpx.RouterCoder(rc))
+```
+
+`WithJSONCoder` 作用于本实例默认的请求体绑定、正常响应、错误响应和 JSON 回退。传入的 codec 必须非 nil 且 `Name()` 为 `json`。它不改变直接调用 `Context.JSON` 的行为，也不影响 HTTP 客户端；统一 `Context.JSON` 属于后续 U02。
+
+自定义回调和 `WithBaseRouterCoder` 携带的回调按自身配置执行，不受外层 `WithJSONCoder` 强行改写。若需要给基础实现配置 JSON，应在构造基础实现时传入该选项。
+
+配置边界如下：
+
+| 入口 | 配置与兼容行为 |
+| --- | --- |
+| `NewServer()` 原默认路径 | 保留动态全局 codec 查询及原 JSON 配置行为 |
+| `NewRouterCoder(...)` | 构造时复制注册表；内置 JSON coder 同时冻结当前全局 JSON 选项 |
+| `jsoncodec.NewCoder(opts)` | 按值保存选项，不在请求阶段读取全局 JSON 变量；不隐式补默认值 |
+| `jsoncodec.DefaultOptions()` | 复制当前兼容默认值，适合在此基础上覆盖单项配置 |
+| `coder.LookupCoder(name)` | 忽略名称大小写的严格查询，未注册返回 nil,false，不回退 JSON |
+| `coder.Snapshot()` | 返回独立注册表副本；修改 map 不影响全局注册表，codec 对象仍共享 |
+
+`jsoncodec.Options{}` 使用 protojson 零值行为，与 `DefaultOptions()` 不同。普通 Go 对象仍使用标准库 JSON；自定义 Marshaler/Unmarshaler 保持优先。`DiscardUnknown` 只针对 Protobuf，普通 struct 的严格未知字段策略尚未加入。
+
+全局注册表使用 `atomic.Pointer` 发布不可变 map 快照，Get/Lookup 不获取互斥锁；Snapshot 复制同一个已发布版本，返回独立 map。Register 使用写锁串行复制、修改并发布新版本，避免并发注册丢失更新。每次注册需要 O(N) 复制，适合 codec 数量少、读多写少的场景。旧 `GetCoder` 仍保留未匹配回退 JSON 的规则。
+
+快照不保护自定义 codec 内部状态；自定义回调、codec 对象以及 protojson 选项引用的 Resolver 必须支持并发使用。
+
+已构造的新 router coder 不受后续注册替换影响。用户自行注册的自定义 JSON coder 按原对象保留，不深拷贝或替换。旧的 `jsoncodec.MarshalOptions`、`UnmarshalOptions` 只应在启动初始化时设置，不支持运行中并发修改。
+
+本阶段保留现有 Accept 选择方式和 10 MiB 默认响应解码上限；新的 Accept 协商、406/415 严格模式及 decoder 工厂仍待后续实施。
 
 ## HTTP 客户端地址与 HTTPS
 

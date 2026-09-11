@@ -12,11 +12,13 @@ import (
 const Name = "json"
 
 var (
-	// MarshalOptions is a configurable JSON format marshaller.
+	// MarshalOptions configures the legacy coder. Set it only during initialization,
+	// before concurrent use. Prefer NewCoder for per-instance configuration.
 	MarshalOptions = protojson.MarshalOptions{
 		EmitUnpopulated: true,
 	}
-	// UnmarshalOptions is a configurable JSON format parser.
+	// UnmarshalOptions configures the legacy coder. Set it only during initialization,
+	// before concurrent use. Prefer NewCoder for per-instance configuration.
 	UnmarshalOptions = protojson.UnmarshalOptions{
 		DiscardUnknown: true,
 	}
@@ -30,24 +32,38 @@ func GetCoder() Coder {
 type Coder struct{}
 
 func (Coder) Marshal(v interface{}) ([]byte, error) {
+	return marshal(v, MarshalOptions)
+}
+
+func marshal(v interface{}, opts protojson.MarshalOptions) ([]byte, error) {
 	switch m := v.(type) {
 	case json.Marshaler:
 		return m.MarshalJSON()
 	case proto.Message:
-		return MarshalOptions.Marshal(m)
+		return opts.Marshal(m)
 	default:
 		return json.Marshal(m)
 	}
 }
 
 func (Coder) Unmarshal(data []byte, v interface{}) error {
+	return unmarshal(data, v, UnmarshalOptions)
+}
+
+func unmarshal(data []byte, v interface{}, opts protojson.UnmarshalOptions) error {
+	rv := reflect.ValueOf(v)
+	if !rv.IsValid() || (rv.Kind() == reflect.Ptr && rv.IsNil()) {
+		return json.Unmarshal(data, v)
+	}
 	switch m := v.(type) {
 	case json.Unmarshaler:
 		return m.UnmarshalJSON(data)
 	case proto.Message:
-		return UnmarshalOptions.Unmarshal(data, m)
+		return opts.Unmarshal(data, m)
 	default:
-		rv := reflect.ValueOf(v)
+		if rv.Kind() != reflect.Ptr {
+			return json.Unmarshal(data, v)
+		}
 		for rv := rv; rv.Kind() == reflect.Ptr; {
 			if rv.IsNil() {
 				rv.Set(reflect.New(rv.Type().Elem()))
@@ -55,7 +71,7 @@ func (Coder) Unmarshal(data []byte, v interface{}) error {
 			rv = rv.Elem()
 		}
 		if m, ok := reflect.Indirect(rv).Interface().(proto.Message); ok {
-			return UnmarshalOptions.Unmarshal(data, m)
+			return opts.Unmarshal(data, m)
 		}
 		return json.Unmarshal(data, m)
 	}
