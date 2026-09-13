@@ -9,7 +9,12 @@ type MD map[string][]string
 
 // New creates an MD from a given key-values map.
 func New(mds ...map[string][]string) MD {
-	md := MD{}
+	// This is an upper bound: normalization can merge keys across inputs.
+	var size int
+	for _, m := range mds {
+		size += len(m)
+	}
+	md := make(MD, size)
 	for _, m := range mds {
 		for k, vList := range m {
 			md.Append(k, vList...)
@@ -120,5 +125,3 @@ func Merge(mds ...MD) MD {
 func (m MD) normalizeKey(key string) string {
 	return strings.ToLower(key)
 }
-
-

@@ -23,6 +23,10 @@ func (e *responseWriteError) Unwrap() error { return e.err }
 
 const maxRespBytes = 10 << 20 // Default response decode limit: 10 MiB.
 
+// Limit speculative allocation for untrusted Content-Length values. This does
+// not limit body size; the server's MaxBytesReader still enforces that limit.
+const maxRequestBodyPrealloc = 1 << 20
+
 // RequestDecoder is decode request func.
 type RequestDecoder func(*http.Request, interface{}) error
 
@@ -82,7 +86,7 @@ func newRouterCoderWithProfile(profile *codecProfile) *routerCoder {
 	}
 	c.bindBody = func(r *http.Request, v interface{}) error {
 		codec, _ := getCoderForRequestWithLookup(r, "Content-Type", c.profile.get)
-		data, err := io.ReadAll(r.Body)
+		data, err := readRequestBody(r.Body, r.ContentLength)
 
 		// reset body.
 		r.Body = io.NopCloser(bytes.NewBuffer(data))
@@ -142,6 +146,20 @@ func newRouterCoderWithProfile(profile *codecProfile) *routerCoder {
 		_, _ = w.Write(body)
 	}
 	return c
+}
+
+func readRequestBody(body io.Reader, contentLength int64) ([]byte, error) {
+	// ReadAll's initial buffer already accommodates small bodies. Avoid adding
+	// speculative capacity for those or for bodies with an unknown length.
+	if contentLength < bytes.MinRead {
+		return io.ReadAll(body)
+	}
+	hint := min(contentLength, int64(maxRequestBodyPrealloc))
+	// ReadFrom reserves MinRead before each read, including the final EOF read.
+	// Leave that space so an exact Content-Length does not trigger growth.
+	buf := bytes.NewBuffer(make([]byte, 0, int(hint)+bytes.MinRead))
+	_, err := buf.ReadFrom(body)
+	return buf.Bytes(), err
 }
 
 func (c *routerCoder) BindVars() RequestDecoder {

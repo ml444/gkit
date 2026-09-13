@@ -149,3 +149,32 @@ func TestPairsPanicsOnOddInput(t *testing.T) {
 	}()
 	_ = Pairs("odd")
 }
+
+func TestMetadataNewMergeAndIsolation(t *testing.T) {
+	first := map[string][]string{"X-Key": {"first", "second"}, "Nil": nil, "Empty": {}}
+	second := map[string][]string{"x-key": {"third"}, "Other": {"other"}}
+	md := New(nil, first, second)
+	if len(md) != 2 || !reflect.DeepEqual(md["x-key"], []string{"first", "second", "third"}) {
+		t.Fatalf("merged metadata = %#v", md)
+	}
+	md["x-key"][0] = "changed"
+	md.Append("X-Key", "appended")
+	md.Delete("Other")
+	if !reflect.DeepEqual(first["X-Key"], []string{"first", "second"}) || second["Other"][0] != "other" {
+		t.Fatal("metadata mutation changed an input")
+	}
+	second["x-key"][0] = "input changed"
+	if md["x-key"][2] != "third" {
+		t.Fatal("input mutation changed metadata")
+	}
+	collision := New(map[string][]string{"X-Key": {"a", "b"}, "x-key": {"c"}})
+	if len(collision) != 1 || !hasValues(collision["x-key"], "a", "b", "c") {
+		t.Fatalf("case collision lost values: %#v", collision)
+	}
+	for _, empty := range []MD{New(), New(nil), New(map[string][]string{})} {
+		if empty == nil || len(empty) != 0 {
+			t.Fatalf("empty metadata must be a writable map: %#v", empty)
+		}
+		empty.Append("X-Key", "value")
+	}
+}
