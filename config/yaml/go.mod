@@ -1,5 +1,5 @@
 module github.com/ml444/gkit/config/yaml
 
-go 1.19
+go 1.25
 
 require gopkg.in/yaml.v3 v3.0.1

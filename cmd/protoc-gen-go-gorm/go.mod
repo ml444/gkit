@@ -1,5 +1,5 @@
 module github.com/ml444/gkit/cmd/protoc-gen-go-gorm
 
-go 1.23.4
+go 1.25
 
 require google.golang.org/protobuf v1.32.0

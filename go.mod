@@ -1,6 +1,6 @@
 module github.com/ml444/gkit
 
-go 1.23.4
+go 1.25
 
 require (
 	github.com/go-playground/form v3.1.4+incompatible

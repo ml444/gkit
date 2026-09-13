@@ -1,6 +1,6 @@
 module github.com/ml444/gkit/cmd/protoc-gen-go-http
 
-go 1.19
+go 1.25
 
 require (
 	google.golang.org/genproto v0.0.0-20220519153652-3a47de7e79bd

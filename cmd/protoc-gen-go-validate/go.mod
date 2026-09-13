@@ -1,6 +1,6 @@
 module github.com/ml444/gkit/cmd/protoc-gen-go-validate
 
-go 1.19
+go 1.25
 
 require (
 	github.com/ml444/gkit/cmd/protoc-gen-go-errcode v0.0.0-20240515121620-468dd4a2fa13

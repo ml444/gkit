@@ -1,8 +1,8 @@
 module github.com/ml444/gkit/log/zerolog
 
-go 1.23.0
+go 1.25
 
-toolchain go1.23.4
+toolchain go1.25.0
 
 replace github.com/ml444/gkit => ../..
 

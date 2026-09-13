@@ -1,6 +1,6 @@
 module github.com/ml444/gkit/pkg/tracing
 
-go 1.19
+go 1.25
 
 require (
 	github.com/petermattis/goid v0.0.0-20230904192822-1876fd5063bc

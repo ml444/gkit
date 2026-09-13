@@ -1,6 +1,6 @@
 module github.com/ml444/gkit/discovery/k8s
 
-go 1.24.3
+go 1.25
 
 require (
 	github.com/ml444/gkit v0.0.0
