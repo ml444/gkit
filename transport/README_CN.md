@@ -1,6 +1,6 @@
 # transport 使用与迁移说明
 
-`httpx` 和 `grpcx` 提供 HTTP/gRPC 服务端、客户端、请求上下文、中间件及服务发现。HTTP 还提供 JSON、XML、Protobuf、表单和二进制编解码。以下说明覆盖 T01—T12 修复，以及后续 U01 和 U05 配置基础增强。
+`httpx` 和 `grpcx` 提供 HTTP/gRPC 服务端、客户端、请求上下文、中间件及服务发现。HTTP 还提供 JSON、XML、Protobuf、表单和二进制编解码。以下说明覆盖 T01—T12 修复、U01—U04，以及 U05 的配置基础和响应解码大小配置。
 
 ## 单项编解码与实例 JSON 配置
 
@@ -35,7 +35,7 @@ if err != nil { return err }
 srv := httpx.NewServer(httpx.RouterCoder(rc))
 ```
 
-`WithJSONCoder` 作用于本实例默认的请求体绑定、正常响应、错误响应和 JSON 回退。传入的 codec 必须非 nil 且 `Name()` 为 `json`。它不改变直接调用 `Context.JSON` 的行为，也不影响 HTTP 客户端；统一 `Context.JSON` 属于后续 U02。
+`WithJSONCoder` 作用于本实例默认的请求体绑定、正常响应、错误响应和 JSON 回退。传入的 codec 必须非 nil 且 `Name()` 为 `json`。它不会自动切换 `Context.JSON` 的模式，也不影响 HTTP 客户端；这两项分别通过下文的 `WithJSONMode` 和 `WithDecodeJSONCoder` 设置。
 
 自定义回调和 `WithBaseRouterCoder` 携带的回调按自身配置执行，不受外层 `WithJSONCoder` 强行改写。若需要给基础实现配置 JSON，应在构造基础实现时传入该选项。
 
@@ -58,7 +58,111 @@ srv := httpx.NewServer(httpx.RouterCoder(rc))
 
 已构造的新 router coder 不受后续注册替换影响。用户自行注册的自定义 JSON coder 按原对象保留，不深拷贝或替换。旧的 `jsoncodec.MarshalOptions`、`UnmarshalOptions` 只应在启动初始化时设置，不支持运行中并发修改。
 
-本阶段保留现有 Accept 选择方式和 10 MiB 默认响应解码上限；新的 Accept 协商、406/415 严格模式及 decoder 工厂仍待后续实施。
+当前保留现有 Accept 选择方式和 10 MiB 默认响应解码上限。可通过下文的 decoder 工厂覆盖解码上限；Accept 新协商和 406/415 严格模式仍待后续实施。
+
+## Context.JSON 的编码模式
+
+默认 `JSONLegacy` 保留标准库 Encoder 的输出，包括末尾换行。需要与同实例的默认 JSON 响应使用相同 Protobuf 编码规则时，显式启用：
+
+```go
+rc, err := httpx.NewRouterCoder(
+    httpx.WithJSONMode(httpx.JSONCodec),
+    httpx.WithJSONCoder(jsoncodec.NewCoder(jsoncodec.DefaultOptions())),
+)
+if err != nil { return err }
+srv := httpx.NewServer(httpx.RouterCoder(rc))
+```
+
+`Context.JSON` 明确输出 JSON，不根据 Accept 改为 XML，也不调用自定义业务 `ResponseEncoder`。新模式先编码再提交状态，编码失败时 handler 仍可处理错误；写入失败后返回带原因的错误，`ReturnError` 不会再输出第二个响应。
+
+新模式下 `JSON(200, nil)` 输出 `null`，HEAD、204、205、304 不写正文。切换前应检查 Protobuf 枚举、int64/uint64、字段名、未设置字段和末尾换行的变化。旧 `IRouterCoder` 不用增加方法；可选 `JSONEncoderProvider` 用于自定义 JSON 方法。`Context.Reset` 会重新读取新请求绑定的 coder 并重置状态。
+
+## 响应头钩子和响应解码配置
+
+```go
+decode, err := httpx.NewResponseDecoder(
+    httpx.WithDecodeMaxBytes(32 << 20), // 成功/错误响应的解码读取上限
+    httpx.WithDecodeJSONCoder(jsoncodec.NewCoder(jsoncodec.DefaultOptions())),
+)
+if err != nil { return err }
+client, err := httpx.NewClient(
+    httpx.WithEndpoint("https://api.example.com"),
+    httpx.WithResponseDecoder(decode),
+    httpx.WithResponseHeadersHook(func(ctx context.Context, meta httpx.ResponseMeta) error {
+        // 解码前可读取 meta.StatusCode 和 meta.Header，包括 4xx/5xx。
+        return nil
+    }),
+)
+if err != nil { return err }
+defer client.Close()
+
+err = client.Invoke(ctx, http.MethodGet, "/users", nil, &reply,
+    httpx.OnResponseHeaders(func(ctx context.Context, meta httpx.ResponseMeta) error {
+        // 此次调用的钩子在客户端级钩子之后运行。
+        return nil
+    }),
+)
+```
+
+新钩子按配置顺序追加，每个获得独立 Header 副本，没有 Body 读取权限。网络失败且没有可用响应时不执行；只观察重定向后的最终响应，不覆盖 1xx 或中间重定向响应。返回错误会终止后续钩子和解码，关闭响应体，通过 `ResponseHookError` 保留 HTTP 状态，支持 errors.Is/As；此时尚未解码业务错误正文。
+
+原 `OnResponse` 仍在解码成功后运行，Download 则在复制成功后运行；最后配置的回调生效，nil 可禁用。此时 Body 可能已到 EOF，库负责关闭。钩子只用于 `Invoke`、`InvokeReader`、`Download`，原始 `Do` 保持调用方管理响应体的行为。
+
+`WithDecodeMaxBytes` 默认 10 MiB，0 明确表示无限制，负数在构造时返回错误。对不需解码的成功响应（reply 为 nil、HEAD、204/205）仍跳过正文，不额外读完整 body 检查大小。`WithDecodeJSONCoder` 固定客户端 JSON 配置；其他 codec 也在工厂创建时形成快照。自定义 decoder 自行负责资源限制。
+
+超限返回 `*ResponseTooLargeError`，含 Limit 和原 HTTP StatusCode；其 Unwrap 保留原 errorx 的 502/50201 分类。
+
+服务发现反馈也已区分远端与本地失败：正常完成和已解码的 4xx 反馈成功，5xx/网络读取失败反馈失败；调用方取消或本地 hook/decoder/writer 错误不更新节点状态（已收到 5xx 的情况除外）。每次实际请求最多反馈一次，业务错误仍原样返回。
+
+## 流式上传下载
+
+大文件建议使用独立客户端关闭默认 2 秒总超时，再由每次调用的 context 控制期限：
+
+```go
+client, err := httpx.NewClient(
+    httpx.WithEndpoint("https://files.example.com"),
+    httpx.WithTimeout(0),
+)
+if err != nil { return err }
+defer client.Close()
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+defer cancel()
+
+file, err := os.Open("input.bin")
+if err != nil { return err }
+err = client.InvokeReader(ctx, http.MethodPut, "/files/input.bin", file, &reply,
+    httpx.SetRequestContentType("application/octet-stream"),
+)
+// InvokeReader 已接管 file 的关闭责任，验证参数失败也会关闭。
+if err != nil { return err }
+
+out, err := os.Create("output.part")
+if err != nil { return err }
+info, downloadErr := client.Download(ctx, "/files/result.bin", out,
+    httpx.DownloadMaxBytes(1 << 30),
+)
+closeErr := out.Close() // 目标 writer 始终由调用方关闭。
+if downloadErr != nil {
+    // info.Bytes 是已经写入的字节数；output.part 可能包含部分内容。
+    return downloadErr
+}
+if closeErr != nil { return closeErr }
+_ = info
+```
+
+| 方法 | 正文处理与所有权 |
+| --- | --- |
+| `InvokeReader` | 不调用 request encoder、不整体缓存上传内容；传入 io.ReadCloser 时方法从入口接管关闭；响应走 decoder |
+| `Download` | 发起 GET，用固定 32 KiB 缓冲区复制成功正文；关闭响应 Body，不关闭 dst，返回状态、响应头及已写入字节数 |
+| `Do` | 原始 HTTP 操作，调用方读取并关闭响应 Body；适合自定义方法、Trailer、长连接等场景 |
+
+Download 的成功流默认不限大小；`DownloadMaxBytes` 的 0 表示不限，负数在发送前报错，显式限额按实际读取数据计算。默认 gzip 自动解压时限制的是解压后字节数。超限探测最多额外读 1 字节，但不写入 dst；已声明的 Content-Length 超限可提前拒绝。
+
+4xx/5xx 使用 decoder 的独立错误正文上限，错误页面不会写入 dst；最终未跟随的 3xx 返回 `UnexpectedStatusError`。限额、writer 错误、网络中断、取消或复制后的回调错误，均保留已写入的 Bytes。库不自动删除、重命名部分文件，不承诺原子替换。
+
+两个便捷接口都复用请求头同步、中间件、响应钩子和服务发现。上传中间件输入为 reader，下载输入为 nil、输出为 DownloadInfo；只支持 Protobuf 输入的中间件需单独调整。流式调用拒绝中间件重复执行下游，避免重复写入或重读已消耗的源。库不新增自动重试机制；底层 net/http 重定向规则保持不变，已知 reader 的 ContentLength/GetBody 会保留，不可重放的 reader 不会被偷偷缓冲。
+
+原客户端总超时仍覆盖正文传输。使用原始 Do 时应在 Body 读取/关闭后才取消 context；自定义阻塞 reader/writer 需自行配合取消。服务端继续用已有 Context.Stream，handler 管理输入 reader 的关闭，并按需求调整服务器的请求体大小、应用超时和读写超时。
 
 ## HTTP 客户端地址与 HTTPS
 

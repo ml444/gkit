@@ -114,8 +114,8 @@ func WithErrorEncoder(fn ErrorEncoder) RouterCoderOption {
 }
 
 // WithJSONCoder replaces this instance's JSON codec for default body binding,
-// normal responses, error responses and JSON fallback. It does not change
-// Context.JSON, client codecs, or callbacks supplied via other options.
+// normal responses, error responses and JSON fallback. Context.JSON uses it only
+// in JSONCodec mode. Client codecs and custom callbacks are unaffected.
 func WithJSONCoder(codec coder.ICoder) RouterCoderOption {
 	return func(c *routerCoder) error {
 		if isNilCoderOptionValue(codec) || codec.Name() != "json" {

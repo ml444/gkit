@@ -237,10 +237,13 @@ func WithTLSConfig(c *tls.Config) ClientOption {
 type CallOption func(*callInfo)
 
 type callInfo struct {
-	reqHeader    http.Header
-	operation    string
-	pathTemplate string
-	onResponse   func(*http.Response) error
+	configErr        error
+	responseHooks    []ResponseHeadersHook
+	downloadMaxBytes int64
+	reqHeader        http.Header
+	operation        string
+	pathTemplate     string
+	onResponse       func(*http.Response) error
 }
 
 func defaultCallInfo(path string) callInfo {
@@ -288,6 +291,8 @@ func PathTemplate(pattern string) CallOption {
 	}
 }
 
+// OnResponse runs after successful decoding (or Download copying), before the
+// response is closed. The body may be exhausted. The last callback wins; nil disables it.
 func OnResponse(onResponse func(*http.Response) error) CallOption {
 	return func(info *callInfo) {
 		info.onResponse = onResponse

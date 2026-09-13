@@ -2,7 +2,6 @@ package httpx
 
 import (
 	"context"
-	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"io"
@@ -53,10 +52,16 @@ type routerCoderKey struct{}
 type encodedPathKey struct{}
 
 func NewCtx(rsp http.ResponseWriter, req *http.Request) Context {
+	c := &wrappedCtx{}
+	c.Reset(rsp, req)
+	return c
+}
+
+func routerCoderForRequest(req *http.Request) IRouterCoder {
 	var rc IRouterCoder
 	if req != nil {
 		if v := req.Context().Value(routerCoderKey{}); v != nil {
-			if c, ok := v.(IRouterCoder); ok && c != nil {
+			if c, ok := v.(IRouterCoder); ok && !isNilCoderOptionValue(c) {
 				rc = c
 			}
 		}
@@ -64,12 +69,7 @@ func NewCtx(rsp http.ResponseWriter, req *http.Request) Context {
 	if rc == nil {
 		rc = newRouterCoder()
 	}
-	return &wrappedCtx{
-		status: http.StatusOK,
-		coder:  rc,
-		req:    req,
-		rsp:    rsp,
-	}
+	return rc
 }
 
 func (c *wrappedCtx) Header() http.Header {
@@ -134,9 +134,12 @@ func (c *wrappedCtx) Result(status int, v any) {
 
 func (c *wrappedCtx) JSON(status int, v any) error {
 	c.setResponseHeaders()
-	c.rsp.Header().Set("Content-Type", "application/json")
-	c.rsp.WriteHeader(status)
-	return json.NewEncoder(c.rsp).Encode(v)
+	if provider, ok := c.coder.(JSONEncoderProvider); ok {
+		if encode := provider.JSONEncoder(); encode != nil {
+			return encode(status, c.rsp, c.req, v)
+		}
+	}
+	return legacyJSONEncoder(status, c.rsp, c.req, v)
 }
 
 func (c *wrappedCtx) XML(status int, v any) error {
@@ -179,9 +182,16 @@ func (c *wrappedCtx) Stream(status int, contentType string, rd io.Reader) error 
 func (c *wrappedCtx) Reset(rsp http.ResponseWriter, req *http.Request) {
 	c.rsp = rsp
 	c.req = req
+	c.status = http.StatusOK
+	c.coder = routerCoderForRequest(req)
 }
 
 func (c *wrappedCtx) ReturnError(err error) {
+	var writeErr *responseWriteError
+	if errors.As(err, &writeErr) {
+		log.Errorf("[HTTP] %v", err)
+		return
+	}
 	c.setResponseHeaders()
 	c.coder.ErrorEncoder()(c.rsp, c.req, err)
 }

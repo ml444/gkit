@@ -21,7 +21,7 @@ type responseWriteError struct{ err error }
 func (e *responseWriteError) Error() string { return "httpx: response write: " + e.err.Error() }
 func (e *responseWriteError) Unwrap() error { return e.err }
 
-const maxRespBytes = 10 << 20 // 10MB，可配置
+const maxRespBytes = 10 << 20 // Default response decode limit: 10 MiB.
 
 // RequestDecoder is decode request func.
 type RequestDecoder func(*http.Request, interface{}) error
@@ -43,6 +43,7 @@ type IRouterCoder interface {
 
 type routerCoder struct {
 	profile   *codecProfile
+	jsonMode  JSONMode
 	bindVars  RequestDecoder
 	bindQuery RequestDecoder
 	bindForm  RequestDecoder
@@ -178,19 +179,20 @@ func DefaultRequestEncoder(_ context.Context, contentType string, in interface{}
 
 // DefaultResponseDecoder is an HTTP response decoder.
 func DefaultResponseDecoder(_ context.Context, rsp *http.Response, v interface{}) error {
+	return decodeResponse(rsp, v, maxRespBytes, coderByContentType)
+}
+
+func decodeResponse(rsp *http.Response, v interface{}, limit int64, lookup func(string) coder.ICoder) error {
 	if rsp.StatusCode < 400 && (v == nil || rsp.StatusCode == http.StatusNoContent || rsp.StatusCode == http.StatusResetContent || (rsp.Request != nil && rsp.Request.Method == http.MethodHead)) {
 		return nil
 	}
-	data, err := io.ReadAll(io.LimitReader(rsp.Body, maxRespBytes+1))
+	data, err := readResponseBytes(rsp, limit)
 	if err != nil {
 		return err
 	}
-	if int64(len(data)) > maxRespBytes {
-		return errorx.CreateError(502, 50201, "response body too large")
-	}
 	if rsp.StatusCode >= 400 {
 		e := new(errorx.Error)
-		if err = coderByContentType(rsp.Header.Get("Content-Type")).Unmarshal(data, e); err == nil {
+		if err = lookup(rsp.Header.Get("Content-Type")).Unmarshal(data, e); err == nil {
 			e.Status = int32(rsp.StatusCode)
 			return e
 		} else {
@@ -200,7 +202,7 @@ func DefaultResponseDecoder(_ context.Context, rsp *http.Response, v interface{}
 			return e
 		}
 	}
-	return coderByContentType(rsp.Header.Get("Content-Type")).Unmarshal(data, v)
+	return lookup(rsp.Header.Get("Content-Type")).Unmarshal(data, v)
 }
 
 func getCoderForRequest(r *http.Request, name string) (coder.ICoder, bool) {

@@ -19,7 +19,6 @@ import (
 
 	"github.com/ml444/gkit/discovery"
 	"github.com/ml444/gkit/middleware"
-	"github.com/ml444/gkit/transport"
 	"github.com/ml444/gkit/transport/httpx/coder/form"
 )
 
@@ -31,19 +30,21 @@ type DecodeResponseFunc func(ctx context.Context, res *http.Response, out interf
 
 // Client is an HTTP client.
 type Client struct {
-	target     *Target
-	cc         *http.Client
-	insecure   bool
-	tlsConf    *tls.Config
-	timeout    time.Duration
-	endpoint   string
-	discovery  *discovery.DiscoveryClient
-	service    string
-	userAgent  string
-	encoder    EncodeRequestFunc
-	decoder    DecodeResponseFunc
-	transport  http.RoundTripper
-	middleware []middleware.Middleware
+	configErr     error
+	responseHooks []ResponseHeadersHook
+	target        *Target
+	cc            *http.Client
+	insecure      bool
+	tlsConf       *tls.Config
+	timeout       time.Duration
+	endpoint      string
+	discovery     *discovery.DiscoveryClient
+	service       string
+	userAgent     string
+	encoder       EncodeRequestFunc
+	decoder       DecodeResponseFunc
+	transport     http.RoundTripper
+	middleware    []middleware.Middleware
 }
 
 // NewClient returns an HTTP client.
@@ -54,7 +55,13 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 		decoder: DefaultResponseDecoder,
 	}
 	for _, o := range opts {
+		if o == nil {
+			return nil, fmt.Errorf("httpx: nil client option")
+		}
 		o(&client)
+	}
+	if client.configErr != nil {
+		return nil, client.configErr
 	}
 	if client.timeout < 0 {
 		return nil, fmt.Errorf("httpx: timeout must not be negative")
@@ -110,89 +117,35 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 	return &client, nil
 }
 
-// Invoke makes a rpc call procedure for remote service.
+// Invoke encodes args and decodes the response within the configured middleware chain.
 func (client *Client) Invoke(ctx context.Context, method, path string, args interface{}, reply interface{}, opts ...CallOption) error {
-	if client.target == nil || client.target.Authority == "" {
-		return fmt.Errorf("httpx: Invoke requires an endpoint or discovery service")
+	if err := client.validateInvocation(path); err != nil {
+		return err
 	}
-	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
-		return fmt.Errorf("httpx: invocation path must start with a single slash")
+	c, err := parseCallOptions(path, opts)
+	if err != nil {
+		return err
 	}
-	var (
-		contentType string
-		body        io.Reader
-	)
-	c := defaultCallInfo(path)
-	for _, o := range opts {
-		o(&c)
-	}
-	contentType = c.reqHeader.Get("Content-Type")
+	var body io.Reader
 	if args != nil {
-		data, err := client.encoder(ctx, contentType, args)
+		data, err := client.encoder(ctx, c.reqHeader.Get("Content-Type"), args)
 		if err != nil {
 			return err
 		}
 		body = bytes.NewReader(data)
 	}
-	url0 := fmt.Sprintf("%s://%s%s", client.target.Scheme, client.target.Authority, path)
-	req, err := http.NewRequest(method, url0, body)
+	ctx, req, err := client.prepareInvocation(ctx, method, path, body, c)
 	if err != nil {
 		return err
 	}
-	if c.reqHeader != nil {
-		req.Header = c.reqHeader.Clone()
-	}
-	if client.userAgent != "" {
-		req.Header.Set("User-Agent", client.userAgent)
-	}
-	ctx = transport.ToContext(ctx, &Transport{
-		endpoint:     client.endpoint,
-		path:         c.operation,
-		inMD:         transport.New(req.Header),
-		pathTemplate: c.pathTemplate,
-		req:          req,
-	})
-	return client.invoke(ctx, req, args, reply, c, opts...)
-}
-
-func (client *Client) invoke(ctx context.Context, req *http.Request, args interface{}, reply interface{}, c callInfo, opts ...CallOption) error {
-	// holder receives the discovery instance picked inside Do so the
-	// load-balancer feedback below targets the instance that was actually used.
-	holder := &instanceHolder{}
-	ctx = context.WithValue(ctx, instanceHolderKey{}, holder)
-	h := func(ctx context.Context, in interface{}) (interface{}, error) {
-		outReq := req.Clone(ctx)
-		if tr, ok := transport.FromContext(ctx); ok {
-			outReq.Header = make(http.Header)
-			for key, values := range tr.In() {
-				for _, value := range values {
-					outReq.Header.Add(key, value)
-				}
-			}
-		}
-		res, err := client.Do(outReq)
-		if err != nil {
-			client.updateDiscoveryStatus(ctx, holder, false)
-			return nil, err
-		}
-		defer res.Body.Close()
-		if err = client.decoder(ctx, res, reply); err != nil {
-			client.updateDiscoveryStatus(ctx, holder, false)
-			return nil, err
-		}
-		if c.onResponse != nil {
-			if err = c.onResponse(res); err != nil {
-				client.updateDiscoveryStatus(ctx, holder, false)
+	_, err = client.execute(ctx, req, args, c, responseHandler{
+		consume: func(ctx context.Context, res *http.Response) (interface{}, error) {
+			if err := client.decoder(ctx, res, reply); err != nil {
 				return nil, err
 			}
-		}
-		client.updateDiscoveryStatus(ctx, holder, res.StatusCode < 500)
-		return reply, nil
-	}
-	if len(client.middleware) > 0 {
-		h = middleware.Chain(client.middleware...)(h)
-	}
-	_, err := h(ctx, args)
+			return reply, nil
+		},
+	}, false)
 	return err
 }
 
