@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -15,6 +16,7 @@ import (
 	"github.com/ml444/gkit/log"
 	"github.com/ml444/gkit/middleware"
 	"github.com/ml444/gkit/transport"
+	"github.com/ml444/gkit/transport/internal/lifecycle"
 )
 
 var _ http.Handler = (*Server)(nil)
@@ -22,6 +24,10 @@ var _ http.Handler = (*Server)(nil)
 // Server is an HTTP server wrappedCtx.
 type Server struct {
 	*http.Server
+	resourceMu          sync.RWMutex
+	bindMu              sync.Mutex
+	managed             bool
+	legacyUsed          bool
 	listener            net.Listener
 	tlsConf             *tls.Config
 	endpoint            *url.URL
@@ -122,9 +128,7 @@ func (s *Server) globalMiddleware() middleware.HttpMiddleware {
 					outMD:        transport.MD{},
 					req:          req,
 				}
-				if s.endpoint != nil {
-					tr.endpoint = s.endpoint.String()
-				}
+				tr.endpoint = s.endpointString()
 				req = req.WithContext(transport.ToContext(ctx, tr))
 				tw := newTransportResponseWriter(w, tr)
 				next.ServeHTTP(tw, req)
@@ -138,65 +142,131 @@ func (s *Server) globalMiddleware() middleware.HttpMiddleware {
 	}
 }
 
+// Endpoint binds if necessary and returns an address copy. After Managed has
+// taken ownership, use its Listen and EndpointURL methods instead.
 func (s *Server) Endpoint() (*url.URL, error) {
 	if err := s.listenAndEndpoint(); err != nil {
 		return nil, err
 	}
-	return s.endpoint, nil
+	return s.endpointSnapshot(), nil
 }
 
 // Start the HTTP server.
 func (s *Server) Start(ctx context.Context) error {
+	if err := s.useLegacyLifecycle(); err != nil {
+		return err
+	}
 	if err := s.listenAndEndpoint(); err != nil {
 		return err
 	}
-	s.BaseContext = func(net.Listener) context.Context {
-		return ctx
-	}
-	log.Infof("[HTTP] server listening on: %s \n", s.listener.Addr().String())
-	var err error
-	if s.tlsConf != nil {
-		err = s.ServeTLS(s.listener, "", "")
-	} else {
-		err = s.Serve(s.listener)
-	}
+	err := s.serve(ctx)
 	if !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil
 }
 
+func (s *Server) serve(ctx context.Context) error {
+	lis := s.listenerSnapshot()
+	s.BaseContext = func(net.Listener) context.Context {
+		return ctx
+	}
+	log.Infof("[HTTP] server listening on: %s \n", lis.Addr().String())
+	if s.tlsConf != nil {
+		return s.ServeTLS(lis, "", "")
+	}
+	return s.Serve(lis)
+}
+
 // Stop the HTTP server.
 func (s *Server) Stop(ctx context.Context) error {
+	if err := s.useLegacyLifecycle(); err != nil {
+		return err
+	}
 	log.Info("[HTTP] server stopping")
 	err := s.Shutdown(ctx)
 	// Shutdown closes listeners the server is actively serving on; close any
 	// listener created early (e.g. via Endpoint()) but never served, so the
 	// port is always released.
-	if s.listener != nil {
-		_ = s.listener.Close()
-	}
+	_ = lifecycle.CloseListener(s.listenerSnapshot())
 	return err
 }
 
 func (s *Server) listenAndEndpoint() error {
-	if s.listener == nil {
-		lis, err := net.Listen(s.network, s.address)
+	return s.bind(context.Background(), false)
+}
+
+func (s *Server) bind(ctx context.Context, managed bool) error {
+	s.bindMu.Lock()
+	defer s.bindMu.Unlock()
+	s.resourceMu.RLock()
+	owned, lis, endpoint := s.managed, s.listener, s.endpoint
+	s.resourceMu.RUnlock()
+	if owned != managed {
+		return transport.ErrLifecycleOwned
+	}
+	created := lis == nil
+	if created {
+		var cfg net.ListenConfig
+		var err error
+		lis, err = cfg.Listen(ctx, s.network, s.address)
 		if err != nil {
 			return err
 		}
-		s.listener = lis
 	}
-	if s.endpoint == nil {
-		addr, err := netx.ExtractEndpoint(s.address, s.listener)
+	if endpoint == nil {
+		addr, err := netx.ExtractEndpoint(s.address, lis)
 		if err != nil {
+			if created {
+				_ = lis.Close()
+			}
 			return err
 		}
 		scheme := "http"
 		if s.tlsConf != nil {
 			scheme = "https"
 		}
-		s.endpoint = &url.URL{Scheme: scheme, Host: addr}
+		endpoint = &url.URL{Scheme: scheme, Host: addr}
 	}
+	if err := ctx.Err(); err != nil {
+		if created {
+			_ = lis.Close()
+		}
+		return err
+	}
+	s.resourceMu.Lock()
+	s.listener, s.endpoint = lis, endpoint
+	s.resourceMu.Unlock()
+	return nil
+}
+
+func (s *Server) listenerSnapshot() net.Listener {
+	s.resourceMu.RLock()
+	defer s.resourceMu.RUnlock()
+	return s.listener
+}
+
+func (s *Server) endpointSnapshot() *url.URL {
+	s.resourceMu.RLock()
+	defer s.resourceMu.RUnlock()
+	return lifecycle.CloneURL(s.endpoint)
+}
+
+func (s *Server) endpointString() string {
+	s.resourceMu.RLock()
+	defer s.resourceMu.RUnlock()
+	if s.endpoint == nil {
+		return ""
+	}
+	return s.endpoint.String()
+}
+
+func (s *Server) useLegacyLifecycle() error {
+	s.resourceMu.Lock()
+	defer s.resourceMu.Unlock()
+	if s.managed {
+		return transport.ErrLifecycleOwned
+	}
+	s.legacyUsed = true
 	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"net"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -21,6 +22,7 @@ import (
 	"github.com/ml444/gkit/middleware/response"
 	"github.com/ml444/gkit/transport"
 	"github.com/ml444/gkit/transport/grpcx/xds"
+	"github.com/ml444/gkit/transport/internal/lifecycle"
 )
 
 type iServer interface {
@@ -33,6 +35,10 @@ type iServer interface {
 
 type Server struct {
 	iServer
+	resourceMu              sync.RWMutex
+	bindMu                  sync.Mutex
+	managed                 bool
+	legacyUsed              bool
 	name                    string
 	network                 string
 	address                 string
@@ -107,45 +113,100 @@ func (s *Server) Endpoint() (string, error) {
 	if err := s.listenAndEndpoint(); err != nil {
 		return "", err
 	}
-	return s.endpoint, nil
+	return s.endpointSnapshot(), nil
 }
 
 func (s *Server) listenAndEndpoint() error {
-	if s.listener == nil {
-		ln, err := net.Listen(s.network, s.address)
+	return s.bind(context.Background(), false)
+}
+
+func (s *Server) bind(ctx context.Context, managed bool) error {
+	s.bindMu.Lock()
+	defer s.bindMu.Unlock()
+	s.resourceMu.RLock()
+	owned, lis, endpoint := s.managed, s.listener, s.endpoint
+	s.resourceMu.RUnlock()
+	if owned != managed {
+		return transport.ErrLifecycleOwned
+	}
+	created := lis == nil
+	if created {
+		var cfg net.ListenConfig
+		var err error
+		lis, err = cfg.Listen(ctx, s.network, s.address)
 		if err != nil {
 			return err
 		}
-		s.listener = ln
 	}
-	if s.endpoint == "" {
-		addr, err := netx.ExtractEndpoint(s.address, s.listener)
+	if endpoint == "" {
+		addr, err := netx.ExtractEndpoint(s.address, lis)
+		if err == nil && addr == "" {
+			err = errors.New("grpcx: failed to extract endpoint")
+		}
 		if err != nil {
+			if created {
+				_ = lis.Close()
+			}
 			return err
 		}
-		if addr == "" {
-			return errors.New("grpcx: failed to extract endpoint")
-		}
-		s.endpoint = addr
+		endpoint = addr
 	}
+	if err := ctx.Err(); err != nil {
+		if created {
+			_ = lis.Close()
+		}
+		return err
+	}
+	s.resourceMu.Lock()
+	s.listener, s.endpoint = lis, endpoint
+	s.resourceMu.Unlock()
+	return nil
+}
+
+func (s *Server) listenerSnapshot() net.Listener {
+	s.resourceMu.RLock()
+	defer s.resourceMu.RUnlock()
+	return s.listener
+}
+
+func (s *Server) endpointSnapshot() string {
+	s.resourceMu.RLock()
+	defer s.resourceMu.RUnlock()
+	return s.endpoint
+}
+
+func (s *Server) useLegacyLifecycle() error {
+	s.resourceMu.Lock()
+	defer s.resourceMu.Unlock()
+	if s.managed {
+		return transport.ErrLifecycleOwned
+	}
+	s.legacyUsed = true
 	return nil
 }
 
 // Start starts the gRPC server and blocks until it stops.
 func (s *Server) Start() error {
+	if err := s.useLegacyLifecycle(); err != nil {
+		return err
+	}
 	if err := s.listenAndEndpoint(); err != nil {
 		log.Errorf("grpcx: listen endpoint failed: %v", err)
 		return err
 	}
-	log.Infof("[gRPC] server listening on: %s", s.listener.Addr().String())
+	lis := s.listenerSnapshot()
+	log.Infof("[gRPC] server listening on: %s", lis.Addr().String())
 	if s.enableHealth && s.health != nil {
 		s.health.Resume()
 	}
-	return s.Serve(s.listener)
+	return s.Serve(lis)
 }
 
 // Stop gracefully stops the server. If ctx is canceled, forces Stop.
 func (s *Server) Stop(ctx context.Context) error {
+	if err := s.useLegacyLifecycle(); err != nil {
+		return err
+	}
 	if s.enableHealth && s.health != nil {
 		s.health.Shutdown()
 	}
@@ -156,16 +217,12 @@ func (s *Server) Stop(ctx context.Context) error {
 	}()
 	select {
 	case <-done:
-		if s.listener != nil {
-			_ = s.listener.Close()
-		}
+		_ = lifecycle.CloseListener(s.listenerSnapshot())
 		log.Info("[gRPC] server stopping")
 		return nil
 	case <-ctx.Done():
 		s.iServer.Stop()
-		if s.listener != nil {
-			_ = s.listener.Close()
-		}
+		_ = lifecycle.CloseListener(s.listenerSnapshot())
 		log.Info("[gRPC] server stopping (forced)")
 		return ctx.Err()
 	}
@@ -182,7 +239,7 @@ func (s *Server) defaultUnaryInterceptor() grpc.UnaryServerInterceptor {
 			inMD, _ := grpcmd.FromIncomingContext(ctx)
 			outMD := grpcmd.MD{}
 			tr := &Transport{
-				endpoint:  s.endpoint,
+				endpoint:  s.endpointSnapshot(),
 				operation: info.FullMethod,
 				inMD:      transport.MD(inMD),
 				outMD:     transport.MD(outMD),
@@ -250,7 +307,7 @@ func (s *Server) defaultStreamInterceptor() grpc.StreamServerInterceptor {
 			inMD, _ := grpcmd.FromIncomingContext(ctx)
 			outMD = grpcmd.MD{}
 			ctx = transport.ToContext(ctx, &Transport{
-				endpoint:  s.endpoint,
+				endpoint:  s.endpointSnapshot(),
 				operation: info.FullMethod,
 				inMD:      transport.MD(inMD),
 				outMD:     transport.MD(outMD),

@@ -312,6 +312,59 @@ gRPC 客户端默认建连与 unary 调用超时均为 10 秒。选项按传入�
 
 ## 生命周期与迁移检查
 
+推荐新代码使用统一适配层。HTTP 与 gRPC 都实现 `transport.ManagedServer`：
+
+```go
+// 先配置路由、中间件及服务，再交给适配器管理。
+srv := httpx.NewServer(httpx.Address("127.0.0.1:0"))
+srv.GetRouter().GET("/health", func(w http.ResponseWriter, r *http.Request) {
+    w.WriteHeader(http.StatusOK)
+})
+managed, err := httpx.Managed(srv, transport.LifecycleOptions{
+    ShutdownTimeout: 10 * time.Second,
+})
+if err != nil { return err }
+defer managed.Stop(context.Background()) // 提前返回时也释放已绑定资源
+
+if err := managed.Listen(); err != nil { return err }
+endpoint, bound := managed.EndpointURL()
+if bound {
+    log.Printf("bound to %s", endpoint)
+}
+
+ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+defer cancel()
+return managed.Start(ctx) // 阻塞；收到信号后等待优雅停止完成
+```
+
+上述片段放在返回 `error` 的应用启动函数内，`log` 为标准库包。无需提前取得地址时，可以直接 `Start(ctx)`，由它自动监听。gRPC 只需替换构造部分，后续使用方式相同：
+
+```go
+srv, err := grpcx.NewServer(grpcx.Address("127.0.0.1:0"))
+if err != nil { return err }
+// 在此注册生成的 gRPC 服务。
+managed, err := grpcx.Managed(srv, transport.LifecycleOptions{})
+if err != nil { return err }
+```
+
+| 操作 / 配置 | 行为 |
+| --- | --- |
+| `Listen()` | 显式绑定端口，绑定成功后重复调用幂等；单独 Listen 失败可重试。地址计算失败会释放本次新建的监听器。 |
+| `EndpointURL()` | 无 I/O，只返回地址副本；调用者修改副本不影响服务器。尚未完成 Listen 时为 `nil, false`；停止期间及停止后 `ok=false`，可保留最后地址。 |
+| `Start(ctx)` | 自动监听并阻塞到服务与关闭协调完成；调用前已取消则返回 `ctx.Err()`，不消耗启动机会。启动开始后只允许一次，启动失败也需要新建 Server。 |
+| `Stop(ctx)` | 首次调用触发共享关闭，其后等待同一结果；ctx 仅限制当前调用者的等待。即使它已取消，也会启动关闭过程。 |
+| `ShutdownTimeout` | 实际优雅关闭的期限，独立于 Start/Stop 的 context；0 使用 10 秒，负值构造失败。超时后 HTTP 强制 Close，gRPC 强制 Stop，返回可用 `errors.Is(err, context.DeadlineExceeded)` 判断的错误。 |
+
+启动 context 取消且优雅停止成功时，`Start` 返回 nil。非预期 Serve 错误和关闭错误会保留，二者同时发生时合并返回。并发 Start 返回 `transport.ErrAlreadyStarted`；停止中的新 Start/Listen 返回 `transport.ErrServerStopped`。Stop 在从未启动、只监听过或已停止时也安全；注入的 Listener 同样由服务器负责关闭。
+
+HTTP 请求保留启动 context 的值，但不继承其取消和 deadline，给在途请求留下优雅完成时间。`httpx.Timeout` 设置的业务超时仍然有效。gRPC 的在途 unary 和 stream RPC 等待完成，超过优雅期则断开连接。强制关闭不能终止忽略取消信号的业务 goroutine；HTTP hijack/WebSocket 连接、额外后台任务和 Shutdown 回调的完成，由应用自行协调。
+
+HTTP 地址使用 http/https；显式 `httpx.Endpoint` 指定的发布 URL 保持原值。gRPC 在 TLSConfig 或已知 TLS Credentials 下返回 grpcs，否则返回 grpc；自定义或 xDS 动态凭据的实际安全模式仍由凭据配置决定。URL 是发布地址形式，不能直接假定为旧客户端接受的拨号字符串；例如 gRPC 直连可读取 `endpoint.Host`，并另外配置匹配的 TLS 凭据。
+
+`EndpointURL` 的布尔值只表示适配器已经完成绑定，不代表已经接收请求或通过健康检查；注入或通过旧 Endpoint 提前创建的监听器，也要调用适配器 Listen 才发布快照。服务注册与注销仍由应用负责，监听成功本身不应当作为业务就绪的依据。
+
+同一 Server 只能创建一个 Managed 适配器。交接后原 Start/Stop/Endpoint 返回 `transport.ErrLifecycleOwned`；也不要绕过适配器直接调用嵌入服务器的 Serve、Shutdown、Close、GracefulStop。已经调用过旧 Start/Stop 的实例不能再交接；只通过旧 Endpoint 绑定过的监听器可以交接。gRPC 原 RegisterDiscovery/DeregisterDiscovery 内部调用旧 Endpoint，属于旧生命周期用法；使用 Managed 时，请根据地址快照和应用就绪状态自行操作注册中心。
+
 保留现有接口：HTTP 使用 `Start(ctx)`，gRPC 使用 `Start()`，二者都通过 `Stop(ctx)` 关闭。Endpoint 方法可能提前创建监听器，不是纯查询。无需继续使用的实例即使尚未 Start，也应 Stop 释放提前创建的监听器。
 
 gRPC 支持 Start 前 Stop、启动失败后 Stop 和重复 Stop；Stop 的 context 超时后强制停止。不承诺同一个 Server 在 Stop 后重新 Start。
