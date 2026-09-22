@@ -4,7 +4,7 @@ import "testing"
 
 func TestNewDefaultPagination(t *testing.T) {
 	p := NewDefaultPagination()
-	if p.Page != 1 || p.Size != 10 || p.Total != 0 || p.SkipCount {
+	if p.Page != 1 || p.Size != 10  || p.SkipCount {
 		t.Errorf("NewDefaultPagination() = %+v, want default values", p)
 	}
 }
@@ -22,24 +22,6 @@ func TestSetPage(t *testing.T) {
 	}
 }
 
-func TestSetNextPage(t *testing.T) {
-	p := NewDefaultPagination()
-	p.Total = 100
-	p.Size = 10
-
-	ok := p.SetNextPage()
-	if !ok || p.Page != 2 {
-		t.Errorf("SetNextPage() = %t, %d, want true, 2", ok, p.Page)
-	}
-
-	for i := 0; i < 8; i++ {
-		p.SetNextPage()
-	}
-	ok = p.SetNextPage()
-	if ok || p.Page != 11 {
-		t.Errorf("SetNextPage() = %t, %d, want false, 10", ok, p.Page)
-	}
-}
 
 func TestPaginationMutatorsAndOffset(t *testing.T) {
 	p := NewDefaultPagination()
@@ -65,16 +47,6 @@ func TestPaginationMutatorsAndOffset(t *testing.T) {
 	}
 }
 
-func TestSetNextPageNormalizesZeroAndDetectsLastPage(t *testing.T) {
-	p := &Pagination{Page: 0, Size: 2, Total: 10}
-	if !p.SetNextPage() || p.Page != 2 {
-		t.Fatalf("SetNextPage zero = page %d", p.Page)
-	}
-	p = &Pagination{Page: 4, Size: 2, Total: 10}
-	if p.SetNextPage() || p.Page != 5 {
-		t.Fatalf("SetNextPage last = page %d", p.Page)
-	}
-}
 
 func TestScrollMutators(t *testing.T) {
 	s := (&Scroll{}).SetSize(30).SetCursor("cursor-1")

@@ -2,7 +2,8 @@ package dbx
 
 import (
 	"context"
-	"fmt"
+
+	"github.com/ml444/gkit/dbx/crypto"
 )
 
 type testRow struct {
@@ -16,20 +17,50 @@ func (testRow) TableName() string { return "test_rows" }
 
 type encryptRow struct {
 	ID   uint64 `json:"id" gorm:"primaryKey"`
-	Name string `json:"name" gorm:"column:name;encrypt:true"`
+	Name string `json:"name" gorm:"column:name;encrypt:searchable"`
 }
 
 func (encryptRow) TableName() string { return "encrypt_rows" }
 
-type prefixCipher struct{}
+type storageEncryptRow struct {
+	ID     uint64 `json:"id" gorm:"primaryKey"`
+	Name   string `json:"name" gorm:"column:name;encrypt:searchable"`
+	Secret string `json:"secret" gorm:"column:secret;encrypt:storage"`
+}
 
-func (prefixCipher) Encrypt(v any) (any, error) { return "enc:" + fmt.Sprint(v), nil }
-func (prefixCipher) Decrypt(v any) (any, error) {
-	s, ok := v.(string)
-	if !ok || len(s) < 4 || s[:4] != "enc:" {
-		return nil, fmt.Errorf("invalid cipher value %v", v)
+func (storageEncryptRow) TableName() string { return "storage_encrypt_rows" }
+
+func testKeyRing() crypto.KeyRing {
+	return crypto.KeyRing{
+		ActiveID: "1",
+		Keys: map[string][]byte{
+			"1": []byte("0123456789abcdef0123456789abcdef"),
+			"0": []byte("abcdef0123456789abcdef0123456789"),
+		},
 	}
-	return s[4:], nil
+}
+
+func nameSearchableCrypto(mutate ...crypto.MutatePolicy) T2Option {
+	policy := crypto.MutateInPlace
+	if len(mutate) > 0 {
+		policy = mutate[0]
+	}
+	return WithTCrypto(crypto.Config{
+		KeyRing: testKeyRing(),
+		Fields:  []crypto.FieldSpec{{Column: "name", Struct: "Name", Mode: crypto.ModeSearchable}},
+		Mutate:  policy,
+	})
+}
+
+func dualFieldCrypto() T2Option {
+	return WithTCrypto(crypto.Config{
+		KeyRing: testKeyRing(),
+		Fields: []crypto.FieldSpec{
+			{Column: "name", Struct: "Name", Mode: crypto.ModeSearchable},
+			{Column: "secret", Struct: "Secret", Mode: crypto.ModeStorage},
+		},
+		Mutate: crypto.MutateInPlace,
+	})
 }
 
 // stubDriver is a no-op Driver for connection-helper unit tests (avoid importing dbx/mock).

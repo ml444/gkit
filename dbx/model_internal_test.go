@@ -5,6 +5,8 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+
+	"github.com/ml444/gkit/dbx/crypto"
 )
 
 type copiedSource struct {
@@ -36,16 +38,6 @@ func (m *copiedORM) CopyToSourceIgnoreEmpty(dst IModel) error {
 	}
 	return nil
 }
-
-type failingCipher struct{ err error }
-
-func (c failingCipher) Encrypt(v any) (any, error) {
-	if c.err != nil {
-		return nil, c.err
-	}
-	return "e:" + v.(string), nil
-}
-func (c failingCipher) Decrypt(v any) (any, error) { return v, nil }
 
 func TestORMCopyHelpersAndModelOptions(t *testing.T) {
 	orms := []*copiedORM{{ID: 1, Name: "one", force: true}, {ID: 2, Name: "two", force: true}}
@@ -85,16 +77,20 @@ func TestORMCopyHelpersAndModelOptions(t *testing.T) {
 	if _, ok := repo.getModel().(*copiedORM); !ok {
 		t.Fatalf("forced model type = %T", repo.getModel())
 	}
-	idRepo := NewT[copiedORM](func() Conn { return StaticConn(stubDriver{}) }, SetGenerateIDFunc(func() uint64 { return 9 }))
+	idRepo := NewT[copiedORM](func() Conn { return StaticConn(stubDriver{}) }, WithTGenerateIDFunc(func() uint64 { return 9 }))
 	valuesMap := map[string]any{}
-	if err := idRepo.CheckAndCrypto(valuesMap, cipherKindEncrypt, true); err != nil || valuesMap[idRepo.PrimaryKey] != uint64(9) {
-		t.Fatalf("map ID generation = %#v, %v", valuesMap, err)
+	idRepo.generateIDs(valuesMap)
+	if valuesMap[idRepo.PrimaryKey] != uint64(9) {
+		t.Fatalf("map ID generation = %#v", valuesMap)
 	}
 }
 
 func TestModelOptionProcessingAndCryptoBranches(t *testing.T) {
 	repo := NewT[copiedORM](func() Conn { return StaticConn(stubDriver{}) },
-		SetSpecifyFieldCipherMap(map[string]FieldCipher{"name": {StructField: "Name", Cipher: failingCipher{}}}),
+		WithTCrypto(crypto.Config{
+			KeyRing: testKeyRing(),
+			Fields:  []crypto.FieldSpec{{Column: "name", Struct: "Name", Mode: crypto.ModeSearchable}},
+		}),
 	)
 	scope := repo.Scope(context.Background())
 	for _, opts := range []any{
@@ -114,25 +110,20 @@ func TestModelOptionProcessingAndCryptoBranches(t *testing.T) {
 		t.Fatal("unknown opts should fail")
 	}
 
-	args, err := repo.encryptQueryArgs([]any{"a", 1, ""})
-	if err != nil || args[0] != "e:a" || args[1] != 1 {
-		t.Fatalf("encrypted args = %#v, %v", args, err)
-	}
-	repo.EncryptFieldMap["other"] = failingCipher{err: errors.New("cipher")}
-	repo.rebuildFieldCache()
-	if got, err := repo.encryptQueryArgs([]any{"a"}); err != nil || got[0] != "a" {
-		t.Fatalf("multiple ciphers should skip args: %#v, %v", got, err)
+	storageRepo := NewT[storageEncryptRow](func() Conn { return StaticConn(stubDriver{}) }, dualFieldCrypto())
+	if _, err := storageRepo.encryptQuery(map[string]any{"secret": "x"}); !errors.Is(err, crypto.ErrNotSearchable) {
+		t.Fatalf("storage query encrypt = %v", err)
 	}
 
 	badTagRepo := NewT[struct {
 		ID   uint64 `gorm:"primaryKey"`
 		Name string `gorm:"encrypt:not-a-bool"`
-	}](func() Conn { return StaticConn(stubDriver{}) }, SetTableCipher(failingCipher{}))
-	if badTagRepo.NeedEncrypt {
-		t.Fatal("bad encrypt tag should not enable encryption")
+	}](func() Conn { return StaticConn(stubDriver{}) }, WithTCrypto(crypto.Config{KeyRing: testKeyRing()}))
+	if badTagRepo.crypto != nil {
+		t.Fatal("v1 encrypt tag should not enable encryption")
 	}
-	noTagRepo := NewT[struct{ ID uint64 }](func() Conn { return StaticConn(stubDriver{}) }, SetTableCipher(failingCipher{}))
-	if noTagRepo.NeedEncrypt {
+	noTagRepo := NewT[struct{ ID uint64 }](func() Conn { return StaticConn(stubDriver{}) }, WithTCrypto(crypto.Config{KeyRing: testKeyRing()}))
+	if noTagRepo.crypto != nil {
 		t.Fatal("missing encrypt tags should not enable encryption")
 	}
 }

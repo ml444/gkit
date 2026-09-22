@@ -6,33 +6,15 @@ import (
 	"testing"
 
 	"github.com/ml444/gkit/dbx"
+	"github.com/ml444/gkit/dbx/crypto"
 	"github.com/ml444/gkit/dbx/mock"
 )
-
-type failCipher struct{ err error }
-
-func (c failCipher) Encrypt(v any) (any, error) {
-	if c.err != nil {
-		return nil, c.err
-	}
-	return "x:" + v.(string), nil
-}
-func (c failCipher) Decrypt(v any) (any, error) {
-	if c.err != nil {
-		return nil, c.err
-	}
-	s, _ := v.(string)
-	if len(s) > 2 && s[:2] == "x:" {
-		return s[2:], nil
-	}
-	return v, nil
-}
 
 func TestModelErrorAndOptionBranches(t *testing.T) {
 	_, conn := testConn()
 	ctx := context.Background()
 
-	noPK := dbx.NewT[testRow](func() dbx.Conn { return conn }, dbx.SetPrimaryKey(""))
+	noPK := dbx.NewT[testRow](func() dbx.Conn { return conn }, dbx.WithTPrimaryKey(""))
 	if _, err := noPK.UpdateByPk(ctx, map[string]any{"name": "x"}, int64(1)); err == nil {
 		t.Fatal("UpdateByPk empty pk")
 	}
@@ -43,34 +25,24 @@ func TestModelErrorAndOptionBranches(t *testing.T) {
 		t.Fatal("GetOne empty pk")
 	}
 
-	repo := dbx.NewT[encryptRow](func() dbx.Conn { return conn },
-		dbx.SetSpecifyFieldCipherMap(map[string]dbx.FieldCipher{"name": {StructField: "Name", Cipher: failCipher{err: errors.New("boom")}}}),
-		dbx.SetGenerateIDFunc(func() uint64 { return 42 }),
-	)
-	if err := repo.Create(ctx, &encryptRow{Name: "a"}); err == nil {
-		t.Fatal("Create encrypt error")
+	repo := dbx.NewT[storageEncryptRow](func() dbx.Conn { return conn }, dualFieldCrypto(), dbx.WithTGenerateIDFunc(func() uint64 { return 42 }))
+	if err := repo.DeleteByWhere(ctx, map[string]any{"secret": "a"}); err == nil {
+		t.Fatal("DeleteByWhere storage query error")
 	}
-	if err := repo.DeleteByWhere(ctx, map[string]any{"name": "a"}); err == nil {
-		t.Fatal("DeleteByWhere encrypt error")
+	if _, err := repo.ExistByWhere(ctx, map[string]any{"secret": "a"}); err == nil {
+		t.Fatal("ExistByWhere storage query error")
 	}
-	if _, err := repo.ExistByWhere(ctx, map[string]any{"name": "a"}); err == nil {
-		t.Fatal("ExistByWhere encrypt error")
-	}
-	if _, err := repo.Count(ctx, map[string]any{"name": "a"}); err == nil {
-		t.Fatal("Count encrypt error")
+	if _, err := repo.Count(ctx, map[string]any{"secret": "a"}); err == nil {
+		t.Fatal("Count storage query error")
 	}
 
 	okRepo := dbx.NewT[encryptRow](func() dbx.Conn { return conn },
-		dbx.SetSpecifyFieldCipherMap(map[string]dbx.FieldCipher{"name": {StructField: "Name", Cipher: prefixCipher{}}}),
-		dbx.SetGenerateIDFunc(func() uint64 { return 7 }),
+		encryptRowCrypto(crypto.MutateInPlace),
+		dbx.WithTGenerateIDFunc(func() uint64 { return 7 }),
 	)
 	row := &encryptRow{Name: "bob"}
-	if err := okRepo.Create(ctx, row); err != nil || row.ID != 7 || row.Name != "enc:bob" {
+	if err := okRepo.Create(ctx, row); err != nil || row.ID != 7 {
 		t.Fatalf("id generator create: %#v %v", row, err)
-	}
-	m := map[string]any{"name": "carl"}
-	if err := okRepo.CheckAndCrypto(m, dbx.CipherKindEncrypt, true); err != nil || m["id"] == nil {
-		t.Fatalf("map id generator: %#v %v", m, err)
 	}
 
 	plain := dbx.NewT[testRow](func() dbx.Conn { return conn })
@@ -111,14 +83,11 @@ func TestModelErrorAndOptionBranches(t *testing.T) {
 	}
 	_ = exists
 
-	ignored := plain.Clone(dbx.SetIgnoreNotFoundErr())
+	ignored := plain.Clone(dbx.WithTIgnoreNotFoundErr())
 	var missing testRow
 	if err := ignored.GetOneByWhere(ctx, &missing, "id = ?", int64(99999)); err != nil {
 		t.Fatalf("ignore not found: %v", err)
 	}
-
-	emptyMap := dbx.NewT[testRow](func() dbx.Conn { return conn }, dbx.SetSpecifyFieldCipherMap(nil))
-	_ = emptyMap
 }
 
 func TestTransactionItemBranches(t *testing.T) {

@@ -4,10 +4,11 @@ package driverstest
 
 import (
 	"context"
-	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/ml444/gkit/dbx"
+	"github.com/ml444/gkit/dbx/crypto"
 )
 
 // Model is the common table used by the driver conformance suite.
@@ -116,24 +117,25 @@ func Run(t *testing.T, newConn Factory) {
 
 	t.Run("repository encryption", func(t *testing.T) {
 		conn := newConn(t)
-		repo := dbx.NewT[Model](func() dbx.Conn { return conn }, dbx.SetSpecifyFieldCipherMap(map[string]dbx.FieldCipher{"name": {"Name", prefixCipher{}}}))
-		value := map[string]any{"name": "alice"}
-		if err := repo.CheckAndCrypto(value, dbx.CipherKindEncrypt, false); err != nil || value["name"] != "enc:alice" {
-			t.Fatalf("encrypt = %#v, %v", value, err)
+		repo := dbx.NewT[Model](func() dbx.Conn { return conn }, dbx.WithTCrypto(crypto.Config{
+			KeyRing: crypto.KeyRing{
+				ActiveID: "1",
+				Keys:     map[string][]byte{"1": []byte("0123456789abcdef0123456789abcdef")},
+			},
+			Fields: []crypto.FieldSpec{{Column: "name", Struct: "Name", Mode: crypto.ModeSearchable}},
+			Mutate: crypto.MutateInPlace,
+		}))
+		ctx := context.Background()
+		row := &Model{ID: 10, Name: "alice", Age: 1}
+		if err := repo.Create(ctx, row); err != nil {
+			t.Fatalf("create: %v", err)
 		}
-		if err := repo.CheckAndCrypto(value, dbx.CipherKindDecrypt, false); err != nil || value["name"] != "alice" {
-			t.Fatalf("decrypt = %#v, %v", value, err)
+		if !strings.HasPrefix(row.Name, "v1:k") {
+			t.Fatalf("encrypted create = %#v", row)
+		}
+		var got Model
+		if err := repo.GetOne(ctx, &got, int64(10)); err != nil || got.Name != "alice" {
+			t.Fatalf("decrypt get = %+v, %v", got, err)
 		}
 	})
-}
-
-type prefixCipher struct{}
-
-func (prefixCipher) Encrypt(v any) (any, error) { return "enc:" + fmt.Sprint(v), nil }
-func (prefixCipher) Decrypt(v any) (any, error) {
-	s, ok := v.(string)
-	if !ok || len(s) < 4 || s[:4] != "enc:" {
-		return nil, fmt.Errorf("invalid encrypted value %v", v)
-	}
-	return s[4:], nil
 }

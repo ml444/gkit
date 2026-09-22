@@ -5,13 +5,8 @@ import (
 	"testing"
 )
 
-func TestNeedEncryptWarnAndBatchInterface(t *testing.T) {
-	d := stubDriver{}
-	conn := stubTxConn{d: d}
-	_ = NewT[testRow](func() Conn { return conn }, func(t *T) {
-		t.NeedEncrypt = true
-	})
-
+func TestBatchCreateWithInterfaceValue(t *testing.T) {
+	conn := stubTxConn{d: stubDriver{}}
 	repo := NewT[testRow](func() Conn { return conn })
 	var wrapped any = []*testRow{{ID: 1, Name: "a"}}
 	if err := repo.BatchCreate(context.Background(), wrapped); err != nil {

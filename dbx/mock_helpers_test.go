@@ -1,9 +1,8 @@
 package dbx_test
 
 import (
-	"fmt"
-
 	"github.com/ml444/gkit/dbx"
+	"github.com/ml444/gkit/dbx/crypto"
 	"github.com/ml444/gkit/dbx/mock"
 )
 
@@ -18,21 +17,49 @@ func (testRow) TableName() string { return "test_rows" }
 
 type encryptRow struct {
 	ID   uint64 `json:"id" gorm:"primaryKey"`
-	Name string `json:"name" gorm:"column:name;encrypt:true"`
+	Name string `json:"name" gorm:"column:name;encrypt:searchable"`
 }
 
 func (encryptRow) TableName() string { return "encrypt_rows" }
 
-type prefixCipher struct{}
+type storageEncryptRow struct {
+	ID     uint64 `json:"id" gorm:"primaryKey"`
+	Name   string `json:"name" gorm:"column:name;encrypt:searchable"`
+	Secret string `json:"secret" gorm:"column:secret;encrypt:storage"`
+}
 
-func (prefixCipher) Encrypt(v any) (any, error) { return "enc:" + fmt.Sprint(v), nil }
+func (storageEncryptRow) TableName() string { return "storage_encrypt_rows" }
 
-func (prefixCipher) Decrypt(v any) (any, error) {
-	s, ok := v.(string)
-	if !ok || len(s) < 4 || s[:4] != "enc:" {
-		return nil, fmt.Errorf("invalid cipher value %v", v)
+func testKeyRing() crypto.KeyRing {
+	return crypto.KeyRing{
+		ActiveID: "1",
+		Keys: map[string][]byte{
+			"1": []byte("0123456789abcdef0123456789abcdef"),
+		},
 	}
-	return s[4:], nil
+}
+
+func encryptRowCrypto(mutate ...crypto.MutatePolicy) dbx.T2Option {
+	policy := crypto.MutateInPlace
+	if len(mutate) > 0 {
+		policy = mutate[0]
+	}
+	return dbx.WithTCrypto(crypto.Config{
+		KeyRing: testKeyRing(),
+		Fields:  []crypto.FieldSpec{{Column: "name", Struct: "Name", Mode: crypto.ModeSearchable}},
+		Mutate:  policy,
+	})
+}
+
+func dualFieldCrypto() dbx.T2Option {
+	return dbx.WithTCrypto(crypto.Config{
+		KeyRing: testKeyRing(),
+		Fields: []crypto.FieldSpec{
+			{Column: "name", Struct: "Name", Mode: crypto.ModeSearchable},
+			{Column: "secret", Struct: "Secret", Mode: crypto.ModeStorage},
+		},
+		Mutate: crypto.MutateInPlace,
+	})
 }
 
 func testConn() (*mock.Driver, dbx.Conn) {

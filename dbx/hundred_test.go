@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/ml444/gkit/dbx/crypto"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -25,84 +26,42 @@ func TestInitAndRebuildNonStruct(t *testing.T) {
 	_ = NewT[badModel](func() Conn { return stubTxConn{d: stubDriver{}} })
 }
 
-func TestRebuildFieldCacheNonStructORM(t *testing.T) {
-	repo := NewT[testRow](func() Conn { return stubTxConn{d: stubDriver{}} })
-	repo.ormModel = "not-struct"
-	repo.rebuildFieldCache()
-}
-
-type ifaceCipherRow struct {
-	ID   uint64 `json:"id" gorm:"primaryKey"`
-	Name any    `json:"name" gorm:"column:name;encrypt:true"`
-}
-
-func (ifaceCipherRow) TableName() string { return "iface_cipher" }
-
-func TestCheckAndCryptoInterfaceFieldAndDecryptMap(t *testing.T) {
-	repo := NewT[ifaceCipherRow](func() Conn { return stubTxConn{d: stubDriver{}} },
-		SetTableCipher(prefixCipher{}),
+func TestWithTCryptoTagDiscovery(t *testing.T) {
+	type encryptNoJSON struct {
+		ID     uint64 `gorm:"primaryKey"`
+		Secret string `gorm:"encrypt:storage"`
+		Skip   string `gorm:"encrypt:false"`
+	}
+	repo := NewT[encryptNoJSON](func() Conn { return stubTxConn{d: stubDriver{}} },
+		WithTCrypto(crypto.Config{KeyRing: testKeyRing()}),
 	)
-	row := &ifaceCipherRow{Name: "hello"}
-	// interface-valued fields are read via Elem(); assignment may be skipped when unsettable
-	_ = repo.CheckAndCrypto(row, cipherKindEncrypt, false)
-	m := map[string]any{"name": "enc:world"}
-	if err := repo.CheckAndCrypto(m, cipherKindDecrypt, false); err != nil || m["name"] != "world" {
-		t.Fatalf("%#v %v", m, err)
+	if repo.crypto == nil {
+		t.Fatal("expected processor from tags")
 	}
 }
 
-type encryptNoJSON struct {
-	ID    uint64 `gorm:"primaryKey"`
-	Secret string `gorm:"encrypt:true"`
-	Skip  string `gorm:"encrypt:false"`
-}
-
-func TestSetTableCipherBranches(t *testing.T) {
-	repo := NewT[encryptNoJSON](func() Conn { return stubTxConn{d: stubDriver{}} }, SetTableCipher(prefixCipher{}))
-	if !repo.NeedEncrypt || repo.EncryptFieldMap["secret"] == nil || repo.EncryptFieldMap["Secret"] == nil {
-		t.Fatalf("cipher map = %#v", repo.EncryptFieldMap)
-	}
-	repo2 := NewT[encryptNoJSON](func() Conn { return stubTxConn{d: stubDriver{}} })
-	repo2.EncryptFieldMap = nil
-	SetTableCipher(prefixCipher{})(repo2)
-	if repo2.EncryptFieldMap == nil {
-		t.Fatal("EncryptFieldMap should be initialized")
-	}
-}
-
-func TestSetSpecifyFieldCipherNilMap(t *testing.T) {
-	repo := NewT[testRow](func() Conn { return stubTxConn{d: stubDriver{}} })
-	repo.EncryptFieldMap = nil
-	SetSpecifyFieldCipherMap(map[string]FieldCipher{
-		"name": {StructField: "Name", Cipher: prefixCipher{}},
-	})(repo)
-	if repo.EncryptFieldMap["name"] == nil {
-		t.Fatal("missing cipher")
-	}
-}
-
-func TestUniqueCiphersSkipsDuplicates(t *testing.T) {
-	c := prefixCipher{}
-	repo := NewT[encryptRow](func() Conn { return stubTxConn{d: stubDriver{}} },
-		SetSpecifyFieldCipherMap(map[string]FieldCipher{
-			"name": {StructField: "Name", Cipher: c},
+func TestWithTCryptoExplicitFields(t *testing.T) {
+	repo := NewT[testRow](func() Conn { return stubTxConn{d: stubDriver{}} },
+		WithTCrypto(crypto.Config{
+			KeyRing: testKeyRing(),
+			Fields:  []crypto.FieldSpec{{Column: "name", Struct: "Name", Mode: crypto.ModeSearchable}},
 		}),
 	)
-	repo.encryptDBFields["other"] = c
-	if len(repo.uniqueCiphers()) != 1 {
-		t.Fatal(repo.uniqueCiphers())
+	if repo.crypto == nil {
+		t.Fatal("missing processor")
 	}
 }
 
-func TestSetTableCipherNonStructPanic(t *testing.T) {
-	repo := NewT[testRow](func() Conn { return stubTxConn{d: stubDriver{}} })
-	repo.ormModel = 1
-	defer func() {
-		if recover() == nil {
-			t.Fatal("expected panic")
-		}
-	}()
-	SetTableCipher(prefixCipher{})(repo)
+func TestCryptoMapDecrypt(t *testing.T) {
+	repo := NewT[encryptRow](func() Conn { return stubTxConn{d: stubDriver{}} }, nameSearchableCrypto())
+	enc, err := repo.encryptForWrite(map[string]any{"name": "world"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := enc.(map[string]any)
+	if err := repo.decryptAfterRead(m); err != nil || m["name"] != "world" {
+		t.Fatalf("%#v %v", m, err)
+	}
 }
 
 type failCopyORM struct {
@@ -214,13 +173,9 @@ func TestForceModelCreateSaveBatchErrors(t *testing.T) {
 
 func TestBatchCreateEncryptAndInterface(t *testing.T) {
 	conn := stubTxConn{d: stubDriver{}}
-	repo := NewT[encryptRow](func() Conn { return conn },
-		SetSpecifyFieldCipherMap(map[string]FieldCipher{
-			"name": {StructField: "Name", Cipher: failingCipher{err: errors.New("enc")}},
-		}),
-	)
-	if err := repo.BatchCreate(context.Background(), []*encryptRow{{Name: "a"}}); err == nil {
-		t.Fatal("encrypt")
+	repo := NewT[storageEncryptRow](func() Conn { return conn }, dualFieldCrypto())
+	if err := repo.BatchCreate(context.Background(), []*storageEncryptRow{{Name: "a", Secret: "s"}}); err != nil {
+		t.Fatal(err)
 	}
 	ok := NewT[testRow](func() Conn { return conn })
 	var wrapped any = []*testRow{{ID: 1, Name: "a"}}
@@ -231,37 +186,32 @@ func TestBatchCreateEncryptAndInterface(t *testing.T) {
 
 func TestSaveEncryptError(t *testing.T) {
 	conn := stubTxConn{d: stubDriver{}}
-	repo := NewT[encryptRow](func() Conn { return conn },
-		SetSpecifyFieldCipherMap(map[string]FieldCipher{
-			"name": {StructField: "Name", Cipher: failingCipher{err: errors.New("enc")}},
-		}),
-	)
-	if err := repo.Save(context.Background(), &encryptRow{Name: "a"}, "id"); err == nil {
-		t.Fatal("expected encrypt fail")
+	repo := NewT[storageEncryptRow](func() Conn { return conn }, dualFieldCrypto())
+	if err := repo.Save(context.Background(), &storageEncryptRow{Name: "a", Secret: "s"}, "id"); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.DeleteByWhere(context.Background(), map[string]any{"secret": "s"}); err == nil {
+		t.Fatal("expected storage query encrypt fail")
 	}
 }
 
 func TestUpdateQueryEncryptAndGetOneProcessOpts(t *testing.T) {
 	conn := stubTxConn{d: stubDriver{}}
-	repo := NewT[encryptRow](func() Conn { return conn },
-		SetSpecifyFieldCipherMap(map[string]FieldCipher{
-			"name": {StructField: "Name", Cipher: failingCipher{err: errors.New("enc")}},
-		}),
-	)
+	repo := NewT[storageEncryptRow](func() Conn { return conn }, dualFieldCrypto())
 	ctx := context.Background()
-	if _, err := repo.Update(ctx, map[string]any{"id": uint64(1)}, map[string]any{"name": "z"}); err == nil {
-		t.Fatal("query encrypt")
+	if _, err := repo.Update(ctx, map[string]any{"name": "z"}, map[string]any{"secret": "a"}); err == nil {
+		t.Fatal("query encrypt on storage field")
 	}
-	if err := repo.GetOneByWhere(ctx, &encryptRow{}, QueryOpts{Where: map[string]any{"name": "a"}}); err == nil {
+	if err := repo.GetOneByWhere(ctx, &storageEncryptRow{}, QueryOpts{Where: map[string]any{"secret": "a"}}); err == nil {
 		t.Fatal("processOpts encrypt QueryOpts")
 	}
-	if err := repo.GetOneByWhere(ctx, &encryptRow{}, &QueryOpts{Where: map[string]any{"name": "a"}}); err == nil {
+	if err := repo.GetOneByWhere(ctx, &storageEncryptRow{}, &QueryOpts{Where: map[string]any{"secret": "a"}}); err == nil {
 		t.Fatal("processOpts encrypt *QueryOpts")
 	}
-	if err := repo.GetOneByWhere(ctx, &encryptRow{}, map[string]any{"name": "a"}); err == nil {
+	if err := repo.GetOneByWhere(ctx, &storageEncryptRow{}, map[string]any{"secret": "a"}); err == nil {
 		t.Fatal("processOpts encrypt map")
 	}
-	if err := repo.GetOneByWhere(ctx, &encryptRow{}, map[string]string{"name": "a"}); err == nil {
+	if err := repo.GetOneByWhere(ctx, &storageEncryptRow{}, map[string]string{"secret": "a"}); err == nil {
 		t.Fatal("processOpts encrypt string map")
 	}
 }
@@ -457,29 +407,25 @@ func TestSaveUpdateItemNonNotFoundAndNilExecute(t *testing.T) {
 	}
 
 	conn := stubTxConn{d: firstErrDriver{}}
-	repo := NewT[encryptRow](func() Conn { return conn },
-		SetSpecifyFieldCipherMap(map[string]FieldCipher{
-			"name": {StructField: "Name", Cipher: failingCipher{err: errors.New("enc")}},
-		}),
-	)
-	su := &ScopeUpdateItem{Model: &encryptRow{ID: 1, Name: "a"}, Where: map[string]any{"id": uint64(1)}, Updates: map[string]any{"name": "z"}}
+	repo := NewT[storageEncryptRow](func() Conn { return conn }, dualFieldCrypto())
+	su := &ScopeUpdateItem{Model: &storageEncryptRow{ID: 1, Name: "a"}, Where: map[string]any{"id": uint64(1)}, Updates: map[string]any{"secret": "z"}}
 	if err := su.Execute(ctx, repo, d); err == nil {
-		t.Fatal("updates encrypt")
+		t.Fatal("updates encrypt on storage field")
 	}
-	su2 := &ScopeUpdateItem{Model: &encryptRow{ID: 1, Name: "a"}, Where: map[string]any{"id": uint64(1)}, Updates: map[string]any{}}
+	su2 := &ScopeUpdateItem{Model: nil, Where: map[string]any{"id": uint64(1)}, Updates: map[string]any{}}
 	if err := su2.Execute(ctx, repo, d); err == nil {
-		t.Fatal("model encrypt")
+		t.Fatal("model update without updates")
 	}
 
-	ss := &ScopeSaveItem{Model: &encryptRow{ID: 1}, Where: map[string]any{"id": uint64(1)}}
+	ss := &ScopeSaveItem{Model: &storageEncryptRow{ID: 1}, Where: map[string]any{"id": uint64(1)}}
 	if err := ss.Preload(ctx, repo, firstErrDriver{}); err == nil {
 		t.Fatal("scopesave preload")
 	}
 	if err := (&ScopeSaveItem{}).Execute(ctx, repo, d); err != nil {
 		t.Fatal(err)
 	}
-	ss2 := &ScopeSaveItem{Model: &encryptRow{ID: 1, Name: "a"}}
-	if err := ss2.Execute(ctx, repo, d); err == nil {
-		t.Fatal("scopesave execute encrypt")
+	ss2 := &ScopeSaveItem{Model: &storageEncryptRow{ID: 1, Name: "a", Secret: "s"}}
+	if err := ss2.Execute(ctx, repo, d); err != nil {
+		t.Fatal("scopesave execute")
 	}
 }

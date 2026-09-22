@@ -14,12 +14,12 @@ const (
 	MaxLimit     int = 10000
 )
 
-func (s *Scope) PaginationQuery(list any, page, size uint32) (*pagination.Pagination, error) {
+func (s *Scope) PaginationQuery(list any, page, size uint32) (*pagination.PaginationResult, error) {
 	return s.PaginationQueryWithOpt(list, s.HandlePagination(page, size))
 }
 
 // PaginationQueryWithOpt runs paginated find using standard LIMIT/OFFSET.
-func (s *Scope) PaginationQueryWithOpt(list any, opt *pagination.Pagination) (*pagination.Pagination, error) {
+func (s *Scope) PaginationQueryWithOpt(list any, opt *pagination.Pagination) (*pagination.PaginationResult, error) {
 	if s == nil || s.driver == nil {
 		return nil, errors.New("invalid scope or transaction")
 	}
@@ -46,7 +46,7 @@ func (s *Scope) PaginationQueryWithOpt(list any, opt *pagination.Pagination) (*p
 		return nil, err
 	}
 
-	return &pagination.Pagination{
+	return &pagination.PaginationResult{
 		Page:      opt.Page,
 		Size:      opt.Size,
 		Total:     total,

@@ -8,17 +8,19 @@ import (
 )
 
 type srcModel struct {
-	ID   uint64 `json:"id"`
-	Name string `json:"name"`
+	ID     uint64 `json:"id"`
+	Name   string `json:"name"`
+	Secret string `json:"secret"`
 }
 
 func (m *srcModel) ToORM() dbx.ITModel {
-	return &ormModel{ID: m.ID, Name: m.Name, force: true}
+	return &ormModel{ID: m.ID, Name: m.Name, Secret: m.Secret, force: true}
 }
 
 type ormModel struct {
 	ID   uint64 `json:"id" gorm:"primaryKey"`
 	Name string `json:"name"`
+	Secret string `json:"secret"`
 
 	force bool
 }

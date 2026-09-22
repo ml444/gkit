@@ -5,17 +5,17 @@ import (
 )
 
 // T2Option configures a T2 repository. Returning an error aborts NewT2.
-type T2Option func(*T2) error
+type T2Option func(*T)
 
 // WithCrypto attaches a v2 field-encryption Processor.
 // If cfg.Fields is empty, fields are discovered from gorm encrypt:storage|searchable tags.
-func WithCrypto(cfg crypto.Config) T2Option {
-	return func(t *T2) error {
+func WithTCrypto(cfg crypto.Config) T2Option {
+	return func(t *T) {
 		fields := cfg.Fields
 		if len(fields) == 0 {
 			discovered, err := crypto.DiscoverFields(t.ormModel)
 			if err != nil {
-				return err
+				panic(err.Error())
 			}
 			fields = discovered
 		}
@@ -23,57 +23,50 @@ func WithCrypto(cfg crypto.Config) T2Option {
 		if len(cfg.Fields) == 0 {
 			// No fields: leave processor nil (fast path). Still validate keyring only if fields expected?
 			// Spec: empty fields => no-op. Skip NewProcessor when no fields.
-			return nil
+			return 
 		}
 		p, err := crypto.NewProcessor(cfg, t.ormModel)
 		if err != nil {
-			return err
+			panic(err.Error())
 		}
 		t.crypto = p
 		t.disableDecrypt = cfg.DisableDecrypt
-		return nil
 	}
 }
 
 // WithDecrypt controls whether read paths decrypt encrypted fields.
-func WithDecrypt(enabled bool) T2Option {
-	return func(t *T2) error {
+func WithTDecrypt(enabled bool) T2Option {
+	return func(t *T) {
 		t.disableDecrypt = !enabled
-		return nil
 	}
 }
 
-func WithT2CreateBatchSize(size int) T2Option {
-	return func(t *T2) error {
+func WithTCreateBatchSize(size int) T2Option {
+	return func(t *T) {
 		t.BatchCreateSize = size
-		return nil
 	}
 }
 
-func WithT2PrimaryKey(pk string) T2Option {
-	return func(t *T2) error {
+func WithTPrimaryKey(pk string) T2Option {
+	return func(t *T) {
 		t.PrimaryKey = pk
-		return nil
 	}
 }
 
-func WithT2GenerateIDFunc(idFunc GenerateIDFunc) T2Option {
-	return func(t *T2) error {
+func WithTGenerateIDFunc(idFunc GenerateIDFunc) T2Option {
+	return func(t *T) {
 		t.IdGenerator = idFunc
-		return nil
 	}
 }
 
-func WithT2NotFoundErrCode(code int32) T2Option {
-	return func(t *T2) error {
+func WithTNotFoundErrCode(code int32) T2Option {
+	return func(t *T) {
 		t.NotFoundErrCode = code
-		return nil
 	}
 }
 
-func WithT2IgnoreNotFoundErr() T2Option {
-	return func(t *T2) error {
+func WithTIgnoreNotFoundErr() T2Option {
+	return func(t *T) {
 		t.IgnoreNotFoundErr = true
-		return nil
 	}
 }

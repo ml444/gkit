@@ -4,7 +4,6 @@ func NewDefaultPagination() *Pagination {
 	return &Pagination{
 		Page:      1,
 		Size:      10,
-		Total:     0,
 		SkipCount: false,
 	}
 }
@@ -18,18 +17,6 @@ func (x *Pagination) SetPage(page uint32) *Pagination {
 	return x
 }
 
-// SetNextPage If it is the last page, return false
-func (x *Pagination) SetNextPage() (ok bool) {
-	ok = true
-	if x.Page == 0 {
-		x.Page = 1
-	}
-	x.Page += 1
-	if int64(x.Page*x.Size) >= x.Total {
-		ok = false
-	}
-	return ok
-}
 
 func (x *Pagination) SetSize(size uint32) *Pagination {
 	x.Size = size

@@ -6,26 +6,6 @@ import (
 	"github.com/ml444/gkit/dbx/crypto"
 )
 
-// Benchmarks compare v1 CheckAndCrypto vs v2 Processor (Copy / InPlace).
-
-func BenchmarkV1CheckAndCrypto(b *testing.B) {
-	repo := NewT[encryptRow](func() Conn { return stubTxConn{d: stubDriver{}} },
-		SetSpecifyFieldCipherMap(map[string]FieldCipher{
-			"name": {StructField: "Name", Cipher: prefixCipher{}},
-		}),
-	)
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		row := &encryptRow{Name: "alice"}
-		if err := repo.CheckAndCrypto(row, CipherKindEncrypt, false); err != nil {
-			b.Fatal(err)
-		}
-		if err := repo.CheckAndCrypto(row, CipherKindDecrypt, false); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
 
 func BenchmarkV2ProcessorCopy(b *testing.B) {
 	p, err := crypto.NewProcessor(crypto.Config{

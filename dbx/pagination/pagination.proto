@@ -10,6 +10,16 @@ message Pagination {
     uint32 page = 1;
     // @desc: page size
     uint32 size = 2;
+    // @desc: When SkipCount is true,
+    // even if CurrentPage is equal to 1, don't count the total.
+    bool skip_count = 3;
+}
+
+message PaginationResult {
+    // @desc: current page
+    uint32 page = 1;
+    // @desc: page size
+    uint32 size = 2;
     // @desc: total number of data
     sint64 total = 3;
     // @desc: When SkipCount is true,
@@ -24,6 +34,15 @@ message Scroll {
     uint32 size = 1;
     // @desc: next page token
     string cursor = 2;
+    // @desc: token expire time
+    uint32 expire = 3;
+}
+    
+message ScrollResult {
+    // @desc: page size
+    uint32 size = 1;
+    // @desc: next page token
+    string next_cursor = 2;
     // @desc: token expire time
     uint32 expire = 3;
 }

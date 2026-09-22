@@ -79,12 +79,9 @@ func TestProtoUpdatedAndPlainDriverTx(t *testing.T) {
 	var list []srcModel
 	_ = repo.ListAll(context.Background(), &list, map[string]string{"name": "alice"})
 
-	fc := failCipher{err: errors.New("d")}
-	er := dbx.NewT[encryptRow](func() dbx.Conn { return conn }, dbx.SetSpecifyFieldCipherMap(map[string]dbx.FieldCipher{
-		"name": {StructField: "Name", Cipher: fc},
-	}))
-	_ = er.CheckAndCrypto([]*encryptRow{{Name: "a"}}, dbx.CipherKindEncrypt, false)
-	_ = er.CheckAndCrypto(map[string]any{"name": "a"}, dbx.CipherKindEncrypt, false)
+	er := dbx.NewT[encryptRow](func() dbx.Conn { return conn }, encryptRowCrypto())
+	_ = er.Create(ctx, &encryptRow{Name: "a"})
+	_ = er.GetOneByWhere(ctx, &encryptRow{}, map[string]any{"name": "a"})
 
 	d, _ := testConn()
 	su := &dbx.ScopeUpdateItem{Model: &encryptRow{ID: 1}, Where: map[string]any{"name": "a"}, Updates: nil}
@@ -98,14 +95,12 @@ func TestProtoUpdatedAndPlainDriverTx(t *testing.T) {
 	upd := &dbx.UpdateItem{Model: &testRow{}, Where: map[string]any{"id": int64(1)}, Updates: nil}
 	_ = upd.Execute(ctx, d)
 
-	er2 := dbx.NewT[encryptRow](func() dbx.Conn { return conn }, dbx.SetSpecifyFieldCipherMap(map[string]dbx.FieldCipher{
-		"name": {StructField: "Name", Cipher: failCipher{err: errors.New("q")}},
-	}))
-	_, _ = er2.ExistByWhere(context.Background(), "name = ?", "alice")
-	_ = er2.ListAll(context.Background(), &[]encryptRow{}, "name = ?")
+	er2 := dbx.NewT[storageEncryptRow](func() dbx.Conn { return conn }, dualFieldCrypto())
+	_, _ = er2.ExistByWhere(context.Background(), map[string]any{"secret": "alice"})
+	_ = er2.ListAll(context.Background(), &[]storageEncryptRow{}, map[string]any{"secret": "alice"})
 
 	d3, c3 := testConn()
-	fr := dbx.NewT[srcModel](func() dbx.Conn { return c3 }, dbx.SetNotFoundErrCode(3))
+	fr := dbx.NewT[srcModel](func() dbx.Conn { return c3 }, dbx.WithTNotFoundErrCode(3))
 	_ = fr.GetOne(context.Background(), &srcModel{}, uint64(404))
 	_ = d3
 

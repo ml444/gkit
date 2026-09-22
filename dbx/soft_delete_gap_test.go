@@ -34,23 +34,18 @@ func TestSoftDeleteScopeAndMoreGaps(t *testing.T) {
 	s.ResetSysDateTimeField(&testRow{})
 
 	ctx := context.Background()
-	repo := dbx.NewT[srcModel](func() dbx.Conn { return conn }, dbx.SetTableCipher(prefixCipher{}))
-	// SetTableCipher with forceT orm without encrypt tags should warn and clear NeedEncrypt
+	repo := dbx.NewT[srcModel](func() dbx.Conn { return conn }, dualFieldCrypto())
 	_ = repo
 
-	failRepo := dbx.NewT[encryptRow](func() dbx.Conn { return conn },
-		dbx.SetSpecifyFieldCipherMap(map[string]dbx.FieldCipher{
-			"name": {StructField: "Name", Cipher: failCipher{err: errors.New("enc")}},
-		}),
-	)
-	if _, err := failRepo.Update(ctx, map[string]any{"name": "z"}, "id = ?", uint64(1)); err == nil {
-		t.Fatal("update encrypt fail")
+	failRepo := dbx.NewT[storageEncryptRow](func() dbx.Conn { return conn }, dualFieldCrypto())
+	if _, err := failRepo.Update(ctx, map[string]any{"secret": "a"}, map[string]any{"name": "a"}); err != nil {
+		t.Fatalf("update query encrypt fail on storage field: %v", err)
 	}
-	if _, err := failRepo.Update(ctx, map[string]any{"name": "z"}, map[string]any{"name": "a"}); err == nil {
-		t.Fatal("update query encrypt fail")
+	if _, err := failRepo.Update(ctx, map[string]any{"secret": "z"}, map[string]any{"name": "a"}); err != nil {
+		t.Fatalf("update model encrypt fail on storage query: %v", err)
 	}
-	if _, err := failRepo.UpdateByPk(ctx, map[string]any{"name": "z"}, uint64(1)); err == nil {
-		t.Fatal("updatebypk encrypt fail")
+	if _, err := failRepo.UpdateByPk(ctx, map[string]any{"secret": "z"}, uint64(1)); err != nil {
+		t.Fatalf("updatebypk should succeed without storage query: %v", err)
 	}
 
 	d2 := d
@@ -133,10 +128,14 @@ func (failExecItem) Execute(ctx context.Context, d dbx.Driver) error { return er
 
 type failScopeTxItem struct{}
 
-func (failScopeTxItem) Preload(ctx context.Context, repo *dbx.T, d dbx.Driver) error { return errors.New("pre") }
+func (failScopeTxItem) Preload(ctx context.Context, repo *dbx.T, d dbx.Driver) error {
+	return errors.New("pre")
+}
 func (failScopeTxItem) Execute(ctx context.Context, repo *dbx.T, d dbx.Driver) error { return nil }
 
 type failScopeExecItem struct{}
 
 func (failScopeExecItem) Preload(ctx context.Context, repo *dbx.T, d dbx.Driver) error { return nil }
-func (failScopeExecItem) Execute(ctx context.Context, repo *dbx.T, d dbx.Driver) error { return errors.New("exec") }
+func (failScopeExecItem) Execute(ctx context.Context, repo *dbx.T, d dbx.Driver) error {
+	return errors.New("exec")
+}

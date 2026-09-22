@@ -100,21 +100,8 @@ func copyAny(dst, src any) error {
 	return nil
 }
 
-func testKeyRing() crypto.KeyRing {
-	return crypto.KeyRing{
-		ActiveID: "1",
-		Keys: map[string][]byte{
-			"1": []byte("0123456789abcdef0123456789abcdef"),
-			"0": []byte("abcdef0123456789abcdef0123456789"),
-		},
-	}
-}
-
 func TestNewT2FastPath(t *testing.T) {
-	repo, err := NewT2[encryptRow](func() Conn { return stubTxConn{d: stubDriver{}} })
-	if err != nil {
-		t.Fatal(err)
-	}
+	repo := NewT[encryptRow](func() Conn { return stubTxConn{d: stubDriver{}} })
 	if repo.crypto != nil {
 		t.Fatal("expected nil processor")
 	}
@@ -122,15 +109,11 @@ func TestNewT2FastPath(t *testing.T) {
 
 func TestT2CreateGetSearchableWhere(t *testing.T) {
 	drv := &captureDriver{}
-	repo, err := NewT2[v2EncryptRow](func() Conn { return stubTxConn{d: drv} },
-		WithCrypto(crypto.Config{
+	repo := NewT[v2EncryptRow](func() Conn { return stubTxConn{d: drv} },
+		WithTCrypto(crypto.Config{
 			KeyRing: testKeyRing(),
-			// tag discovery
 		}),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if repo.crypto == nil {
 		t.Fatal("expected processor from tags")
 	}
@@ -165,12 +148,9 @@ func TestT2CreateGetSearchableWhere(t *testing.T) {
 
 	// searchable where
 	drv2 := &captureDriver{firstFill: created}
-	repo2, err := NewT2[v2EncryptRow](func() Conn { return stubTxConn{d: drv2} },
-		WithCrypto(crypto.Config{KeyRing: testKeyRing()}),
+	repo2 := NewT[v2EncryptRow](func() Conn { return stubTxConn{d: drv2} },
+		WithTCrypto(crypto.Config{KeyRing: testKeyRing()}),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	got := &v2EncryptRow{}
 	if err := repo2.GetOneByWhere(ctx, got, map[string]any{"phone": "138"}); err != nil {
 		t.Fatal(err)
@@ -186,13 +166,10 @@ func TestT2CreateGetSearchableWhere(t *testing.T) {
 
 func TestT2DisableDecrypt(t *testing.T) {
 	drv := &captureDriver{}
-	repo, err := NewT2[v2EncryptRow](func() Conn { return stubTxConn{d: drv} },
-		WithCrypto(crypto.Config{KeyRing: testKeyRing()}),
-		WithDecrypt(false),
+	repo := NewT[v2EncryptRow](func() Conn { return stubTxConn{d: drv} },
+		WithTCrypto(crypto.Config{KeyRing: testKeyRing()}),
+		WithTDecrypt(false),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	ctx := context.Background()
 	_ = repo.Create(ctx, &v2EncryptRow{Phone: "138", Card: "c"})
 	drv.firstFill = drv.lastCreate
@@ -207,12 +184,9 @@ func TestT2DisableDecrypt(t *testing.T) {
 
 func TestT2BatchCreateAndList(t *testing.T) {
 	drv := &captureDriver{}
-	repo, err := NewT2[v2EncryptRow](func() Conn { return stubTxConn{d: drv} },
-		WithCrypto(crypto.Config{KeyRing: testKeyRing()}),
+	repo := NewT[v2EncryptRow](func() Conn { return stubTxConn{d: drv} },
+		WithTCrypto(crypto.Config{KeyRing: testKeyRing()}),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	ctx := context.Background()
 	list := []*v2EncryptRow{{Phone: "1", Card: "a"}, {Phone: "2", Card: "b"}}
 	if err := repo.BatchCreate(ctx, list); err != nil {
@@ -225,8 +199,8 @@ func TestT2BatchCreateAndList(t *testing.T) {
 	drv.firstFill = &v2EncryptRow{Phone: "v1:k1:placeholder", Card: "v1:k1:placeholder", Name: "x"}
 	// build a real encrypted row via Create
 	drv2 := &captureDriver{}
-	repo2, _ := NewT2[v2EncryptRow](func() Conn { return stubTxConn{d: drv2} },
-		WithCrypto(crypto.Config{KeyRing: testKeyRing()}),
+	repo2 := NewT[v2EncryptRow](func() Conn { return stubTxConn{d: drv2} },
+		WithTCrypto(crypto.Config{KeyRing: testKeyRing()}),
 	)
 	_ = repo2.Create(ctx, &v2EncryptRow{Phone: "99", Card: "cc", Name: "n"})
 	drv.firstFill = drv2.lastCreate
@@ -241,15 +215,12 @@ func TestT2BatchCreateAndList(t *testing.T) {
 
 func TestT2InPlaceMutate(t *testing.T) {
 	drv := &captureDriver{}
-	repo, err := NewT2[v2EncryptRow](func() Conn { return stubTxConn{d: drv} },
-		WithCrypto(crypto.Config{
+	repo := NewT[v2EncryptRow](func() Conn { return stubTxConn{d: drv} },
+		WithTCrypto(crypto.Config{
 			KeyRing: testKeyRing(),
 			Mutate:  crypto.MutateInPlace,
 		}),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	in := &v2EncryptRow{Phone: "138", Card: "c"}
 	if err := repo.Create(context.Background(), in); err != nil {
 		t.Fatal(err)
@@ -272,12 +243,9 @@ func TestT2MultiKeyDecrypt(t *testing.T) {
 		t.Fatal(err)
 	}
 	drv := &captureDriver{firstFill: &v2EncryptRow{Phone: encPhone, Card: encCard, Name: "n"}}
-	repo, err := NewT2[v2EncryptRow](func() Conn { return stubTxConn{d: drv} },
-		WithCrypto(crypto.Config{KeyRing: ring}),
+	repo := NewT[v2EncryptRow](func() Conn { return stubTxConn{d: drv} },
+		WithTCrypto(crypto.Config{KeyRing: ring}),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	out := &v2EncryptRow{}
 	if err := repo.GetOne(context.Background(), out, uint64(1)); err != nil {
 		t.Fatal(err)
@@ -288,13 +256,15 @@ func TestT2MultiKeyDecrypt(t *testing.T) {
 }
 
 func TestT2InvalidConfig(t *testing.T) {
-	_, err := NewT2[v2EncryptRow](func() Conn { return stubTxConn{d: stubDriver{}} },
-		WithCrypto(crypto.Config{
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic for invalid keyring")
+		}
+	}()
+	NewT[v2EncryptRow](func() Conn { return stubTxConn{d: stubDriver{}} },
+		WithTCrypto(crypto.Config{
 			KeyRing: crypto.KeyRing{},
 			Fields:  []crypto.FieldSpec{{Column: "phone", Mode: crypto.ModeSearchable}},
 		}),
 	)
-	if err == nil {
-		t.Fatal("expected invalid keyring error")
-	}
 }
