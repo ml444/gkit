@@ -83,7 +83,7 @@ func (gs *GormScope) Unscoped() *GormScope {
 }
 
 // PaginationQueryWithOpt runs paginated find, using deferred join when eligible.
-func (gs *GormScope) PaginationQueryWithOpt(list any, opt *pagination.Pagination) (*pagination.Pagination, error) {
+func (gs *GormScope) PaginationQueryWithOpt(list any, opt *pagination.Pagination) (*pagination.PaginationResult, error) {
 	if gs == nil || gs.Scope == nil {
 		return nil, errors.New("invalid scope")
 	}
@@ -113,7 +113,7 @@ func (gs *GormScope) PaginationQueryWithOpt(list any, opt *pagination.Pagination
 		return nil, err
 	}
 
-	return &pagination.Pagination{
+	return &pagination.PaginationResult{
 		Page:      opt.Page,
 		Size:      opt.Size,
 		Total:     total,

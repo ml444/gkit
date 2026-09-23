@@ -52,6 +52,17 @@ func TestWithTCryptoExplicitFields(t *testing.T) {
 	}
 }
 
+func nameSearchableCrypto(mutate ...crypto.MutatePolicy) T2Option {
+	policy := crypto.MutateInPlace
+	if len(mutate) > 0 {
+		policy = mutate[0]
+	}
+	return WithTCrypto(crypto.Config{
+		KeyRing: testKeyRing(),
+		Fields:  []crypto.FieldSpec{{Column: "name", Struct: "Name", Mode: crypto.ModeSearchable}},
+		Mutate:  policy,
+	})
+}
 func TestCryptoMapDecrypt(t *testing.T) {
 	repo := NewT[encryptRow](func() Conn { return stubTxConn{d: stubDriver{}} }, nameSearchableCrypto())
 	enc, err := repo.encryptForWrite(map[string]any{"name": "world"}, false)
@@ -70,9 +81,9 @@ type failCopyORM struct {
 	force bool
 }
 
-func (m *failCopyORM) ToSource() IModel                    { return &failCopySrc{ID: m.ID, Name: m.Name} }
-func (m *failCopyORM) ForceTModel() bool                   { return m.force }
-func (m *failCopyORM) CopyToSource(dst IModel) error       { return errors.New("copy fail") }
+func (m *failCopyORM) ToSource() IModel              { return &failCopySrc{ID: m.ID, Name: m.Name} }
+func (m *failCopyORM) ForceTModel() bool             { return m.force }
+func (m *failCopyORM) CopyToSource(dst IModel) error { return errors.New("copy fail") }
 func (m *failCopyORM) CopyToSourceIgnoreEmpty(dst IModel) error {
 	return errors.New("copy fail")
 }
@@ -331,7 +342,7 @@ func TestScrollPointerLastAndPascalColumn(t *testing.T) {
 	d := &seedFindDriver{rows: []map[string]any{{"id": int64(1), "name": "a", "age": int64(1), "deleted_at": uint32(0)}}}
 	s := NewScope(stubTxConn{d: d}, &testRow{})
 	var rows []*testRow
-	if _, err := s.ScrollQuery(&rows, "0", 10); err != nil {
+	if _, err := s.ScrollQuery(&rows, "id", "0", 10, false); err != nil {
 		t.Fatal(err)
 	}
 	type weird struct {

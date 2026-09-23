@@ -2,8 +2,6 @@ package dbx
 
 import (
 	"fmt"
-	"reflect"
-	"strings"
 )
 
 type WhereClause struct {
@@ -56,31 +54,6 @@ func newQueryBuilder(modelOrTable any) *QueryBuilder {
 		b.Model = modelOrTable
 	}
 	return b
-}
-
-func tableNameFromModel(model any) string {
-	if model == nil {
-		return ""
-	}
-	if t, ok := model.(ITable); ok {
-		return t.TableName()
-	}
-	t := reflect.TypeOf(model)
-	for t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
-	if t.Kind() != reflect.Struct {
-		return ""
-	}
-	name := t.Name()
-	var b strings.Builder
-	for i, r := range name {
-		if i > 0 && r >= 'A' && r <= 'Z' {
-			b.WriteByte('_')
-		}
-		b.WriteRune(r)
-	}
-	return strings.ToLower(b.String())
 }
 
 func (b *QueryBuilder) Clone() *QueryBuilder {

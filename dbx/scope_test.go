@@ -140,3 +140,29 @@ func TestScopeNoOpIncrementAndEmptyExist(t *testing.T) {
 		t.Fatalf("empty Exist = %v, %v", exists, err)
 	}
 }
+
+
+func TestScopeEdgeBranches(t *testing.T) {
+	d, conn := testConn()
+	d.Seed("test_rows", map[string]any{"id": int64(1), "name": "a", "age": int64(1), "deleted_at": uint32(0)})
+	s := dbx.NewScope(conn, &testRow{})
+	if err := s.UpdateColumnWithIncr("age", 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Eq("id", int64(99)).UpdateColumn("name", "x"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Eq("id", int64(99)).UpdateColumnWithIncr("age", 1); !errors.Is(err, dbx.ErrUpdateRowAffectedZero) {
+		t.Fatalf("incr zero rows: %v", err)
+	}
+	_ = s.Or(map[string]any{"id": int64(1)})
+	_ = s.Or("id = ?", int64(1))
+	_ = s.Having(map[string]any{"x": 1})
+	var rows []testRow
+	if err := s.Find(&rows, "id = ?", int64(1)); err != nil {
+		t.Fatal(err)
+	}
+	if b := (*dbx.Scope)(nil).Builder(); b == nil {
+		t.Fatal("nil builder")
+	}
+}

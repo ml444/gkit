@@ -84,31 +84,31 @@ func normalizePagination(opt *pagination.Pagination) {
 	}
 }
 
-func (s *Scope) ScrollQuery(list any, cursor string, size uint32, cursorField ...string) (*pagination.Scroll, error) {
+func (s *Scope) ScrollQuery(list any, cursorField, cursor string, size uint32, isDesc bool) (*pagination.ScrollResult, error) {
 	if s == nil || s.driver == nil {
 		return nil, errors.New("invalid scope or transaction")
 	}
-	field := "id"
-	if len(cursorField) > 0 && cursorField[0] != "" {
-		field = cursorField[0]
-	}
 	opt := s.HandlePagination(1, size)
-	limit := int(opt.Size)
+	ns := s.Limit(int(opt.Size))
 
-	ns := s.Order(field + " ASC").Limit(limit)
+	if isDesc {
+		ns = ns.Order(cursorField + " DESC")
+	} else {
+		ns = ns.Order(cursorField + " ASC")
+	}
 	if cursor != "" {
 		cursorVal, err := parseScrollCursor(cursor)
 		if err != nil {
 			return nil, err
 		}
-		ns = ns.Where(field+" > ?", cursorVal)
+		ns = ns.Where(cursorField+" > ?", cursorVal)
 	}
 	b := ns.builder.Clone()
 	if err := ns.driver.Find(ns.context(), b, list); err != nil {
 		return nil, err
 	}
 
-	scroll := &pagination.Scroll{Size: opt.Size}
+	scroll := &pagination.ScrollResult{Size: opt.Size}
 	listV := reflect.ValueOf(list)
 	if listV.Kind() == reflect.Ptr {
 		listV = listV.Elem()
@@ -119,9 +119,9 @@ func (s *Scope) ScrollQuery(list any, cursor string, size uint32, cursorField ..
 			last = last.Elem()
 		}
 		if last.Kind() == reflect.Struct {
-			cursorVal := fieldByColumn(last, field)
+			cursorVal := fieldByColumn(last, cursorField)
 			if cursorVal.IsValid() {
-				scroll.Cursor = formatScrollCursor(cursorVal)
+				scroll.NextCursor = formatScrollCursor(cursorVal)
 			}
 		}
 	}

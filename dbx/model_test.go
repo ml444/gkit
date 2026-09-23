@@ -7,7 +7,37 @@ import (
 
 	"github.com/ml444/gkit/dbx"
 	"github.com/ml444/gkit/dbx/crypto"
+	"github.com/ml444/gkit/dbx/mock"
 )
+
+type testRow struct {
+	ID        int64  `json:"id" gorm:"primaryKey"`
+	Name      string `json:"name"`
+	Age       int64  `json:"age"`
+	DeletedAt uint32 `json:"deleted_at"`
+}
+
+func (testRow) TableName() string { return "test_rows" }
+
+type encryptRow struct {
+	ID   uint64 `json:"id" gorm:"primaryKey"`
+	Name string `json:"name" gorm:"column:name;encrypt:searchable"`
+}
+
+func (encryptRow) TableName() string { return "encrypt_rows" }
+
+type storageEncryptRow struct {
+	ID     uint64 `json:"id" gorm:"primaryKey"`
+	Name   string `json:"name" gorm:"column:name;encrypt:searchable"`
+	Secret string `json:"secret" gorm:"column:secret;encrypt:storage"`
+}
+
+func (storageEncryptRow) TableName() string { return "storage_encrypt_rows" }
+
+func testConn() (*mock.Driver, dbx.Conn) {
+	d := mock.New()
+	return d, d.Conn()
+}
 
 func TestRepositoryOperationsAndOptions(t *testing.T) {
 	d, conn := testConn()

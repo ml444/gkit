@@ -69,8 +69,8 @@ func Run(t *testing.T, newConn Factory) {
 			t.Fatalf("pagination = %+v, rows=%+v, err=%v", p, page, err)
 		}
 		var scrollRows []*Model
-		scroll, err := dbx.NewScope(conn, &Model{}).ScrollQuery(&scrollRows, "2", 2)
-		if err != nil || len(scrollRows) != 2 || scrollRows[0].ID != 3 || scroll.Cursor != "4" {
+		scroll, err := dbx.NewScope(conn, &Model{}).ScrollQuery(&scrollRows, "id", "2", 2, false)
+		if err != nil || len(scrollRows) != 2 || scrollRows[0].ID != 3 || scroll.NextCursor != "4" {
 			t.Fatalf("scroll = %+v, rows=%+v, err=%v", scroll, scrollRows, err)
 		}
 		if err := repo.DeleteByWhere(ctx, "id = ?", int64(5)); err != nil {
