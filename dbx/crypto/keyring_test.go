@@ -33,4 +33,10 @@ func TestKeyRingValidate(t *testing.T) {
 	if err := (KeyRing{}).Validate(); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("empty: %v", err)
 	}
+	if err := (KeyRing{ActiveID: "missing", Keys: map[string][]byte{"1": make([]byte, 32)}}).Validate(); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("missing active key: %v", err)
+	}
+	if err := (KeyRing{ActiveID: "1", Keys: map[string][]byte{"1": nil}}).Validate(); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("empty key material: %v", err)
+	}
 }

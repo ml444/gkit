@@ -222,22 +222,19 @@ func (i *ScopeUpdateItem) Execute(ctx context.Context, repo *T, d Driver) (err e
 	if i.Model == nil && len(i.Updates) == 0 {
 		return errors.New("model or updates is empty")
 	}
-	scope := newScopeWithDriver(wrapTxConn(repo.getConn(), d), d, ctx, i.Model).Where(i.Where)	// Preload already encrypted the where clause if needed
+	scope := newScopeWithDriver(wrapTxConn(repo.getConn(), d), d, ctx, i.Model).Where(i.Where) // Preload already encrypted the where clause if needed
 	if len(i.Updates) != 0 {
 		i.Updates, err = checkCryptoForWhere(repo, i.Updates)
 		if err != nil {
 			return err
 		}
 		return scope.Update(i.Updates)
-	} else if i.Model != nil {
-		i.Model, err = repo.encryptForWrite(i.Model, false)
-		if err != nil {
-			return err
-		}
-		return scope.Update(i.Model)
 	}
-
-	return nil
+	i.Model, err = repo.encryptForWrite(i.Model)
+	if err != nil {
+		return err
+	}
+	return scope.Update(i.Model)
 }
 
 type SaveItem struct {
@@ -299,10 +296,10 @@ func (i *ScopeSaveItem) Execute(ctx context.Context, repo *T, d Driver) (err err
 	if i.Model == nil {
 		return nil
 	}
-	i.Model, err = repo.encryptForWrite(i.Model, false)
-		if err != nil {
-			return err
-		}
+	i.Model, err = repo.encryptForWrite(i.Model)
+	if err != nil {
+		return err
+	}
 	scope := newScopeWithDriver(wrapTxConn(repo.getConn(), d), d, ctx, i.Model)
 	return scope.Save(i.Model)
 }

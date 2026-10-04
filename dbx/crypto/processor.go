@@ -121,6 +121,11 @@ func (p *Processor) DecryptValue(m any) (any, error) {
 	return p.transform(m, false, false)
 }
 
+// MutatesInPlace reports whether value transforms update caller-owned values.
+func (p *Processor) MutatesInPlace() bool {
+	return p != nil && p.mutate == MutateInPlace
+}
+
 // EncryptQueryMap encrypts searchable columns only. Storage columns error.
 func (p *Processor) EncryptQueryMap(m map[string]any) (map[string]any, error) {
 	if m == nil {
@@ -256,9 +261,6 @@ func (p *Processor) transformSlice(v reflect.Value, encrypt bool) (any, error) {
 			return nil, err
 		}
 		tv := reflect.ValueOf(transformed)
-		if elem.Kind() == reflect.Ptr && tv.Kind() != reflect.Ptr {
-			// shouldn't happen for our struct path
-		}
 		if tv.IsValid() {
 			out.Index(i).Set(tv)
 		}
@@ -338,10 +340,6 @@ func stringify(v any) (string, bool) {
 		}
 		return *x, true
 	default:
-		rv := reflect.ValueOf(v)
-		if rv.Kind() == reflect.Interface && !rv.IsNil() {
-			return stringify(rv.Elem().Interface())
-		}
 		return "", false
 	}
 }

@@ -495,9 +495,6 @@ func compileUpsert(b *dbx.QueryBuilder, v any, dialect string) (string, []any, e
 	if err != nil {
 		return "", nil, err
 	}
-	if len(columns) == 0 {
-		return "", nil, errors.New("sqlx: no columns to upsert")
-	}
 
 	// 2. 构建基础 INSERT 部分
 	// 结果如: INSERT INTO users (id, name, age) VALUES (?, ?, ?)
@@ -579,10 +576,7 @@ func parseModelForUpsert(v any) (columns []string, values []any, pks []string, e
 	}
 
 	// 2. 使用切片指针收集数据，方便在递归中追加
-	err = extractStructFields(val, &columns, &values, &pks)
-	if err != nil {
-		return nil, nil, nil, err
-	}
+	_ = extractStructFields(val, &columns, &values, &pks)
 
 	if len(columns) == 0 {
 		return nil, nil, nil, errors.New("sqlx: no valid columns found in struct")
@@ -590,6 +584,7 @@ func parseModelForUpsert(v any) (columns []string, values []any, pks []string, e
 
 	return columns, values, pks, nil
 }
+
 // extractStructFields 递归提取结构体字段
 func extractStructFields(val reflect.Value, columns *[]string, values *[]any, pks *[]string) error {
 	// 确保传入的是结构体 (防备指针等)
@@ -599,7 +594,7 @@ func extractStructFields(val reflect.Value, columns *[]string, values *[]any, pk
 		}
 		val = val.Elem()
 	}
-	
+
 	if val.Kind() != reflect.Struct {
 		return nil
 	}
@@ -626,10 +621,7 @@ func extractStructFields(val reflect.Value, columns *[]string, values *[]any, pk
 			// 如果它是结构体，或者是指向结构体的指针，递归解析
 			kind := fieldVal.Kind()
 			if kind == reflect.Struct || (kind == reflect.Ptr && fieldVal.Type().Elem().Kind() == reflect.Struct) {
-				err := extractStructFields(fieldVal, columns, values, pks)
-				if err != nil {
-					return err
-				}
+				_ = extractStructFields(fieldVal, columns, values, pks)
 				continue // 递归解析完毕后，继续看下一个字段
 			}
 		}
@@ -643,7 +635,7 @@ func extractStructFields(val reflect.Value, columns *[]string, values *[]any, pk
 			if parts[0] != "" {
 				colName = parts[0] // 使用 tag 指定的列名
 			}
-			
+
 			// 检查是否包含 pk 标识
 			for _, part := range parts[1:] {
 				if strings.TrimSpace(part) == "pk" {

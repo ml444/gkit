@@ -97,10 +97,7 @@ func (s *Scope) ScrollQuery(list any, cursorField, cursor string, size uint32, i
 		ns = ns.Order(cursorField + " ASC")
 	}
 	if cursor != "" {
-		cursorVal, err := parseScrollCursor(cursor)
-		if err != nil {
-			return nil, err
-		}
+		cursorVal := parseScrollCursor(cursor)
 		ns = ns.Where(cursorField+" > ?", cursorVal)
 	}
 	b := ns.builder.Clone()
@@ -128,14 +125,14 @@ func (s *Scope) ScrollQuery(list any, cursorField, cursor string, size uint32, i
 	return scroll, nil
 }
 
-func parseScrollCursor(cursor string) (any, error) {
+func parseScrollCursor(cursor string) any {
 	if cursor == "" {
-		return nil, nil
+		return nil
 	}
 	if id, err := strconv.ParseUint(cursor, 10, 64); err == nil {
-		return id, nil
+		return id
 	}
-	return cursor, nil
+	return cursor
 }
 
 func fieldByColumn(v reflect.Value, column string) reflect.Value {

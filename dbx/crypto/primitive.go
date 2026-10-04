@@ -9,10 +9,12 @@ import (
 )
 
 type Primitive struct {
-	mu  sync.Mutex
-	aes map[string]*cryptox.AES
-	siv map[string]*cryptox.AESSIV
-	enc *base64.Encoding
+	mu         sync.Mutex
+	aes        map[string]*cryptox.AES
+	siv        map[string]*cryptox.AESSIV
+	enc        *base64.Encoding
+	encryptAES func(*cryptox.AES, []byte) ([]byte, error)
+	encryptSIV func(*cryptox.AESSIV, []byte) ([]byte, error)
 }
 
 func NewPrimitive() *Primitive {
@@ -20,6 +22,12 @@ func NewPrimitive() *Primitive {
 		aes: make(map[string]*cryptox.AES),
 		siv: make(map[string]*cryptox.AESSIV),
 		enc: base64.RawStdEncoding,
+		encryptAES: func(c *cryptox.AES, plaintext []byte) ([]byte, error) {
+			return c.EncryptWithBytes(plaintext)
+		},
+		encryptSIV: func(c *cryptox.AESSIV, plaintext []byte) ([]byte, error) {
+			return c.EncryptWithBytes(plaintext)
+		},
 	}
 }
 
@@ -36,14 +44,14 @@ func (p *Primitive) Encrypt(mode Mode, key Key, plaintext string) (string, error
 		if err != nil {
 			return "", err
 		}
-		raw, err = c.EncryptWithBytes([]byte(plaintext))
+		raw, err = p.encryptAES(c, []byte(plaintext))
 	case ModeSearchable:
 		var c *cryptox.AESSIV
 		c, err = p.sivFor(key)
 		if err != nil {
 			return "", err
 		}
-		raw, err = c.EncryptWithBytes([]byte(plaintext))
+		raw, err = p.encryptSIV(c, []byte(plaintext))
 	default:
 		return "", fmt.Errorf("%w: invalid mode", ErrInvalidConfig)
 	}

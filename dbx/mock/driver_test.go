@@ -174,6 +174,16 @@ func TestDriverHelperErrorAndNumericBranches(t *testing.T) {
 	if err := assignRow(row{}, map[string]any{}); err == nil {
 		t.Fatal("assignRow non-pointer should fail")
 	}
+	if err := assignRow(&row{}, map[string]any{}); err != nil {
+		t.Fatalf("empty row should be ignored: %v", err)
+	}
+	var scalar int
+	if err := assignRow(&scalar, map[string]any{"id": 1}); err != nil {
+		t.Fatalf("scalar destination should be ignored for assignRow: %v", err)
+	}
+	if err := mapToStruct(map[string]any{"id": 1}, &scalar); err == nil {
+		t.Fatal("mapToStruct scalar pointer should fail")
+	}
 
 	m := New()
 	b := &dbx.QueryBuilder{Table: "items"}

@@ -20,6 +20,9 @@ func NewConn(db *gorm.DB) dbx.Conn {
 }
 
 func (c *Conn) Driver(ctx context.Context) dbx.Driver {
+	if c == nil || c.db == nil {
+		return nil
+	}
 	return &Driver{db: c.db.WithContext(ctx)}
 }
 

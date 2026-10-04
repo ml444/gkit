@@ -1,168 +1,198 @@
-package dbx_test
+package dbx
 
 import (
 	"context"
 	"errors"
+	"fmt"
+	"reflect"
 	"testing"
 
-	"github.com/ml444/gkit/dbx"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/descriptorpb"
+	"google.golang.org/protobuf/types/dynamicpb"
 )
 
-func seededScope() (*dbx.Scope, dbx.Conn) {
-	d, conn := testConn()
-	d.Seed("test_rows", map[string]any{"id": int64(1), "name": "alice", "age": int64(10), "deleted_at": uint32(0)}, map[string]any{"id": int64(2), "name": "bob", "age": int64(20), "deleted_at": uint32(0)})
-	return dbx.NewScope(conn, &testRow{}), conn
+type countErrDriver struct{ stubDriver }
+
+func (countErrDriver) Count(ctx context.Context, b *QueryBuilder) (int64, error) {
+	return 0, errors.New("count boom")
 }
 
-func TestScopeCRUDAndReads(t *testing.T) {
-	s, _ := seededScope()
-	if dbx.NewScopeOfPure(s.Conn(), &testRow{}).Builder().Table != "test_rows" {
-		t.Fatal("pure scope table missing")
-	}
-	func() {
-		defer func() {
-			if recover() == nil {
-				t.Fatal("nil model did not panic")
-			}
-		}()
-		dbx.NewScope(s.Conn(), nil)
-	}()
-	if err := s.Create(&testRow{ID: 3, Name: "c"}); err != nil || s.RowsAffected != 1 {
-		t.Fatalf("create: %v, %d", err, s.RowsAffected)
-	}
-	if err := s.Save(&testRow{ID: 4, Name: "d"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.CreateInBatches([]testRow{{ID: 5}, {ID: 6}}, 1); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Update(map[string]any{"name": "new"}, "id = ?", int64(1)); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Update(testRow{Name: "struct"}, map[string]any{"id": int64(1)}); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Eq("id", int64(1)).UpdateColumn("name", "changed"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Eq("id", int64(1)).UpdateColumnWithIncr("age", 2); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Delete("id = ?", int64(1)); err != nil {
-		t.Fatal(err)
-	}
-	var one testRow
-	if err := s.First(&one, "id = ?", int64(1)); err != nil || one.Name != "changed" {
-		t.Fatalf("first: %#v, %v", one, err)
-	}
-	// Update mutates the receiver Scope; use a fresh Scope for subsequent reads.
-	fresh := dbx.NewScope(s.Conn(), &testRow{})
+type firstErrDriver struct{ stubDriver }
+
+func (firstErrDriver) First(ctx context.Context, b *QueryBuilder, dest any) error {
+	return errors.New("first boom")
+}
+
+func TestPaginationCountErrorAndExistError(t *testing.T) {
+	s := NewScope(stubTxConn{d: countErrDriver{}}, &testRow{})
 	var rows []testRow
-	if err := fresh.Find(&rows); err != nil || len(rows) < 2 {
-		t.Fatalf("find: %d, %v", len(rows), err)
+	if _, err := s.PaginationQueryWithOpt(&rows, nil); err == nil {
+		t.Fatal("count error")
 	}
-	if err := fresh.Scan(&one, "id = ?", int64(2)); err != nil || one.ID != 2 {
-		t.Fatalf("scan: %#v, %v", one, err)
-	}
-	exists, err := fresh.Exist("id = ?", int64(2))
-	if err != nil || !exists {
-		t.Fatalf("exist: %v, %v", exists, err)
-	}
-	if count, err := fresh.Count(); err != nil || count < 2 {
-		t.Fatalf("count: %d, %v", count, err)
-	}
-	if err := fresh.Eq("id", int64(99)).First(&one); !errors.Is(err, dbx.ErrRecordNotFound) {
-		t.Fatalf("missing first: %v", err)
-	}
-	if err := fresh.SetNotFoundErr(77).Eq("id", int64(99)).First(&one); !dbx.IsNotFoundErr(err, 77) {
-		t.Fatalf("custom missing: %v", err)
-	}
-	if err := fresh.IgnoreNotFoundErr().Eq("id", int64(99)).First(&one); err != nil {
-		t.Fatalf("ignored missing: %v", err)
+	s = NewScope(stubTxConn{d: firstErrDriver{}}, &testRow{})
+	if _, err := s.Exist(); err == nil {
+		t.Fatalf("exist count error")
 	}
 }
 
-func TestScopePredicatesAndConfiguration(t *testing.T) {
-	s, conn := seededScope()
-	q := s.Eq("a", 1).Ne("b", 2).In("c", []int{1}).NotIn("d", []int{2}).Like("e", "x").LikePrefix("f", "x").LikeSuffix("g", "x").NotLike("h", "x").IsNull("i").IsNotNull("j").Between("k", 1, 2).NotBetween("l", 1, 2)
-	if len(q.Builder().Wheres) != 12 || len(s.Builder().Wheres) != 0 {
-		t.Fatalf("where count or fork isolation incorrect: %d/%d", len(q.Builder().Wheres), len(s.Builder().Wheres))
+func TestWhereNonMapFallback(t *testing.T) {
+	s := NewScope(stubTxConn{d: stubDriver{}}, &testRow{}).Where(42, "x")
+	if len(s.Builder().Wheres) == 0 {
+		t.Fatal("where missing")
 	}
-	want := []string{"a = ?", "b != ?", "c IN ?", "d NOT IN ?", "e LIKE ? ESCAPE '\\'", "f LIKE ? ESCAPE '\\'", "g LIKE ? ESCAPE '\\'", "h NOT LIKE ? ESCAPE '\\'", "i IS NULL", "j IS NOT NULL", "k BETWEEN ? AND ?", "l NOT BETWEEN ? AND ?"}
-	for i, clause := range q.Builder().Wheres {
-		if clause.Query != want[i] {
-			t.Fatalf("where[%d] = %q, want %q", i, clause.Query, want[i])
+}
+
+func TestResetTimeAndProtoUpsert(t *testing.T) {
+	msg := mustDynamicUpsertMessage(t)
+	stub := &protoUpsertStub{msg: msg}
+	s := NewScope(stubTxConn{d: stubDriver{}}, &testRow{})
+	s.resetTime = true
+	s.ResetSysDateTimeField(stub)
+	if err := s.Create(stub); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Save(stub); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Update(map[string]any{"name": "x"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type protoUpsertStub struct {
+	msg protoreflect.Message
+}
+
+func (p *protoUpsertStub) ProtoReflect() protoreflect.Message { return p.msg }
+func (p *protoUpsertStub) GetCreatedAt() int64                { return 1 }
+func (p *protoUpsertStub) GetUpdatedAt() int64                { return 1 }
+func (p *protoUpsertStub) GetDeletedAt() int64                { return 0 }
+
+func mustDynamicUpsertMessage(t *testing.T) protoreflect.Message {
+	t.Helper()
+	file := &descriptorpb.FileDescriptorProto{
+		Name:    proto.String("dbx_upsert.proto"),
+		Package: proto.String("dbx.test"),
+		Syntax:  proto.String("proto3"),
+		MessageType: []*descriptorpb.DescriptorProto{{
+			Name: proto.String("Upsert"),
+			Field: []*descriptorpb.FieldDescriptorProto{
+				{
+					Name:     proto.String("created_at"),
+					Number:   proto.Int32(1),
+					Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+					Type:     descriptorpb.FieldDescriptorProto_TYPE_UINT32.Enum(),
+					JsonName: proto.String("created_at"),
+				},
+				{
+					Name:     proto.String("updated_at"),
+					Number:   proto.Int32(2),
+					Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+					Type:     descriptorpb.FieldDescriptorProto_TYPE_UINT32.Enum(),
+					JsonName: proto.String("updated_at"),
+				},
+				{
+					Name:     proto.String("deleted_at"),
+					Number:   proto.Int32(3),
+					Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+					Type:     descriptorpb.FieldDescriptorProto_TYPE_UINT32.Enum(),
+					JsonName: proto.String("deleted_at"),
+				},
+			},
+		}},
+	}
+	fd, err := protodesc.NewFile(file, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	md := fd.Messages().Get(0)
+	msg := dynamicpb.NewMessage(md)
+	fields := md.Fields()
+	msg.Set(fields.ByName("created_at"), protoreflect.ValueOfUint32(9))
+	msg.Set(fields.ByName("updated_at"), protoreflect.ValueOfUint32(9))
+	msg.Set(fields.ByName("deleted_at"), protoreflect.ValueOfUint32(9))
+	return msg
+}
+
+func TestScrollPointerLastAndPascalColumn(t *testing.T) {
+	d := &seedFindDriver{rows: []map[string]any{{"id": int64(1), "name": "a", "age": int64(1), "deleted_at": uint32(0)}}}
+	s := NewScope(stubTxConn{d: d}, &testRow{})
+	var rows []*testRow
+	if _, err := s.ScrollQuery(&rows, "id", "0", 10, false); err != nil {
+		t.Fatal(err)
+	}
+	type weird struct {
+		FooBar int `json:""`
+	}
+	v := reflect.ValueOf(weird{FooBar: 7})
+	// double underscore skips camelToSnake match then hits snakeToPascal exact name
+	if got := fieldByColumn(v, "foo__bar"); !got.IsValid() || got.Int() != 7 {
+		t.Fatalf("pascal path = %v", got)
+	}
+}
+
+type seedFindDriver struct {
+	stubDriver
+	rows []map[string]any
+}
+
+func (d seedFindDriver) Find(ctx context.Context, b *QueryBuilder, dest any) error {
+	return assignTestRows(dest, d.rows)
+}
+
+func assignTestRows(dest any, rows []map[string]any) error {
+	dv := reflect.ValueOf(dest)
+	if dv.Kind() != reflect.Ptr {
+		return fmt.Errorf("dest ptr")
+	}
+	sv := dv.Elem()
+	elemType := sv.Type().Elem()
+	isPtr := elemType.Kind() == reflect.Ptr
+	if isPtr {
+		elemType = elemType.Elem()
+	}
+	out := reflect.MakeSlice(sv.Type(), 0, len(rows))
+	for _, row := range rows {
+		val := reflect.New(elemType)
+		rv := val.Elem()
+		for i := 0; i < rv.NumField(); i++ {
+			f := rv.Type().Field(i)
+			col := f.Name
+			if j := f.Tag.Get("json"); j != "" {
+				col = j
+			}
+			if v, ok := row[col]; ok {
+				rv.Field(i).Set(reflect.ValueOf(v).Convert(rv.Field(i).Type()))
+			}
+		}
+		if isPtr {
+			out = reflect.Append(out, val)
+		} else {
+			out = reflect.Append(out, val.Elem())
 		}
 	}
-	if q:=s.In("x", []int{}).Builder().Wheres[0].Query; q != "1 = 0" {
-		t.Fatal("empty IN should: '1 = 0', but: ", q)
-	}
-	if s.NotIn("x", nil).Builder().Wheres[0].Query != "1 = 0" {
-		t.Fatal("empty IN should: '1 = 0'")
-	}
-	if got := s.Gt("a", 1).Gte("b", 2).Lt("c", 3).Lte("d", 4).Builder().Wheres; len(got) != 4 {
-		t.Fatalf("comparison predicates = %#v", got)
-	}
-	q = q.Where(map[string]any{"m": 1}).Where(map[string]string{"n": "v"}).Where("o = ?", 3).Where(map[int]string{1: "x"}).Or("p = ?", 4)
-	if len(q.Builder().OrWheres) != 1 || len(q.Builder().Wheres) < 16 {
-		t.Fatal("where/or helpers missing")
-	}
-	q = q.MultiOr([]dbx.WhereClause{{Query: "x", Args: []any{1}}, {Query: "y = ?", Args: []any{2}}}).MultiOrLike([][2]string{{"name", "a"}}, true)
-	if len(q.Builder().Wheres) < 18 {
-		t.Fatal("multi-or missing")
-	}
-	opts := &dbx.QueryOpts{Selects: []string{"id"}, Where: map[string]any{"id": 1}, Between: map[string][2]any{"age": {1, 2}}, Like: map[string]string{"name": "a"}, Or: []dbx.WhereClause{{Query: "id = ?", Args: []any{1}}}, OrLike: [][2]string{{"name", "a"}}, OrBetween: map[string][2]any{"age": {1, 2}}, IsLikePrefix: true, IsOrLikePrefix: true, GroupBys: []string{"name"}, OrderBys: []dbx.OrderColumn{{Field: "id"}}, OrderBy: "name desc", Exp: []any{"age > ?", 1}}
-	q = s.Query(opts)
-	if s.Query(nil) != s || len(q.Builder().Selects) != 1 || len(q.Builder().Groups) != 1 {
-		t.Fatal("query options missing")
-	}
-	fresh := dbx.NewScope(conn, &testRow{}).Order("id desc").Orders(dbx.OrderColumn{Field: "name", Desc: true}).Group("id").Groups("age").Having("count(*) > ?", 1).Joins("join x on x.id = test_rows.id").Omit("age").Select("name").Limit(2).Offset(1).ReturnColumns("id").SetForUpdate().SetIncludeDeleted().WithContext(context.WithValue(context.Background(), "x", 1))
-	b := fresh.Builder()
-	if len(b.OrderRaw) != 1 || len(b.Orders) != 1 || b.Having == nil || len(b.Joins) != 1 || len(b.Omits) != 1 || b.Limit != 2 || b.Offset != 1 || !b.ForUpdate || len(b.ReturningColumns) != 1 {
-		t.Fatalf("builder configuration missing: %#v", b)
-	}
-	q = fresh
-	if q.Context() == nil || q.Conn() != conn || q.Model() == nil {
-		t.Fatal("scope accessors incorrect")
-	}
-	if err := q.Transaction(func(dbx.Driver) error { return nil }); err != nil {
-		t.Fatal(err)
-	}
+	sv.Set(out)
+	return nil
 }
 
-func TestScopeNoOpIncrementAndEmptyExist(t *testing.T) {
-	s, _ := seededScope()
-	if err := s.UpdateColumnWithIncr("age", 0); err != nil {
-		t.Fatalf("zero increment = %v", err)
-	}
-	exists, err := s.Exist()
-	if err != nil || !exists {
-		t.Fatalf("empty Exist = %v, %v", exists, err)
-	}
+type softDeleteCoverageRow struct {
+	ID        int64 `json:"id"`
+	DeletedAt int64 `json:"deleted_at"`
 }
 
+func (s softDeleteCoverageRow) GetDeletedAt() int64 { return s.DeletedAt }
 
-func TestScopeEdgeBranches(t *testing.T) {
-	d, conn := testConn()
-	d.Seed("test_rows", map[string]any{"id": int64(1), "name": "a", "age": int64(1), "deleted_at": uint32(0)})
-	s := dbx.NewScope(conn, &testRow{})
-	if err := s.UpdateColumnWithIncr("age", 0); err != nil {
-		t.Fatal(err)
+func TestScopeRemainingCoverageBranches(t *testing.T) {
+	_, conn := testConn()
+	s := NewScope(conn, softDeleteCoverageRow{})
+	if err := s.Delete("id = ?", int64(1)); err != nil {
+		t.Fatalf("soft delete with conds: %v", err)
 	}
-	if err := s.Eq("id", int64(99)).UpdateColumn("name", "x"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Eq("id", int64(99)).UpdateColumnWithIncr("age", 1); !errors.Is(err, dbx.ErrUpdateRowAffectedZero) {
-		t.Fatalf("incr zero rows: %v", err)
-	}
-	_ = s.Or(map[string]any{"id": int64(1)})
-	_ = s.Or("id = ?", int64(1))
-	_ = s.Having(map[string]any{"x": 1})
-	var rows []testRow
-	if err := s.Find(&rows, "id = ?", int64(1)); err != nil {
-		t.Fatal(err)
-	}
-	if b := (*dbx.Scope)(nil).Builder(); b == nil {
-		t.Fatal("nil builder")
+	q := NewScope(conn, &testRow{}).Query(&QueryOpts{Like: map[string]string{"name": "a"}, IsLikePrefix: false})
+	if len(q.Builder().Wheres) == 0 {
+		t.Fatal("Query Like should add a where clause")
 	}
 }

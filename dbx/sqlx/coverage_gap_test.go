@@ -56,6 +56,9 @@ func TestSqlxInternalCoverageGaps(t *testing.T) {
 	if _, err := d.Create(context.Background(), &dbx.QueryBuilder{Table: "items"}, map[string]any{"id": int64(10), "name": "z", "score": int64(1)}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := d.Create(nil, &dbx.QueryBuilder{Table: "items"}, map[string]any{"id": int64(12), "name": "nilctx", "score": int64(1)}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := d.CreateInBatches(context.Background(), &dbx.QueryBuilder{Table: "items"}, []map[string]any{{"id": int64(11), "name": "y", "score": int64(2)}}, 1); err != nil {
 		t.Fatal(err)
 	}
@@ -93,6 +96,10 @@ func TestSqlxInternalCoverageGaps(t *testing.T) {
 
 	// Error paths via closed DB
 	_ = raw.Close()
+	_, _ = d.Save(context.Background(), &dbx.QueryBuilder{Table: "items"}, struct {
+		ID   int64  `db:"id,pk"`
+		Name string `db:"name"`
+	}{ID: 98, Name: "save"})
 	_, _ = d.Create(context.Background(), &dbx.QueryBuilder{Table: "items"}, map[string]any{"id": int64(99), "name": "x"})
 	_, _ = d.CreateInBatches(context.Background(), &dbx.QueryBuilder{Table: "items"}, []map[string]any{{"id": int64(100)}}, 1)
 	_, _ = d.Update(context.Background(), &dbx.QueryBuilder{Table: "items"}, map[string]any{"name": "x"})
@@ -105,6 +112,7 @@ func TestSqlxInternalCoverageGaps(t *testing.T) {
 	_, _ = conn.Begin(context.Background())
 	_, _, _ = compileInsert(&dbx.QueryBuilder{Table: "items"}, 123)
 	_, _, _ = compileUpdate(&dbx.QueryBuilder{Table: "items"}, 123)
+	_, _ = d.Save(context.Background(), &dbx.QueryBuilder{Table: "items"}, 123)
 	_, _, _ = compileSelect(&dbx.QueryBuilder{})
 	_, _, _ = compileCount(&dbx.QueryBuilder{})
 }

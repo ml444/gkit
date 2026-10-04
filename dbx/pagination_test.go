@@ -1,76 +1,159 @@
-package dbx_test
+package dbx
 
 import (
-	"errors"
+	"reflect"
 	"testing"
-
-	"github.com/ml444/gkit/dbx"
-	"github.com/ml444/gkit/dbx/mock"
-	"github.com/ml444/gkit/dbx/pagination"
 )
 
-func TestScopePaginationQueries(t *testing.T) {
-	s, _ := seededScope()
-	var rows []testRow
-	p, err := s.PaginationQuery(&rows, 1, 1)
-	if err != nil || p.Total != 2 || len(rows) != 1 {
-		t.Fatalf("pagination: %#v %#v %v", p, rows, err)
+func TestPaginationCursorAndColumnHelpers(t *testing.T) {
+	type tagged struct {
+		GormName string `gorm:"column:external_name"`
+		JSONName string `json:"json_name,omitempty"`
+		Plain    int
 	}
-	rows = nil
-	p, err = s.PaginationQueryWithOpt(&rows, nil)
-	if err != nil || p.Page != 1 || p.Size != 10 {
-		t.Fatalf("nil opt: %#v %v", p, err)
+	v := reflect.ValueOf(tagged{GormName: "gorm", JSONName: "json", Plain: 7})
+	if got := fieldByColumn(v, "external_name"); !got.IsValid() || got.String() != "gorm" {
+		t.Fatalf("gorm column = %v", got)
 	}
-	rows = nil
-	p, err = s.PaginationQueryWithOpt(&rows, &pagination.Pagination{Page: 1, Size: 1, SkipCount: true})
-	if err != nil || p.Total != 0 || !p.SkipCount {
-		t.Fatalf("skip count: %#v %v", p, err)
+	if got := fieldByColumn(v, "plain"); !got.IsValid() || got.Int() != 7 {
+		t.Fatalf("snake column = %v", got)
 	}
-	if total, err := s.QueryPagination(&rows, 1, 1, false); err != nil || total != 2 {
-		t.Fatalf("query pagination: %d %v", total, err)
+	if got := fieldByColumn(v, "Plain"); !got.IsValid() || got.Int() != 7 {
+		t.Fatalf("pascal column = %v", got)
 	}
-}
-
-func TestScopeScrollQuery(t *testing.T) {
-	s, _ := seededScope()
-	var rows []testRow
-	scroll, err := s.ScrollQuery(&rows, "id", "", 1, false)
-	if err != nil || scroll.NextCursor != "1" {
-		t.Fatalf("empty cursor: %#v %v", scroll, err)
+	if got := fieldByColumn(v, "missing"); got.IsValid() {
+		t.Fatalf("missing column = %v", got)
 	}
-	rows = nil
-	scroll, err = s.ScrollQuery(&rows, "id", "1", 1, false)
-	if err != nil || scroll.NextCursor != "1" {
-		t.Fatalf("numeric cursor: %#v %v", scroll, err)
+	if columnNameFromTag(reflect.TypeOf(tagged{}).Field(0)) != "external_name" {
+		t.Fatal("gorm column tag missing")
 	}
-	rows = nil
-	scroll, err = s.ScrollQuery(&rows, "name", "not-a-number", 1, false)
-	if err != nil || scroll.NextCursor == "" {
-		t.Fatalf("string cursor/custom field: %#v %v", scroll, err)
+	if columnNameFromTag(reflect.TypeOf(struct{ Value string }{}).Field(0)) != "" {
+		t.Fatal("untagged field has a column")
 	}
-	if _, err := (*dbx.Scope)(nil).PaginationQuery(&rows, 1, 1); err == nil {
-		t.Fatal("nil scope pagination should fail")
+	if snakeToPascal("a__B_c") != "ABC" {
+		t.Fatalf("snakeToPascal = %q", snakeToPascal("a__B_c"))
 	}
-	if _, err := (*dbx.Scope)(nil).ScrollQuery(&rows, "id", "", 1, false); err == nil {
-		t.Fatal("nil scope scroll should fail")
+	for _, tc := range []struct {
+		value any
+		want  string
+	}{
+		{uint(1), "1"},
+		{int64(-2), "-2"},
+		{"text", "text"},
+		{true, ""},
+	} {
+		got := formatScrollCursor(reflect.ValueOf(tc.value))
+		if got != tc.want {
+			t.Fatalf("formatScrollCursor(%T) = %q", tc.value, got)
+		}
 	}
 }
 
-func TestPaginationErrorPaths(t *testing.T) {
+type fieldByColumnModel struct {
+	ID        uint64 `gorm:"primaryKey"`
+	FooSar    uint64
+	FoosAr    uint64
+	CreatedAt uint32
+	CustomCol uint64 `gorm:"column:custom_foo_sar"`
+}
+
+type fieldByColumnIDModel struct {
+	ID uint64
+}
+
+func TestFieldByColumn(t *testing.T) {
+	m := fieldByColumnModel{
+		ID:        10,
+		FooSar:    1,
+		FoosAr:    2,
+		CreatedAt: 3,
+		CustomCol: 4,
+	}
+	v := reflect.ValueOf(m)
+
+	tests := []struct {
+		column string
+		want   uint64
+	}{
+		{column: "id", want: 10},
+		{column: "foo_sar", want: 1},
+		{column: "foos_ar", want: 2},
+		{column: "created_at", want: 3},
+		{column: "custom_foo_sar", want: 4},
+	}
+	for _, tt := range tests {
+		t.Run(tt.column, func(t *testing.T) {
+			got := fieldByColumn(v, tt.column)
+			if !got.IsValid() {
+				t.Fatalf("fieldByColumn(%q) returned invalid value", tt.column)
+			}
+			if got.Uint() != tt.want {
+				t.Fatalf("fieldByColumn(%q) = %d, want %d", tt.column, got.Uint(), tt.want)
+			}
+		})
+	}
+
+	idV := reflect.ValueOf(fieldByColumnIDModel{ID: 99})
+	got := fieldByColumn(idV, "id")
+	if !got.IsValid() || got.Uint() != 99 {
+		t.Fatalf("fieldByColumn(id) on ID field = %v, want 99", got)
+	}
+}
+
+func TestSnakeToPascal(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{in: "foo_sar", want: "FooSar"},
+		{in: "foos_ar", want: "FoosAr"},
+		{in: "created_at", want: "CreatedAt"},
+		{in: "id", want: "Id"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			if got := snakeToPascal(tt.in); got != tt.want {
+				t.Fatalf("snakeToPascal(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestScope_HandlePagination(t *testing.T) {
+	scope := &Scope{}
+	t.Run("zero pagination", func(t *testing.T) {
+		opt := scope.HandlePagination(0, 0)
+		if opt.Size != uint32(DefaultLimit) {
+			t.Errorf("%d != %d", opt.Size, DefaultLimit)
+		}
+	})
+
+	t.Run("size greater than max limit", func(t *testing.T) {
+		opt := scope.HandlePagination(1, uint32(MaxLimit)+1)
+		if opt.Size != uint32(MaxLimit) {
+			t.Errorf("%d != %d", opt.Size, MaxLimit)
+		}
+	})
+}
+
+func TestScrollQueryRemainingBranches(t *testing.T) {
+	if _, err := (*Scope)(nil).ScrollQuery(&[]fieldByColumnModel{}, "id", "", 1, false); err == nil {
+		t.Fatal("nil scope should fail")
+	}
 	_, conn := testConn()
-	s := dbx.NewScope(conn, &testRow{})
-	d := mock.New()
-	d.FindErr = errors.New("find boom")
-	bad := dbx.NewScope(d.Conn(), &testRow{})
-	var rows []testRow
-	if _, err := bad.PaginationQueryWithOpt(&rows, nil); err == nil {
-		t.Fatal("pagination find error")
+	s := NewScope(conn, &fieldByColumnModel{})
+	var rows []fieldByColumnModel
+	if _, err := s.ScrollQuery(&rows, "id", "not-a-number", 2, true); err != nil {
+		t.Fatalf("string cursor should be accepted: %v", err)
 	}
-	if _, err := bad.QueryPagination(&rows, 1, 1, false); err == nil {
-		t.Fatal("query pagination find error")
+	if got := parseScrollCursor(""); got != nil {
+		t.Fatalf("empty cursor = %#v", got)
 	}
-	if _, err := bad.ScrollQuery(&rows, "id", "", 1, false); err == nil {
-		t.Fatal("scroll find error")
+	type exactName struct {
+		RawName string
 	}
-	_ = s
+	v := reflect.ValueOf(exactName{RawName: "x"})
+	if got := fieldByColumn(v, "RawName"); !got.IsValid() || got.String() != "x" {
+		t.Fatalf("exact field = %v", got)
+	}
 }

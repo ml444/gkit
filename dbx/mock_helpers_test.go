@@ -15,7 +15,7 @@ func testKeyRing() crypto.KeyRing {
 	}
 }
 
-func encryptRowCrypto(mutate ...crypto.MutatePolicy) dbx.T2Option {
+func encryptRowCrypto(mutate ...crypto.MutatePolicy) dbx.TOption {
 	policy := crypto.MutateInPlace
 	if len(mutate) > 0 {
 		policy = mutate[0]
@@ -27,7 +27,7 @@ func encryptRowCrypto(mutate ...crypto.MutatePolicy) dbx.T2Option {
 	})
 }
 
-func nameSearchableCrypto(mutate ...crypto.MutatePolicy) dbx.T2Option {
+func nameSearchableCrypto(mutate ...crypto.MutatePolicy) dbx.TOption {
 	policy := crypto.MutateInPlace
 	if len(mutate) > 0 {
 		policy = mutate[0]
@@ -39,7 +39,7 @@ func nameSearchableCrypto(mutate ...crypto.MutatePolicy) dbx.T2Option {
 	})
 }
 
-func dualFieldCrypto() dbx.T2Option {
+func dualFieldCrypto() dbx.TOption {
 	return dbx.WithTCrypto(crypto.Config{
 		KeyRing: testKeyRing(),
 		Fields: []crypto.FieldSpec{

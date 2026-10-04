@@ -48,7 +48,8 @@ func Run(t *testing.T, newConn Factory) {
 				t.Fatalf("create %q: %v", m.Name, err)
 			}
 		}
-		if err := repo.BatchCreate(ctx, []*Model{{ID: 4, Name: "dave", Age: 40}, {ID: 5, Name: "erin", Age: 50}}); err != nil {
+		batch := []*Model{{ID: 4, Name: "dave", Age: 40}, {ID: 5, Name: "erin", Age: 50}}
+		if err := repo.BatchCreate(ctx, &batch); err != nil {
 			t.Fatalf("batch create: %v", err)
 		}
 		count, err := repo.Count(ctx)

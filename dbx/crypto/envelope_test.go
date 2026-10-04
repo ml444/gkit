@@ -18,7 +18,7 @@ func TestEnvelopeRoundTrip(t *testing.T) {
 }
 
 func TestParseEnvelopeInvalid(t *testing.T) {
-	for _, s := range []string{"", "nope", "v1:k", "vX:k1:p", "v1:x1:p"} {
+	for _, s := range []string{"", "nope", "v", "v:bad", "v1:k", "v1:k1:", "vX:k1:p", "v1:x1:p"} {
 		if _, err := ParseEnvelope(s); err == nil {
 			t.Fatalf("expected error for %q", s)
 		}

@@ -174,6 +174,9 @@ func TestRemainingCoverageBranches(t *testing.T) {
 	if _, ok := AsGormScope(dbx.NewScope(dbx.StaticConn(d), &coverageModel{})); ok {
 		t.Fatal("static conn should not AsGormScope")
 	}
+	if _, ok := AsGormScope(dbx.NewScope(&Conn{}, &coverageModel{})); ok {
+		t.Fatal("invalid raw gorm driver should not AsGormScope")
+	}
 
 	gs := NewGormScope(db, &coverageModel{})
 	if _, err := (*GormScope)(nil).PaginationQueryWithOpt(&[]coverageModel{}, nil); err == nil {

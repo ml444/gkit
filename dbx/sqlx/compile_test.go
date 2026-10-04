@@ -88,3 +88,94 @@ func TestCompilerHelpers(t *testing.T) {
 		t.Fatal("mapErr mismatch")
 	}
 }
+
+type UpsertBase struct {
+	TenantID int64 `db:"tenant_id,pk"`
+	Ignored  int64 `db:"-"`
+}
+
+type upsertRow struct {
+	*UpsertBase
+	ID      int64
+	Name    string `db:"name"`
+	private string
+}
+
+type upsertValueEmbeddedRow struct {
+	UpsertBase
+	Name string `db:"name"`
+}
+
+type onlyPKRow struct {
+	ID int64 `db:"id,pk"`
+}
+
+type noPKRow struct {
+	Name string `db:"name"`
+}
+
+func TestCompileUpsertBranches(t *testing.T) {
+	b := &dbx.QueryBuilder{Table: "upsert_rows"}
+	q, args, err := compileUpsert(b, upsertRow{UpsertBase: &UpsertBase{TenantID: 7, Ignored: 9}, ID: 1, Name: "a"}, "mysql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q != "INSERT INTO upsert_rows (tenant_id, id, name) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name)" {
+		t.Fatalf("mysql upsert = %q", q)
+	}
+	if !reflect.DeepEqual(args, []any{int64(7), int64(1), "a"}) {
+		t.Fatalf("mysql args = %#v", args)
+	}
+	q, args, err = compileUpsert(b, upsertRow{UpsertBase: &UpsertBase{TenantID: 7}, ID: 1, Name: "a"}, "sqlite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q != "INSERT INTO upsert_rows (tenant_id, id, name) VALUES (?, ?, ?) ON CONFLICT (tenant_id, id) DO UPDATE SET name=EXCLUDED.name" || len(args) != 3 {
+		t.Fatalf("sqlite upsert = %q %#v", q, args)
+	}
+	q, args, err = compileUpsert(b, upsertValueEmbeddedRow{UpsertBase: UpsertBase{TenantID: 7}, Name: "a"}, "postgres")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q != "INSERT INTO upsert_rows (tenant_id, name) VALUES (?, ?) ON CONFLICT (tenant_id) DO UPDATE SET name=EXCLUDED.name" || !reflect.DeepEqual(args, []any{int64(7), "a"}) {
+		t.Fatalf("embedded value upsert = %q %#v", q, args)
+	}
+	q, _, err = compileUpsert(b, onlyPKRow{ID: 1}, "postgres")
+	if err != nil || q != "INSERT INTO upsert_rows (id) VALUES (?) ON CONFLICT DO NOTHING" {
+		t.Fatalf("postgres do nothing = %q %v", q, err)
+	}
+	q, _, err = compileUpsert(b, onlyPKRow{ID: 1}, "mysql")
+	if err != nil || q != "INSERT INTO upsert_rows (id) VALUES (?) ON DUPLICATE KEY UPDATE id=id" {
+		t.Fatalf("mysql do nothing = %q %v", q, err)
+	}
+	if _, _, err := compileUpsert(b, onlyPKRow{ID: 1}, "oracle"); err == nil {
+		t.Fatal("unsupported do-nothing dialect should fail")
+	}
+	if _, _, err := compileUpsert(b, noPKRow{Name: "a"}, "sqlite"); err == nil {
+		t.Fatal("sqlite upsert without primary key should fail")
+	}
+	if _, _, err := compileUpsert(b, noPKRow{Name: "a"}, "oracle"); err == nil {
+		t.Fatal("unsupported upsert dialect should fail")
+	}
+	if _, _, _, err := parseModelForUpsert((*upsertRow)(nil)); err == nil {
+		t.Fatal("nil pointer should fail")
+	}
+	if _, _, _, err := parseModelForUpsert(1); err == nil {
+		t.Fatal("scalar should fail")
+	}
+	type emptyStruct struct {
+		private int
+	}
+	if _, _, _, err := parseModelForUpsert(emptyStruct{}); err == nil {
+		t.Fatal("empty struct should fail")
+	}
+	var cols []string
+	var vals []any
+	var pks []string
+	if err := extractStructFields(reflect.ValueOf((*UpsertBase)(nil)), &cols, &vals, &pks); err != nil || len(cols) != 0 {
+		t.Fatalf("nil embedded pointer = %#v %v", cols, err)
+	}
+	if err := extractStructFields(reflect.ValueOf(1), &cols, &vals, &pks); err != nil {
+		t.Fatalf("scalar extract should be ignored: %v", err)
+	}
+}
